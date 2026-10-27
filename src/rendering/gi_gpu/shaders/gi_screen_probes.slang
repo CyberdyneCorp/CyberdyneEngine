@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 // CyberGI on the device: the screen-probe final gather through the software world tier. Issue #35.
 //
-//   cyGiProbePlace       `ScreenProbeGather::place`: a uniform probe a tile, an adaptive probe a
-//                        half-tile cell the uniform ones cannot interpolate. No tier: it reads the
-//                        surfaces alone.
+//   cyGiProbePlace       `ScreenProbeGather::place`: a uniform probe a tile, and each half-tile
+//                        cell the uniform ones cannot interpolate marked a candidate. No tier: it
+//                        reads the surfaces alone.
+//   cyGiProbeRank        the candidates' adaptive slots in cell order, one workgroup: the first
+//                        `capacity` placed, the rest refused, as `place` refuses them.
 //   cyGiProbeTrace       `trace_probe` for every placed probe, one workgroup a probe: the stand-in,
 //                        the reprojected history, the guide, a lane a ray through the uploaded
 //                        field, and the temporal blend.
@@ -21,6 +23,12 @@
 [numthreads(64, 1, 1)]
 void cyGiProbePlace(uint3 thread : SV_DispatchThreadID) {
     spPlace(thread.x);
+}
+
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void cyGiProbeRank(uint3 lane : SV_GroupThreadID) {
+    spRank(lane.x);
 }
 
 [shader("compute")]

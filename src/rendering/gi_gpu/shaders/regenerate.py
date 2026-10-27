@@ -8,7 +8,7 @@ one a Development build stages at <build>/Development/bin/slangc.
     python3 src/rendering/gi_gpu/shaders/regenerate.py --slangc build/dev/Development/bin/slangc
 
 One module per ENTRY POINT rather than per file: gi_cards.slang holds two, gi_radiance.slang six,
-gi_hardware.slang three, gi_denoise.slang four and gi_screen_probes.slang five, and each is its
+gi_hardware.slang three, gi_denoise.slang four and gi_screen_probes.slang six, and each is its
 own pipeline. The #line directives in the MSL name repository-relative paths, because slangc is run from
 the repository root: the committed text is then the same on every machine that regenerates it.
 """
@@ -57,6 +57,7 @@ MODULES = (
     # per-pixel integration.
     # gi_screen_probes_hardware.slang's two are the ray query tier.
     ("gi_screen_probes", "cyGiProbePlace", "kGiProbePlaceSpirv", "kGiProbePlaceMsl"),
+    ("gi_screen_probes", "cyGiProbeRank", "kGiProbeRankSpirv", "kGiProbeRankMsl"),
     ("gi_screen_probes", "cyGiProbeTrace", "kGiProbeTraceSpirv", "kGiProbeTraceMsl"),
     ("gi_screen_probes", "cyGiProbeFilter", "kGiProbeFilterSpirv", "kGiProbeFilterMsl"),
     ("gi_screen_probes", "cyGiProbeIntegrate", "kGiProbeIntegrateSpirv", "kGiProbeIntegrateMsl"),

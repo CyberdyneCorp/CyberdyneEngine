@@ -53,6 +53,8 @@ constexpr u32 kSignals = 2;
 constexpr u32 kLinearGroup = 64;
 /// One wave on the devices this targets: the probe trace's workgroup for 32 rays or fewer.
 constexpr u32 kNarrowGroup = 32;
+/// The rank pass's one workgroup: `kSpRankLanes` in gi_screen_probes_common.slang.
+constexpr u32 kRankLanes = 64;
 constexpr u32 kTileGroup = 8;
 
 /// The descriptor bindings of each set, in its `ParameterBlock`'s order.
@@ -345,6 +347,7 @@ Status GpuScreenResolve::create_pipeline(u32 which) noexcept {
                              kTileGroup, kTileGroup),
         CY_GI_RESOLVE_SOURCE("gi probe trace narrow", GiProbeTraceNarrow, "cyGiProbeTraceNarrow",
                              kNarrowGroup, 1),
+        CY_GI_RESOLVE_SOURCE("gi probe rank", GiProbeRank, "cyGiProbeRank", kLinearGroup, 1),
         CY_GI_RESOLVE_SOURCE("gi resolve hardware", GiResolveHardware, "cyGiResolveHardware",
                              kLinearGroup, 1),
         CY_GI_RESOLVE_SOURCE("gi probe trace hardware", GiProbeTraceHardware,
@@ -362,9 +365,9 @@ Status GpuScreenResolve::create_pipeline(u32 which) noexcept {
         resolve_pipeline_layout_,          resolve_pipeline_layout_,
         resolve_pipeline_layout_,          resolve_pipeline_layout_,
         resolve_pipeline_layout_,          temporal_pipeline_layout_,
-        resolve_pipeline_layout_,          resolve_hardware_pipeline_layout_,
+        resolve_pipeline_layout_,          resolve_pipeline_layout_,
         resolve_hardware_pipeline_layout_, resolve_hardware_pipeline_layout_,
-        resolve_hardware_pipeline_layout_,
+        resolve_hardware_pipeline_layout_, resolve_hardware_pipeline_layout_,
     };
     {
         const Source& source = sources[which];
@@ -1116,6 +1119,16 @@ void GpuScreenResolve::declare_probes(RenderGraph& graph, bool hardware) noexcep
         .write(probes, Access::ComputeStorageReadWrite)
         .write(slots, Access::ComputeStorageReadWrite)
         .record(&record_step, &place);
+    // THE CANDIDATES' SLOTS IN CELL ORDER, one workgroup, untimed: its interval is the trace's.
+    // Taken with an atomic in the placement, which candidates a spent capacity refuses would be
+    // the order the device reached them in, and the frame would differ from run to run.
+    Step& rank = add_step(kProbeRank, kStamps, kRankLanes);
+    graph.add_pass("gi probe rank", QueueKind::Graphics)
+        .read(constants, Access::ComputeStorageRead)
+        .read(surfaces, Access::ComputeStorageRead)
+        .write(probes, Access::ComputeStorageReadWrite)
+        .write(slots, Access::ComputeStorageReadWrite)
+        .record(&record_step, &rank);
 
     using C = GpuRadianceCache;
     Step& trace = add_step(trace_pipeline(hardware), 4, layout.records());
@@ -1374,6 +1387,7 @@ Expected<rhi::DescriptorSetHandle, Error> GpuScreenResolve::transient_set(
         case kResolve:
         case kResolveHardware:
         case kProbePlace:
+        case kProbeRank:
         case kProbeFilter:
         case kProbeTrace:
         case kProbeTraceNarrow:
@@ -1485,6 +1499,7 @@ void GpuScreenResolve::record_step(const PassContext& context, void* user) noexc
         case kResolve:
         case kResolveHardware:
         case kProbePlace:
+        case kProbeRank:
         case kProbeFilter:
         case kProbeTrace:
         case kProbeTraceNarrow:

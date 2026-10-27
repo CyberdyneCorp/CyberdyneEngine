@@ -24157,7 +24157,7 @@ float3 gtAccumulate_0(uint signal_2, uint pixel_1, int source_0, float confidenc
 
 )cy_msl";
 
-/// cyGiProbePlace.metal, 15120 bytes.
+/// cyGiProbePlace.metal, 14502 bytes.
 inline constexpr char kGiProbePlaceMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -24366,24 +24366,15 @@ uint spCapacity_0(KernelContext_0 thread* kernelContext_11)
 }
 
 
-#line 62
-uint spCapacity_1(KernelContext_0 thread* kernelContext_12)
-{
-
-#line 62
-    return kernelContext_12->giResolve_0->constants_0[42U].z;
-}
-
-
 #line 63
-uint spRecords_0(KernelContext_0 thread* kernelContext_13)
+uint spRecords_0(KernelContext_0 thread* kernelContext_12)
 {
 
 #line 63
-    uint _S19 = spUniformCount_1(kernelContext_13);
+    uint _S19 = spUniformCount_1(kernelContext_12);
 
 #line 63
-    uint _S20 = spCapacity_1(kernelContext_13);
+    uint _S20 = spCapacity_0(kernelContext_12);
 
 #line 63
     return _S19 + _S20;
@@ -24391,24 +24382,24 @@ uint spRecords_0(KernelContext_0 thread* kernelContext_13)
 
 
 #line 80
-uint spRecordBase_0(uint slot_0, uint record_0, KernelContext_0 thread* kernelContext_14)
+uint spRecordBase_0(uint slot_0, uint record_0, KernelContext_0 thread* kernelContext_13)
 {
 
 #line 80
-    uint _S21 = spRecords_0(kernelContext_14);
+    uint _S21 = spRecords_0(kernelContext_13);
     return (slot_0 * _S21 + record_0) * 18U;
 }
 
 
 #line 279
-void spWriteProbe_0(uint slot_1, uint record_1, float3 position_0, float depth_0, float3 normal_0, uint id_0, KernelContext_0 thread* kernelContext_15)
+void spWriteProbe_0(uint slot_1, uint record_1, float3 position_0, float depth_0, float3 normal_0, uint id_0, KernelContext_0 thread* kernelContext_14)
 {
 
 #line 279
-    uint _S22 = spRecordBase_0(slot_1, record_1, kernelContext_15);
+    uint _S22 = spRecordBase_0(slot_1, record_1, kernelContext_14);
 
-    *(kernelContext_15->giResolve_0->probes_0+_S22) = float4(position_0, depth_0);
-    *(kernelContext_15->giResolve_0->probes_0+(_S22 + 1U)) = float4(normal_0, (as_type<float>((id_0))));
+    *(kernelContext_14->giResolve_0->probes_0+_S22) = float4(position_0, depth_0);
+    *(kernelContext_14->giResolve_0->probes_0+(_S22 + 1U)) = float4(normal_0, (as_type<float>((id_0))));
 
 #line 282
     uint v_1 = 0U;
@@ -24427,7 +24418,7 @@ void spWriteProbe_0(uint slot_1, uint record_1, float3 position_0, float depth_0
         }
 
 #line 284
-        *(kernelContext_15->giResolve_0->probes_0+(_S22 + 2U + v_1)) = float4(0.0, 0.0, 0.0, 0.0);
+        *(kernelContext_14->giResolve_0->probes_0+(_S22 + 2U + v_1)) = float4(0.0, 0.0, 0.0, 0.0);
 
 #line 283
         v_1 = v_1 + 1U;
@@ -24439,8 +24430,8 @@ void spWriteProbe_0(uint slot_1, uint record_1, float3 position_0, float depth_0
     float4 _S23 = float4(0.0, 0.0, 0.0, 0.0);
 
 #line 286
-    *(kernelContext_15->giResolve_0->probes_0+(_S22 + 9U)) = _S23;
-    *(kernelContext_15->giResolve_0->probes_0+(_S22 + 10U)) = float4(1.0, 0.0, 0.0, 0.0);
+    *(kernelContext_14->giResolve_0->probes_0+(_S22 + 9U)) = _S23;
+    *(kernelContext_14->giResolve_0->probes_0+(_S22 + 10U)) = float4(1.0, 0.0, 0.0, 0.0);
 
 #line 287
     v_1 = 0U;
@@ -24459,10 +24450,9 @@ void spWriteProbe_0(uint slot_1, uint record_1, float3 position_0, float depth_0
         }
 
 #line 289
-        *(kernelContext_15->giResolve_0->probes_0+(_S22 + 11U + v_1)) = _S23;
+        *(kernelContext_14->giResolve_0->probes_0+(_S22 + 11U + v_1)) = _S23;
 
-)cy_msl"
-    R"cy_msl(#line 288
+#line 288
         v_1 = v_1 + 1U;
 
 #line 288
@@ -24472,9 +24462,19 @@ void spWriteProbe_0(uint slot_1, uint record_1, float3 position_0, float depth_0
     return;
 }
 
+)cy_msl"
+    R"cy_msl(
+#line 59
+uint spCellsX_0(KernelContext_0 thread* kernelContext_15)
+{
 
 #line 59
-uint spCellsX_0(KernelContext_0 thread* kernelContext_16)
+    return kernelContext_15->giResolve_0->constants_0[41U].z;
+}
+
+
+#line 59
+uint spCellsX_1(KernelContext_0 thread* kernelContext_16)
 {
 
 #line 59
@@ -24482,17 +24482,17 @@ uint spCellsX_0(KernelContext_0 thread* kernelContext_16)
 }
 
 
-#line 59
-uint spCellsX_1(KernelContext_0 thread* kernelContext_17)
+#line 60
+uint spCellsY_0(KernelContext_0 thread* kernelContext_17)
 {
 
-#line 59
-    return kernelContext_17->giResolve_0->constants_0[41U].z;
+#line 60
+    return kernelContext_17->giResolve_0->constants_0[41U].w;
 }
 
 
 #line 60
-uint spCellsY_0(KernelContext_0 thread* kernelContext_18)
+uint spCellsY_1(KernelContext_0 thread* kernelContext_18)
 {
 
 #line 60
@@ -24500,25 +24500,16 @@ uint spCellsY_0(KernelContext_0 thread* kernelContext_18)
 }
 
 
-#line 60
-uint spCellsY_1(KernelContext_0 thread* kernelContext_19)
-{
-
-#line 60
-    return kernelContext_19->giResolve_0->constants_0[41U].w;
-}
-
-
 #line 84
-uint spTableIndex_0(uint slot_2, uint cell_0, KernelContext_0 thread* kernelContext_20)
+uint spTableIndex_0(uint slot_2, uint cell_0, KernelContext_0 thread* kernelContext_19)
 {
 
 #line 84
-    uint _S24 = spCellsX_1(kernelContext_20);
+    uint _S24 = spCellsX_1(kernelContext_19);
     uint _S25 = slot_2 * _S24;
 
 #line 85
-    uint _S26 = spCellsY_1(kernelContext_20);
+    uint _S26 = spCellsY_1(kernelContext_19);
 
 #line 85
     return 4U + _S25 * _S26 + cell_0;
@@ -24526,74 +24517,74 @@ uint spTableIndex_0(uint slot_2, uint cell_0, KernelContext_0 thread* kernelCont
 
 
 #line 56
-uint spCell_0(KernelContext_0 thread* kernelContext_21)
+uint spCell_0(KernelContext_0 thread* kernelContext_20)
 {
 
 #line 56
-    return kernelContext_21->giResolve_0->constants_0[40U].w;
+    return kernelContext_20->giResolve_0->constants_0[40U].w;
 }
 
 
 #line 74
-uint spAdaptivePixel_0(uint cell_1, KernelContext_0 thread* kernelContext_22)
+uint spAdaptivePixel_0(uint cell_1, KernelContext_0 thread* kernelContext_21)
 {
 
 #line 74
-    uint _S27 = spCellsX_1(kernelContext_22);
+    uint _S27 = spCellsX_1(kernelContext_21);
     uint _S28 = cell_1 % _S27;
 
 #line 75
-    uint _S29 = spCell_0(kernelContext_22);
+    uint _S29 = spCell_0(kernelContext_21);
 
 #line 75
     uint _S30 = _S28 * _S29;
 
 #line 75
-    uint _S31 = spCell_0(kernelContext_22);
+    uint _S31 = spCell_0(kernelContext_21);
 
 #line 75
     uint _S32 = _S30 + _S31 / 2U;
 
 #line 75
-    uint _S33 = spWidth_1(kernelContext_22);
+    uint _S33 = spWidth_1(kernelContext_21);
 
 #line 75
     uint _S34 = min(_S32, _S33 - 1U);
 
 #line 75
-    uint _S35 = spCellsX_1(kernelContext_22);
+    uint _S35 = spCellsX_1(kernelContext_21);
     uint _S36 = cell_1 / _S35;
 
 #line 76
-    uint _S37 = spCell_0(kernelContext_22);
+    uint _S37 = spCell_0(kernelContext_21);
 
 #line 76
     uint _S38 = _S36 * _S37;
 
 #line 76
-    uint _S39 = spCell_0(kernelContext_22);
+    uint _S39 = spCell_0(kernelContext_21);
 
 #line 76
     uint _S40 = _S38 + _S39 / 2U;
 
 #line 76
-    uint _S41 = spHeight_0(kernelContext_22);
+    uint _S41 = spHeight_0(kernelContext_21);
 
 #line 76
     uint _S42 = min(_S40, _S41 - 1U);
 
 #line 76
-    uint _S43 = spWidth_1(kernelContext_22);
+    uint _S43 = spWidth_1(kernelContext_21);
     return _S42 * _S43 + _S34;
 }
 
 
 #line 58
-uint spTilesY_0(KernelContext_0 thread* kernelContext_23)
+uint spTilesY_0(KernelContext_0 thread* kernelContext_22)
 {
 
 #line 58
-    return kernelContext_23->giResolve_0->constants_0[41U].y;
+    return kernelContext_22->giResolve_0->constants_0[41U].y;
 }
 
 
@@ -24767,15 +24758,15 @@ SpTaps_0 spBilinearTaps_0(uint x_0, uint y_0, uint step_1, uint countX_0, uint c
             if(weight_1 <= 0.0)
             {
 
-)cy_msl"
-    R"cy_msl(#line 181
+#line 181
                 i_0 = i_0 + 1U;
 
 #line 178
                 continue;
             }
 
-
+)cy_msl"
+    R"cy_msl(
 
             (&taps_0)->index_0[(&taps_0)->count_1] = (by_0 + j_0) * countX_0 + (bx_0 + i_0);
             (&taps_0)->weight_0[(&taps_0)->count_1] = weight_1;
@@ -24818,211 +24809,768 @@ float spGeometryWeight_0(float3 probePosition_0, float3 probeNormal_0, float3 po
 }
 
 
-#line 88
-uint spCounter_0(uint slot_3)
+#line 304
+void spPlace_0(uint thread_0, KernelContext_0 thread* kernelContext_23)
 {
 
-#line 89
-    return slot_3;
-}
+#line 304
+    uint _S48 = spSlot_0(kernelContext_23);
+
+#line 304
+    uint _S49 = spUniformCount_0(kernelContext_23);
 
 
-#line 298
-void spPlace_0(uint thread_0, KernelContext_0 thread* kernelContext_24)
-{
-
-#line 298
-    uint _S48 = spSlot_0(kernelContext_24);
-
-#line 298
-    uint _S49 = spUniformCount_0(kernelContext_24);
-
-
-    uint pixels_0 = kernelContext_24->giResolve_0->constants_0[0U].z;
+    uint pixels_0 = kernelContext_23->giResolve_0->constants_0[0U].z;
     if(thread_0 < _S49)
     {
 
-#line 302
-        uint _S50 = spUniformPixel_0(thread_0, kernelContext_24);
+#line 308
+        uint _S50 = spUniformPixel_0(thread_0, kernelContext_23);
 
         uint record_2 = (_S48 * pixels_0 + _S50) * 2U;
-        float4 at_0 = kernelContext_24->giResolve_0->surfaces_0[record_2];
+        float4 at_0 = kernelContext_23->giResolve_0->surfaces_0[record_2];
         float _S51 = at_0.w;
 
-#line 306
+#line 312
         if(_S51 > 0.0)
         {
 
-#line 306
-            spWriteProbe_0(_S48, thread_0, at_0.xyz, _S51, giNormalisedOr_0(kernelContext_24->giResolve_0->surfaces_0[record_2 + 1U].xyz, float3(0.0, 1.0, 0.0)), thread_0, kernelContext_24);
+#line 312
+            spWriteProbe_0(_S48, thread_0, at_0.xyz, _S51, giNormalisedOr_0(kernelContext_23->giResolve_0->surfaces_0[record_2 + 1U].xyz, float3(0.0, 1.0, 0.0)), thread_0, kernelContext_23);
 
-#line 306
+#line 312
         }
         else
         {
 
-#line 306
-            spWriteProbe_0(_S48, thread_0, float3(0.0, 0.0, 0.0), 0.0, float3(0.0, 1.0, 0.0), thread_0, kernelContext_24);
+#line 312
+            spWriteProbe_0(_S48, thread_0, float3(0.0, 0.0, 0.0), 0.0, float3(0.0, 1.0, 0.0), thread_0, kernelContext_23);
 
-#line 306
+#line 312
         }
 
-#line 302
+#line 308
     }
 
-#line 302
-    uint _S52 = spCellsX_0(kernelContext_24);
+#line 308
+    uint _S52 = spCellsX_0(kernelContext_23);
 
-#line 302
-    uint _S53 = spCellsY_0(kernelContext_24);
+#line 308
+    uint _S53 = spCellsY_0(kernelContext_23);
 
-#line 316
+#line 322
     if(thread_0 >= (_S52 * _S53))
     {
 
-#line 317
+#line 323
         return;
     }
 
-#line 317
-    uint _S54 = spTableIndex_0(_S48, thread_0, kernelContext_24);
+#line 323
+    uint _S54 = spTableIndex_0(_S48, thread_0, kernelContext_23);
 
-    *(kernelContext_24->giResolve_0->slots_0+_S54) = 4294967295U;
+    *(kernelContext_23->giResolve_0->slots_0+_S54) = 4294967295U;
 
-#line 319
-    uint _S55 = spAdaptivePixel_0(thread_0, kernelContext_24);
+#line 325
+    uint _S55 = spAdaptivePixel_0(thread_0, kernelContext_23);
 
     uint _S56 = _S48 * pixels_0;
 
-#line 321
+#line 327
     uint record_3 = (_S56 + _S55) * 2U;
-    float4 at_1 = kernelContext_24->giResolve_0->surfaces_0[record_3];
+    float4 at_1 = kernelContext_23->giResolve_0->surfaces_0[record_3];
     float _S57 = at_1.w;
 
-#line 323
+#line 329
     if(_S57 <= 0.0)
     {
 
-#line 324
+#line 330
         return;
     }
 
     float3 _S58 = float3(0.0, 1.0, 0.0);
 
-#line 327
-    float3 normal_2 = giNormalisedOr_0(kernelContext_24->giResolve_0->surfaces_0[record_3 + 1U].xyz, _S58);
-    float4 weights_0 = (as_type<float4>((kernelContext_24->giResolve_0->constants_0[43U])));
+#line 333
+    float3 _S59 = giNormalisedOr_0(kernelContext_23->giResolve_0->surfaces_0[record_3 + 1U].xyz, _S58);
+    float4 weights_0 = (as_type<float4>((kernelContext_23->giResolve_0->constants_0[43U])));
 
-#line 328
-    uint _S59 = spWidth_0(kernelContext_24);
-    uint _S60 = _S55 % _S59;
+#line 334
+    uint _S60 = spWidth_0(kernelContext_23);
+    uint _S61 = _S55 % _S60;
 
-#line 329
-    uint _S61 = spWidth_0(kernelContext_24);
+#line 335
+    uint _S62 = spWidth_0(kernelContext_23);
 
-#line 329
-    uint _S62 = _S55 / _S61;
+#line 335
+    uint _S63 = _S55 / _S62;
 
-#line 329
-    uint _S63 = spSpacing_0(kernelContext_24);
+#line 335
+    uint _S64 = spSpacing_0(kernelContext_23);
 
-#line 329
-    uint _S64 = spTilesX_0(kernelContext_24);
+#line 335
+    uint _S65 = spTilesX_0(kernelContext_23);
 
-#line 329
-    uint _S65 = spTilesY_0(kernelContext_24);
+#line 335
+    uint _S66 = spTilesY_0(kernelContext_23);
 
-#line 329
-    SpTaps_0 _S66 = spBilinearTaps_0(_S60, _S62, _S63, _S64, _S65);
+#line 335
+    SpTaps_0 _S67 = spBilinearTaps_0(_S61, _S63, _S64, _S65, _S66);
 
-#line 329
+#line 335
     uint tap_0 = 0U;
 
-#line 329
+#line 335
     float covered_0 = 0.0;
 
 
     for(;;)
     {
 
-#line 332
-        if(tap_0 < (_S66.count_1))
+#line 338
+        if(tap_0 < (_S67.count_1))
         {
         }
         else
         {
 
-#line 332
+#line 338
             break;
         }
 
-#line 332
-        uint _S67 = spUniformPixel_0(_S66.index_0[tap_0], kernelContext_24);
+#line 338
+        uint _S68 = spUniformPixel_0(_S67.index_0[tap_0], kernelContext_23);
 
-        uint probeRecord_0 = (_S56 + _S67) * 2U;
-        float4 probeAt_0 = kernelContext_24->giResolve_0->surfaces_0[probeRecord_0];
+        uint probeRecord_0 = (_S56 + _S68) * 2U;
+        float4 probeAt_0 = kernelContext_23->giResolve_0->surfaces_0[probeRecord_0];
         if((probeAt_0.w) <= 0.0)
         {
 
-#line 337
+#line 343
             tap_0 = tap_0 + 1U;
 
-#line 332
+#line 338
             continue;
         }
 
-#line 332
-        covered_0 = covered_0 + _S66.weight_0[tap_0] * spGeometryWeight_0(probeAt_0.xyz, giNormalisedOr_0(kernelContext_24->giResolve_0->surfaces_0[probeRecord_0 + 1U].xyz, _S58), at_1.xyz, normal_2, _S57, weights_0.y);
+#line 338
+        covered_0 = covered_0 + _S67.weight_0[tap_0] * spGeometryWeight_0(probeAt_0.xyz, giNormalisedOr_0(kernelContext_23->giResolve_0->surfaces_0[probeRecord_0 + 1U].xyz, _S58), at_1.xyz, _S59, _S57, weights_0.y);
 
-#line 332
+#line 338
         tap_0 = tap_0 + 1U;
 
-#line 332
+#line 338
     }
 
-#line 344
+#line 350
     if(covered_0 >= (weights_0.x))
     {
 
-#line 345
+#line 351
         return;
     }
 
-    uint taken_0 = atomic_fetch_add_explicit(((atomic_uint device*)(kernelContext_24->giResolve_0->slots_0+spCounter_0(_S48))), 1U, memory_order_relaxed);
+#line 351
+    uint _S69 = spTableIndex_0(_S48, thread_0, kernelContext_23);
 
-#line 348
-    uint _S68 = spCapacity_0(kernelContext_24);
-    if(taken_0 >= _S68)
+    *(kernelContext_23->giResolve_0->slots_0+_S69) = 4294967294U;
+    return;
+}
+
+
+#line 24 "src/rendering/gi_gpu/shaders/gi_screen_probes.slang"
+[[kernel]] void cyGiProbePlace(uint3 thread_1 [[thread_position_in_grid]], GiResolveSet_default_0 constant* giResolve_1 [[buffer(3)]])
+{
+
+#line 24
+    thread KernelContext_0 kernelContext_24;
+
+#line 24
+    (&kernelContext_24)->giResolve_0 = giResolve_1;
+
+#line 24
+    spPlace_0(thread_1.x, &kernelContext_24);
+
+    return;
+}
+
+)cy_msl";
+
+/// cyGiProbeRank.metal, 10012 bytes.
+inline constexpr char kGiProbeRankMsl[] =
+    R"cy_msl(#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 53 "src/rendering/gi_gpu/shaders/gi_resolve_common.slang"
+struct GiResolveSet_default_0
+{
+    uint4 device* constants_0;
+    float4 device* surfaces_0;
+    float4 device* noisy_0;
+    float4 device* probes_0;
+    uint device* slots_0;
+};
+
+
+#line 376 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+struct KernelContext_0
+{
+    GiResolveSet_default_0 constant* giResolve_0;
+    array<uint, int(64)> threadgroup* spRankCounts_0;
+};
+
+
+#line 64
+uint spSlot_0(KernelContext_0 thread* kernelContext_0)
+{
+
+#line 64
+    return kernelContext_0->giResolve_0->constants_0[0U].w;
+}
+
+
+#line 61
+uint spUniformCount_0(KernelContext_0 thread* kernelContext_1)
+{
+
+#line 61
+    return kernelContext_1->giResolve_0->constants_0[43U].w;
+}
+
+
+#line 61
+uint spUniformCount_1(KernelContext_0 thread* kernelContext_2)
+{
+
+#line 61
+    return kernelContext_2->giResolve_0->constants_0[43U].w;
+}
+
+
+#line 59
+uint spCellsX_0(KernelContext_0 thread* kernelContext_3)
+{
+
+#line 59
+    return kernelContext_3->giResolve_0->constants_0[41U].z;
+}
+
+
+#line 59
+uint spCellsX_1(KernelContext_0 thread* kernelContext_4)
+{
+
+#line 59
+    return kernelContext_4->giResolve_0->constants_0[41U].z;
+}
+
+
+#line 60
+uint spCellsY_0(KernelContext_0 thread* kernelContext_5)
+{
+
+#line 60
+    return kernelContext_5->giResolve_0->constants_0[41U].w;
+}
+
+
+#line 60
+uint spCellsY_1(KernelContext_0 thread* kernelContext_6)
+{
+
+#line 60
+    return kernelContext_6->giResolve_0->constants_0[41U].w;
+}
+
+
+#line 84
+uint spTableIndex_0(uint slot_0, uint cell_0, KernelContext_0 thread* kernelContext_7)
+{
+
+#line 84
+    uint _S1 = spCellsX_1(kernelContext_7);
+    uint _S2 = slot_0 * _S1;
+
+#line 85
+    uint _S3 = spCellsY_1(kernelContext_7);
+
+#line 85
+    return 4U + _S2 * _S3 + cell_0;
+}
+
+uint spCounter_0(uint slot_1)
+{
+
+#line 89
+    return slot_1;
+}
+
+
+#line 62
+uint spCapacity_0(KernelContext_0 thread* kernelContext_8)
+{
+
+#line 62
+    return kernelContext_8->giResolve_0->constants_0[42U].z;
+}
+
+
+#line 62
+uint spCapacity_1(KernelContext_0 thread* kernelContext_9)
+{
+
+#line 62
+    return kernelContext_9->giResolve_0->constants_0[42U].z;
+}
+
+
+#line 56
+uint spCell_0(KernelContext_0 thread* kernelContext_10)
+{
+
+#line 56
+    return kernelContext_10->giResolve_0->constants_0[40U].w;
+}
+
+
+#line 53
+uint spWidth_0(KernelContext_0 thread* kernelContext_11)
+{
+
+#line 53
+    return kernelContext_11->giResolve_0->constants_0[40U].x;
+}
+
+
+#line 54
+uint spHeight_0(KernelContext_0 thread* kernelContext_12)
+{
+
+#line 54
+    return kernelContext_12->giResolve_0->constants_0[40U].y;
+}
+
+
+#line 74
+uint spAdaptivePixel_0(uint cell_1, KernelContext_0 thread* kernelContext_13)
+{
+
+#line 74
+    uint _S4 = spCellsX_1(kernelContext_13);
+    uint _S5 = cell_1 % _S4;
+
+#line 75
+    uint _S6 = spCell_0(kernelContext_13);
+
+#line 75
+    uint _S7 = _S5 * _S6;
+
+#line 75
+    uint _S8 = spCell_0(kernelContext_13);
+
+#line 75
+    uint _S9 = _S7 + _S8 / 2U;
+
+#line 75
+    uint _S10 = spWidth_0(kernelContext_13);
+
+#line 75
+    uint _S11 = min(_S9, _S10 - 1U);
+
+#line 75
+    uint _S12 = spCellsX_1(kernelContext_13);
+    uint _S13 = cell_1 / _S12;
+
+#line 76
+    uint _S14 = spCell_0(kernelContext_13);
+
+#line 76
+    uint _S15 = _S13 * _S14;
+
+#line 76
+    uint _S16 = spCell_0(kernelContext_13);
+
+#line 76
+    uint _S17 = _S15 + _S16 / 2U;
+
+#line 76
+    uint _S18 = spHeight_0(kernelContext_13);
+
+#line 76
+    uint _S19 = min(_S17, _S18 - 1U);
+
+#line 76
+    uint _S20 = spWidth_0(kernelContext_13);
+    return _S19 * _S20 + _S11;
+}
+
+
+#line 99 "src/rendering/gi_gpu/shaders/gi_gpu_common.slang"
+float3 giNormalisedOr_0(float3 v_0, float3 fallback_0)
+{
+
+#line 100
+    float squared_0 = dot(v_0, v_0);
+
+#line 100
+    float3 _S21;
+    if(squared_0 > 9.99999993922529029e-09)
     {
 
-#line 350
-        return;
+#line 101
+        _S21 = v_0 * float3((1.0 / sqrt(squared_0))) ;
+
+#line 101
+    }
+    else
+    {
+
+#line 101
+        _S21 = fallback_0;
+
+#line 101
     }
 
-#line 350
-    uint _S69 = spTableIndex_0(_S48, thread_0, kernelContext_24);
+#line 101
+    return _S21;
+}
 
-    *(kernelContext_24->giResolve_0->slots_0+_S69) = taken_0;
 
-#line 352
-    spWriteProbe_0(_S48, _S49 + taken_0, at_1.xyz, _S57, normal_2, _S49 + thread_0, kernelContext_24);
+#line 63 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+uint spRecords_0(KernelContext_0 thread* kernelContext_14)
+{
+
+#line 63
+    uint _S22 = spUniformCount_1(kernelContext_14);
+
+#line 63
+    uint _S23 = spCapacity_1(kernelContext_14);
+
+#line 63
+    return _S22 + _S23;
+}
+
+
+#line 80
+uint spRecordBase_0(uint slot_2, uint record_0, KernelContext_0 thread* kernelContext_15)
+{
+
+#line 80
+    uint _S24 = spRecords_0(kernelContext_15);
+    return (slot_2 * _S24 + record_0) * 18U;
+}
+
+
+#line 279
+void spWriteProbe_0(uint slot_3, uint record_1, float3 position_0, float depth_0, float3 normal_0, uint id_0, KernelContext_0 thread* kernelContext_16)
+{
+
+#line 279
+    uint _S25 = spRecordBase_0(slot_3, record_1, kernelContext_16);
+
+    *(kernelContext_16->giResolve_0->probes_0+_S25) = float4(position_0, depth_0);
+    *(kernelContext_16->giResolve_0->probes_0+(_S25 + 1U)) = float4(normal_0, (as_type<float>((id_0))));
+
+#line 282
+    uint v_1 = 0U;
+    for(;;)
+    {
+
+#line 283
+        if(v_1 < 7U)
+        {
+        }
+        else
+        {
+
+#line 283
+            break;
+        }
+
+#line 284
+        *(kernelContext_16->giResolve_0->probes_0+(_S25 + 2U + v_1)) = float4(0.0, 0.0, 0.0, 0.0);
+
+#line 283
+        v_1 = v_1 + 1U;
+
+#line 283
+    }
+
+
+)cy_msl"
+    R"cy_msl(    float4 _S26 = float4(0.0, 0.0, 0.0, 0.0);
+
+#line 286
+    *(kernelContext_16->giResolve_0->probes_0+(_S25 + 9U)) = _S26;
+    *(kernelContext_16->giResolve_0->probes_0+(_S25 + 10U)) = float4(1.0, 0.0, 0.0, 0.0);
+
+#line 287
+    v_1 = 0U;
+    for(;;)
+    {
+
+#line 288
+        if(v_1 < 7U)
+        {
+        }
+        else
+        {
+
+#line 288
+            break;
+        }
+
+#line 289
+        *(kernelContext_16->giResolve_0->probes_0+(_S25 + 11U + v_1)) = _S26;
+
+#line 288
+        v_1 = v_1 + 1U;
+
+#line 288
+    }
+
 
     return;
 }
 
 
-#line 22 "src/rendering/gi_gpu/shaders/gi_screen_probes.slang"
-[[kernel]] void cyGiProbePlace(uint3 thread_1 [[thread_position_in_grid]], GiResolveSet_default_0 constant* giResolve_1 [[buffer(3)]])
+#line 364
+void spRank_0(uint lane_0, KernelContext_0 thread* kernelContext_17)
 {
 
-#line 22
-    thread KernelContext_0 kernelContext_25;
+#line 364
+    uint offset_0;
 
-#line 22
-    (&kernelContext_25)->giResolve_0 = giResolve_1;
+#line 364
+    uint before_0;
 
-#line 22
-    spPlace_0(thread_1.x, &kernelContext_25);
+#line 364
+    uint _S27 = spSlot_0(kernelContext_17);
+
+#line 364
+    uint _S28 = spUniformCount_0(kernelContext_17);
+
+
+    uint _S29 = kernelContext_17->giResolve_0->constants_0[0U].z;
+
+#line 367
+    uint _S30 = spCellsX_0(kernelContext_17);
+
+#line 367
+    uint _S31 = spCellsY_0(kernelContext_17);
+    uint cells_0 = _S30 * _S31;
+    uint run_0 = (cells_0 + 64U - 1U) / 64U;
+    uint _S32 = min(lane_0 * run_0, cells_0);
+    uint _S33 = min(_S32 + run_0, cells_0);
+
+#line 371
+    uint cell_2 = _S32;
+
+#line 371
+    uint count_0 = 0U;
+
+    for(;;)
+    {
+
+#line 373
+        if(cell_2 < _S33)
+        {
+        }
+        else
+        {
+
+#line 373
+            break;
+        }
+
+#line 373
+        uint _S34 = spTableIndex_0(_S27, cell_2, kernelContext_17);
+        if((*(kernelContext_17->giResolve_0->slots_0+_S34)) == 4294967294U)
+        {
+
+#line 374
+            offset_0 = 1U;
+
+#line 374
+        }
+        else
+        {
+
+#line 374
+            offset_0 = 0U;
+
+#line 374
+        }
+
+#line 374
+        uint count_1 = count_0 + offset_0;
+
+#line 373
+        cell_2 = cell_2 + 1U;
+
+#line 373
+        count_0 = count_1;
+
+#line 373
+    }
+
+
+    (*kernelContext_17->spRankCounts_0)[lane_0] = count_0;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+#line 377
+    offset_0 = 1U;
+
+    for(;;)
+    {
+
+#line 379
+        if(offset_0 < 64U)
+        {
+        }
+        else
+        {
+
+#line 379
+            break;
+        }
+
+#line 380
+        if(lane_0 >= offset_0)
+        {
+
+#line 380
+            before_0 = (*kernelContext_17->spRankCounts_0)[lane_0 - offset_0];
+
+#line 380
+        }
+        else
+        {
+
+#line 380
+            before_0 = 0U;
+
+#line 380
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        (*kernelContext_17->spRankCounts_0)[lane_0] = (*kernelContext_17->spRankCounts_0)[lane_0] + before_0;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+#line 379
+        offset_0 = offset_0 * 2U;
+
+#line 379
+    }
+
+#line 386
+    if(lane_0 == 63U)
+    {
+
+#line 387
+        *(kernelContext_17->giResolve_0->slots_0+spCounter_0(_S27)) = (*kernelContext_17->spRankCounts_0)[lane_0];
+
+#line 386
+    }
+
+
+    uint _S35 = (*kernelContext_17->spRankCounts_0)[lane_0] - count_0;
+
+#line 389
+    uint _S36 = spCapacity_0(kernelContext_17);
+
+#line 389
+    cell_2 = _S32;
+
+#line 389
+    before_0 = _S35;
+
+    for(;;)
+    {
+
+#line 391
+        if(cell_2 < _S33)
+        {
+        }
+        else
+        {
+
+#line 391
+            break;
+        }
+
+#line 391
+        uint _S37 = spTableIndex_0(_S27, cell_2, kernelContext_17);
+
+        if((*(kernelContext_17->giResolve_0->slots_0+_S37)) != 4294967294U)
+        {
+
+#line 394
+            cell_2 = cell_2 + 1U;
+
+#line 391
+            continue;
+        }
+
+
+
+        if(before_0 >= _S36)
+        {
+
+#line 397
+            *(kernelContext_17->giResolve_0->slots_0+_S37) = 4294967295U;
+            cell_2 = cell_2 + 1U;
+
+#line 391
+            continue;
+        }
+
+#line 391
+        uint _S38 = spAdaptivePixel_0(cell_2, kernelContext_17);
+
+#line 401
+        uint record_2 = (_S27 * _S29 + _S38) * 2U;
+        float4 at_0 = kernelContext_17->giResolve_0->surfaces_0[record_2];
+
+        float3 normal_1 = giNormalisedOr_0(kernelContext_17->giResolve_0->surfaces_0[record_2 + 1U].xyz, float3(0.0, 1.0, 0.0));
+        *(kernelContext_17->giResolve_0->slots_0+_S37) = before_0;
+
+#line 405
+        spWriteProbe_0(_S27, _S28 + before_0, at_0.xyz, at_0.w, normal_1, _S28 + cell_2, kernelContext_17);
+
+#line 405
+        before_0 = before_0 + 1U;
+
+#line 391
+        cell_2 = cell_2 + 1U;
+
+#line 391
+    }
+
+#line 409
+    return;
+}
+
+
+#line 30 "src/rendering/gi_gpu/shaders/gi_screen_probes.slang"
+[[kernel]] void cyGiProbeRank(uint3 lane_1 [[thread_position_in_threadgroup]], GiResolveSet_default_0 constant* giResolve_1 [[buffer(3)]])
+{
+
+#line 30
+    thread KernelContext_0 kernelContext_18;
+
+#line 30
+    (&kernelContext_18)->giResolve_0 = giResolve_1;
+
+#line 30
+    threadgroup array<uint, int(64)> spRankCounts_1;
+
+#line 30
+    (&kernelContext_18)->spRankCounts_0 = &spRankCounts_1;
+
+#line 30
+    spRank_0(lane_1.x, &kernelContext_18);
 
     return;
 }
@@ -25096,7 +25644,7 @@ struct GiResolveSet_default_0
 };
 
 
-#line 663 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 718 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 struct KernelContext_0
 {
     GiProbeSet_default_0 constant* giProbes_0;
@@ -26037,49 +26585,49 @@ GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_3, float3 direct
 }
 
 
-#line 503 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 558 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 GrSample_0 spProbeRay_0(float3 origin_3, float3 unit_0, float reach_0, KernelContext_0 thread* kernelContext_11)
 {
 
-#line 504
+#line 559
     uint cacheFrame_1 = kernelContext_11->giProbes_0->constants_0[24U].w;
 
-#line 504
+#line 559
     GiWorldHit_0 _S54 = GiSoftwareTier_trace_0(origin_3, unit_0, reach_0, kernelContext_11);
 
-#line 504
+#line 559
     bool _S55;
 
     if(_S54.hit_0)
     {
 
-#line 506
+#line 561
         _S55 = (dot(_S54.normal_0, unit_0)) > 0.0;
 
-#line 506
+#line 561
     }
     else
     {
 
-#line 506
+#line 561
         _S55 = false;
 
-#line 506
+#line 561
     }
 
-#line 506
+#line 561
     if(_S55)
     {
 
-#line 507
+#line 562
         return grSample_0(float3(0.0, 0.0, 0.0), 0.0, 0U);
     }
     uint _S56 = GiSoftwareTier_source_0();
 
-#line 509
+#line 564
     thread GiWorldHit_0 _S57 = _S54;
 
-#line 509
+#line 564
     GiTierSample_0 _S58 = gpWorldRadiance_0(&_S57, unit_0, _S56, cacheFrame_1, kernelContext_11);
     return grSample_0(_S58.radiance_2, _S58.confidence_3, _S58.source_2);
 }
@@ -26095,125 +26643,125 @@ struct SpProbe_0
 };
 
 
-#line 478
+#line 533
 float3 spProbeOrigin_0(const SpProbe_0 thread* probe_0, float lift_0, KernelContext_0 thread* kernelContext_12)
 {
 
-#line 478
+#line 533
     uint _S59 = giLevelCount_0(kernelContext_12);
     if(_S59 == 0U)
     {
 
-#line 480
+#line 535
         return probe_0->position_4 + probe_0->normal_3 * float3(lift_0) ;
     }
 
-#line 480
+#line 535
     float _S60 = giFinestVoxel_0(kernelContext_12);
 
-#line 480
+#line 535
     float clearance_0;
 
 
     if((GiSoftwareTier_source_0()) == 7U)
     {
 
-#line 483
+#line 538
         clearance_0 = lift_0;
 
-#line 483
+#line 538
     }
     else
     {
 
-#line 483
+#line 538
         clearance_0 = max(lift_0, _S60);
 
-#line 483
+#line 538
     }
 
-#line 483
+#line 538
     float3 _S61 = probe_0->normal_3;
     float3 origin_4 = probe_0->position_4 + probe_0->normal_3 * float3(clearance_0) ;
     if(_S60 <= 0.0)
     {
 
-#line 486
+#line 541
         return origin_4;
     }
 
-#line 486
+#line 541
     float3 origin_5 = origin_4;
 
-#line 486
+#line 541
     uint step_2 = 0U;
 
     for(;;)
     {
 
-#line 488
+#line 543
         if(step_2 < 4U)
         {
         }
         else
         {
 
-#line 488
+#line 543
             break;
         }
 
-#line 488
+#line 543
         float _S62 = giDistance_0(origin_5, kernelContext_12);
 
         if(_S62 >= clearance_0)
         {
 
-#line 491
+#line 546
             break;
         }
 
         float3 _S63 = float3(_S60, 0.0, 0.0);
 
-#line 494
+#line 549
         float _S64 = giDistance_0(origin_5 + _S63, kernelContext_12);
 
-#line 494
+#line 549
         float _S65 = giDistance_0(origin_5 - _S63, kernelContext_12);
 
-#line 494
+#line 549
         float _S66 = _S64 - _S65;
         float3 _S67 = float3(0.0, _S60, 0.0);
 
-#line 495
+#line 550
         float _S68 = giDistance_0(origin_5 + _S67, kernelContext_12);
 
-#line 495
+#line 550
         float _S69 = giDistance_0(origin_5 - _S67, kernelContext_12);
 
-#line 495
+#line 550
         float _S70 = _S68 - _S69;
         float3 _S71 = float3(0.0, 0.0, _S60);
 
-#line 496
+#line 551
         float _S72 = giDistance_0(origin_5 + _S71, kernelContext_12);
 
-#line 496
+#line 551
         float _S73 = giDistance_0(origin_5 - _S71, kernelContext_12);
         float3 _S74 = origin_5 + giNormalisedOr_0(float3(_S66, _S70, _S72 - _S73), _S61) * float3((clearance_0 - _S62)) ;
 
-#line 488
+#line 543
         uint step_3 = step_2 + 1U;
 
-#line 488
+#line 543
         origin_5 = _S74;
 
-#line 488
+#line 543
         step_2 = step_3;
 
-#line 488
+#line 543
     }
 
-#line 499
+#line 554
     return origin_5;
 }
 
@@ -26315,153 +26863,153 @@ SpProbe_0 spLoadProbe_0(uint slot_4, uint record_1, KernelContext_0 thread* kern
 }
 
 
-#line 399
+#line 454
 bool spInvalidated_0(float3 point_0, KernelContext_0 thread* kernelContext_21)
 {
 
-#line 400
+#line 455
     uint _S81 = min(kernelContext_21->giResolve_0->constants_2[26U].x, 4U);
 
-#line 400
+#line 455
     uint region_0 = 0U;
     for(;;)
     {
 
-#line 401
+#line 456
         if(region_0 < _S81)
         {
         }
         else
         {
 
-#line 401
+#line 456
             break;
         }
 
-#line 402
+#line 457
         uint _S82 = region_0 * 2U;
 
-#line 402
+#line 457
         float3 lo_1 = (as_type<float3>((kernelContext_21->giResolve_0->constants_2[27U + _S82].xyz)));
         float3 hi_1 = (as_type<float3>((kernelContext_21->giResolve_0->constants_2[28U + _S82].xyz)));
         float _S83 = point_0.x;
 
-#line 404
+#line 459
         bool _S84;
 
-#line 404
+#line 459
         if(_S83 >= (lo_1.x))
         {
 
-#line 404
+#line 459
             _S84 = (point_0.y) >= (lo_1.y);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S84 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S85;
 
-#line 404
+#line 459
         if(_S84)
         {
 
-#line 404
+#line 459
             _S85 = (point_0.z) >= (lo_1.z);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S85 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S86;
 
-#line 404
+#line 459
         if(_S85)
         {
 
-#line 404
+#line 459
             _S86 = _S83 <= (hi_1.x);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S86 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S87;
 
-#line 404
+#line 459
         if(_S86)
         {
 
-#line 404
+#line 459
             _S87 = (point_0.y) <= (hi_1.y);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S87 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S88;
         if(_S87)
         {
 
-#line 405
+#line 460
             _S88 = (point_0.z) <= (hi_1.z);
 
-#line 405
+#line 460
         }
         else
         {
 
-#line 405
+#line 460
             _S88 = false;
 
-#line 405
+#line 460
         }
 
-#line 404
+#line 459
         if(_S88)
         {
             return true;
         }
 
-#line 401
+#line 456
         region_0 = region_0 + 1U;
 
-#line 401
+#line 456
     }
 
-#line 409
+#line 464
     return false;
 }
 
@@ -26484,50 +27032,50 @@ uint spHeight_0(KernelContext_0 thread* kernelContext_23)
 }
 
 
-#line 359
+#line 414
 bool spLanding_0(float3 position_5, uint thread* x_1, uint thread* y_1, KernelContext_0 thread* kernelContext_24)
 {
 
-#line 360
+#line 415
     *x_1 = 0U;
     *y_1 = 0U;
 
-#line 361
+#line 416
     float4 _S89 = float4(position_5.x) ;
 
-#line 361
+#line 416
     float4 _S90 = float4(position_5.y) ;
 
-#line 361
+#line 416
     float4 _S91 = float4(position_5.z) ;
 
-#line 366
+#line 421
     float4 clip_0 = (as_type<float4>((kernelContext_24->giResolve_0->constants_2[6U]))) * _S89 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[7U]))) * _S90 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[8U]))) * _S91 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[9U])));
     float _S92 = clip_0.w;
 
-#line 367
+#line 422
     if(_S92 <= 9.99999993922529029e-09)
     {
 
-#line 368
+#line 423
         return false;
     }
     float inverse_0 = 1.0 / _S92;
 
     float _S93 = clip_0.x * inverse_0 * 0.5 + 0.5;
 
-#line 372
+#line 427
     float _S94 = clip_0.y * inverse_0 * 0.5 + 0.5;
 
-#line 377
+#line 432
     float4 clip_1 = (as_type<float4>((kernelContext_24->giResolve_0->constants_2[10U]))) * _S89 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[11U]))) * _S90 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[12U]))) * _S91 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[13U])));
     float _S95 = clip_1.w;
 
-#line 378
+#line 433
     if(_S95 <= 9.99999993922529029e-09)
     {
 
-#line 379
+#line 434
         return false;
     }
     float inverse_1 = 1.0 / _S95;
@@ -26536,79 +27084,79 @@ bool spLanding_0(float3 position_5, uint thread* x_1, uint thread* y_1, KernelCo
 
     float _S96 = _S93 + (clip_1.x * inverse_1 * 0.5 + 0.5 - _S93);
 
-#line 385
+#line 440
     float _S97 = _S94 + (clip_1.y * inverse_1 * 0.5 + 0.5 - _S94);
 
-#line 385
+#line 440
     uint _S98 = spWidth_0(kernelContext_24);
     float width_0 = float(_S98);
 
-#line 386
+#line 441
     uint _S99 = spHeight_0(kernelContext_24);
     float height_0 = float(_S99);
     float fx_1 = floor(_S96 * width_0);
     float fy_1 = floor((1.0 - _S97) * height_0);
 
-#line 389
+#line 444
     bool _S100;
     if(fx_1 < 0.0)
     {
 
-#line 390
+#line 445
         _S100 = true;
 
-#line 390
+#line 445
     }
     else
     {
 
-#line 390
+#line 445
         _S100 = fy_1 < 0.0;
 
-#line 390
+#line 445
     }
 
-#line 390
+#line 445
     if(_S100)
     {
 
-#line 390
+#line 445
         _S100 = true;
 
-#line 390
+#line 445
     }
     else
     {
 
-#line 390
+#line 445
         _S100 = fx_1 >= width_0;
 
-#line 390
+#line 445
     }
 
-#line 390
+#line 445
     if(_S100)
     {
 
-#line 390
+#line 445
         _S100 = true;
 
-#line 390
+#line 445
     }
     else
     {
 
-#line 390
+#line 445
         _S100 = fy_1 >= height_0;
 
-#line 390
+#line 445
     }
 
-#line 390
+#line 445
     if(_S100)
     {
 
-#line 391
+#line 446
         return false;
     }
     *x_1 = uint(fx_1);
@@ -27023,300 +27571,300 @@ void spLoadCoefficients_0(uint slot_7, uint record_3, array<float3, int(9)> thre
 }
 
 
-#line 413
+#line 468
 bool spReproject_0(const SpProbe_0 thread* probe_2, float tolerance_1, array<float3, int(9)> thread* coefficients_2, float thread* history_1, uint thread* matched_0, KernelContext_0 thread* kernelContext_37)
 {
 
-#line 414
+#line 469
     uint k_1 = 0U;
     for(;;)
     {
 
-#line 415
+#line 470
         if(k_1 < 9U)
         {
         }
         else
         {
 
-#line 415
+#line 470
             break;
         }
 
-#line 416
+#line 471
         (*coefficients_2)[k_1] = float3(0.0, 0.0, 0.0);
 
-#line 415
+#line 470
         k_1 = k_1 + 1U;
 
-#line 415
+#line 470
     }
 
 
     *history_1 = 0.0;
     *matched_0 = 4294967295U;
 
-#line 419
+#line 474
     float3 _S113 = probe_2->position_4;
 
-#line 419
+#line 474
     bool _S114 = spInvalidated_0(probe_2->position_4, kernelContext_37);
     if(_S114)
     {
 
-#line 421
+#line 476
         return false;
     }
     thread uint x_3;
     thread uint y_3;
 
-#line 424
+#line 479
     bool _S115 = spLanding_0(_S113, &x_3, &y_3, kernelContext_37);
     if(!_S115)
     {
 
-#line 426
+#line 481
         return false;
     }
 
-#line 426
+#line 481
     uint _S116 = spSlot_0(kernelContext_37);
 
 
     uint previous_0 = 1U - _S116;
 
-#line 429
+#line 484
     float bestWeight_0 = 0.0;
 
-#line 429
+#line 484
     uint best_2 = 4294967295U;
 
-#line 429
+#line 484
     uint pass_0 = 0U;
 
 
     for(;;)
     {
 
-#line 432
+#line 487
         if(pass_0 < 2U)
         {
         }
         else
         {
 
-#line 432
+#line 487
             break;
         }
 
-#line 432
+#line 487
         SpTaps_0 _S117;
 
         if(pass_0 == 0U)
         {
 
-#line 434
+#line 489
             uint _S118 = spSpacing_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S119 = spTilesX_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S120 = spTilesY_0(kernelContext_37);
 
-#line 434
+#line 489
             _S117 = spBilinearTaps_0(x_3, y_3, _S118, _S119, _S120);
 
-#line 434
+#line 489
         }
         else
         {
 
-#line 434
+#line 489
             uint _S121 = spCell_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S122 = spCellsX_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S123 = spCellsY_0(kernelContext_37);
 
-#line 434
+#line 489
             _S117 = spBilinearTaps_0(x_3, y_3, _S121, _S122, _S123);
 
-#line 434
+#line 489
         }
 
-#line 434
+#line 489
         float bestWeight_1 = bestWeight_0;
 
-#line 434
+#line 489
         uint best_3 = best_2;
 
-#line 434
+#line 489
         uint tap_0 = 0U;
 
         for(;;)
         {
 
-#line 436
+#line 491
             if(tap_0 < (_S117.count_0))
             {
             }
             else
             {
 
-#line 436
+#line 491
                 break;
             }
 
-#line 434
+#line 489
             SpTaps_0 _S124 = _S117;
 
             uint _S125 = tap_0;
 
-#line 436
+#line 491
             uint record_4;
 
             if(pass_0 == 1U)
             {
 
-#line 438
+#line 493
                 uint _S126 = spTableIndex_0(previous_0, _S124.index_0[_S125], kernelContext_37);
                 uint device* _S127 = kernelContext_37->giResolve_0->slots_0+_S126;
 
-#line 439
+#line 494
                 uint slot_8 = *_S127;
                 if((*_S127) == 4294967295U)
                 {
 
-#line 441
+#line 496
                     tap_0 = tap_0 + 1U;
 
-#line 436
+#line 491
                     continue;
                 }
 
-#line 436
+#line 491
                 uint _S128 = spUniformCount_0(kernelContext_37);
 
-#line 436
+#line 491
                 record_4 = _S128 + slot_8;
 
             }
             else
             {
 
-#line 438
+#line 493
                 record_4 = _S124.index_0[_S125];
 
-#line 438
+#line 493
             }
 
-#line 438
+#line 493
             SpProbe_0 _S129 = spLoadProbe_0(previous_0, record_4, kernelContext_37);
 
-#line 446
+#line 501
             if((_S129.depth_0) <= 0.0)
             {
 
-#line 447
+#line 502
                 tap_0 = tap_0 + 1U;
 
-#line 436
+#line 491
                 continue;
             }
 
-#line 450
+#line 505
             float weight_2 = _S117.weight_0[tap_0] * spGeometryWeight_0(_S129.position_4, _S129.normal_3, _S113, probe_2->normal_3, probe_2->depth_0, tolerance_1);
 
-#line 450
+#line 505
             uint best_4;
 
-#line 450
+#line 505
             float bestWeight_2;
 
 
             if(weight_2 > bestWeight_1)
             {
 
-#line 453
+#line 508
                 bestWeight_2 = weight_2;
 
-#line 453
+#line 508
                 best_4 = record_4;
 
-#line 453
+#line 508
             }
             else
             {
 
-#line 453
+#line 508
                 bestWeight_2 = bestWeight_1;
 
-#line 453
+#line 508
                 best_4 = best_3;
 
-#line 453
+#line 508
             }
 
-#line 453
+#line 508
             bestWeight_1 = bestWeight_2;
 
-#line 453
+#line 508
             best_3 = best_4;
 
-#line 436
+#line 491
             tap_0 = tap_0 + 1U;
 
-#line 436
+#line 491
         }
 
-#line 432
+#line 487
         uint pass_1 = pass_0 + 1U;
 
-#line 432
+#line 487
         bestWeight_0 = bestWeight_1;
 
-#line 432
+#line 487
         best_2 = best_3;
 
-#line 432
+#line 487
         pass_0 = pass_1;
 
-#line 432
+#line 487
     }
 
-#line 432
+#line 487
     bool _S130;
 
-#line 459
+#line 514
     if(best_2 == 4294967295U)
     {
 
-#line 459
+#line 514
         _S130 = true;
 
-#line 459
+#line 514
     }
     else
     {
 
-#line 459
+#line 514
         _S130 = bestWeight_0 < 0.25;
 
-#line 459
+#line 514
     }
 
-#line 459
+#line 514
     if(_S130)
     {
 
-#line 460
+#line 515
         return false;
     }
 
-#line 460
+#line 515
     spLoadCoefficients_0(previous_0, best_2, coefficients_2, history_1, kernelContext_37);
 
 
@@ -27344,15 +27892,15 @@ float grUnit_0(uint hash_2)
 }
 
 
-#line 468 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 523 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 bool spProbeTraces_0(uint id_1, uint frame_1, float density_0)
 {
 
-#line 469
+#line 524
     if(density_0 >= 1.0)
     {
 
-#line 470
+#line 525
         return true;
     }
     return (grUnit_0(grHash_0(id_1, frame_1, 9U))) < density_0;
@@ -29596,45 +30144,45 @@ float grSkyVisibilityRay_0(float3 position_11, float3 normal_11, uint index_3, u
 }
 
 
-#line 528 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 583 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext_52)
 {
 
-#line 528
+#line 583
     uint _S258 = spSlot_0(kernelContext_52);
 
-#line 528
+#line 583
     bool allowed_0;
 
 
     if(record_9 == 0U)
     {
 
-#line 531
+#line 586
         allowed_0 = lane_0 == 0U;
 
-#line 531
+#line 586
     }
     else
     {
 
-#line 531
+#line 586
         allowed_0 = false;
 
-#line 531
+#line 586
     }
 
-#line 531
+#line 586
     if(allowed_0)
     {
 
-#line 532
+#line 587
         *(kernelContext_52->giResolve_0->slots_0+spCounter_0(1U - _S258)) = 0U;
 
-#line 531
+#line 586
     }
 
-#line 531
+#line 586
     uint _S259 = spUniformCount_0(kernelContext_52);
 
 
@@ -29642,43 +30190,43 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
     if(record_9 >= _S259)
     {
 
-#line 536
+#line 591
         uint _S260 = record_9 - _S259;
 
-#line 536
+#line 591
         uint _S261 = *(kernelContext_52->giResolve_0->slots_0+spCounter_0(_S258));
 
-#line 536
+#line 591
         uint _S262 = spCapacity_0(kernelContext_52);
 
-#line 536
+#line 591
         allowed_0 = _S260 >= (min(_S261, _S262));
 
-#line 535
+#line 590
     }
     else
     {
 
-#line 535
+#line 590
         allowed_0 = false;
 
-#line 535
+#line 590
     }
 
-#line 535
+#line 590
     if(allowed_0)
     {
         return;
     }
 
-#line 537
+#line 592
     SpProbe_0 _S263 = spLoadProbe_0(_S258, record_9, kernelContext_52);
 
 
     if((_S263.depth_0) <= 0.0)
     {
 
-#line 541
+#line 596
         return;
     }
     uint4 shape_1 = kernelContext_52->giResolve_0->constants_2[42U];
@@ -29688,85 +30236,85 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
 
     bool _S264 = lane_0 == 0U;
 
-#line 548
+#line 603
     uint cell_4;
 
-#line 548
+#line 603
     if(_S264)
     {
 
-#line 549
+#line 604
         thread array<float3, int(9)> previous_1;
         thread float history_3 = 0.0;
         thread uint matched_1 = 4294967295U;
         if(((shape_1.w) & 2U) != 0U)
         {
 
-#line 552
+#line 607
             allowed_0 = (kernelContext_52->giResolve_0->constants_2[5U].w) != 0U;
 
-#line 552
+#line 607
         }
         else
         {
 
-#line 552
+#line 607
             allowed_0 = false;
 
-#line 552
+#line 607
         }
 
-#line 552
+#line 607
         bool found_0;
         if(allowed_0)
         {
 
-#line 553
+#line 608
             float _S265 = weights_0.y;
 
-#line 553
+#line 608
             thread SpProbe_0 _S266 = _S263;
 
-#line 553
+#line 608
             bool _S267 = spReproject_0(&_S266, _S265, &previous_1, &history_3, &matched_1, kernelContext_52);
 
-#line 553
+#line 608
             found_0 = _S267;
 
-#line 553
+#line 608
         }
         else
         {
 
-#line 553
+#line 608
             found_0 = false;
 
-#line 553
+#line 608
         }
 
-#line 553
+#line 608
         cell_4 = 0U;
         for(;;)
         {
 
-#line 554
+#line 609
             if(cell_4 < 9U)
             {
             }
             else
             {
 
-#line 554
+#line 609
                 break;
             }
 
-#line 555
+#line 610
             (*kernelContext_52->spHistory_0)[cell_4] = previous_1[cell_4];
 
-#line 554
+#line 609
             cell_4 = cell_4 + 1U;
 
-#line 554
+#line 609
         }
 
 
@@ -29774,94 +30322,94 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
         if(found_0)
         {
 
-#line 558
+#line 613
             cell_4 = 1U;
 
-#line 558
+#line 613
         }
         else
         {
 
-#line 558
+#line 613
             cell_4 = 0U;
 
-#line 558
+#line 613
         }
 
-#line 558
+#line 613
         *kernelContext_52->spReprojected_0 = cell_4;
         float density_1 = (as_type<float>((kernelContext_52->giResolve_0->constants_2[1U].w)));
         if(found_0)
         {
 
-#line 560
+#line 615
             allowed_0 = !spProbeTraces_0(_S263.id_0, frame_4, density_1);
 
-#line 560
+#line 615
         }
         else
         {
 
-#line 560
+#line 615
             allowed_0 = false;
 
-#line 560
+#line 615
         }
 
-#line 560
+#line 615
         if(allowed_0)
         {
 
-#line 560
+#line 615
             cell_4 = matched_1;
 
-#line 560
+#line 615
         }
         else
         {
 
-#line 560
+#line 615
             cell_4 = 4294967295U;
 
-#line 560
+#line 615
         }
 
-#line 560
+#line 615
         *kernelContext_52->spCarried_0 = cell_4;
         if(cell_4 == 4294967295U)
         {
 
-#line 561
+#line 616
             float3 _S268 = _S263.normal_3;
             thread float4 diffuse_1;
             thread float4 specular_1;
 
-#line 563
+#line 618
             grSampleTraced_0(_S263.position_4, _S268, _S268, cacheFrame_2, &diffuse_1, &specular_1, kernelContext_52);
 
 
             *kernelContext_52->spStandIn_0 = diffuse_1;
             float _S269 = (as_type<float>((kernelContext_52->giResolve_0->constants_2[2U].y)));
 
-#line 567
+#line 622
             thread SpProbe_0 _S270 = _S263;
 
-#line 567
+#line 622
             float3 _S271 = spProbeOrigin_0(&_S270, _S269, kernelContext_52);
 
-#line 567
+#line 622
             *kernelContext_52->spOrigin_0 = _S271;
 
-#line 561
+#line 616
         }
 
-#line 548
+#line 603
     }
 
-#line 570
+#line 625
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-#line 570
+#line 625
     uint k_6;
     if((*kernelContext_52->spCarried_0) != 4294967295U)
     {
@@ -29869,53 +30417,53 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
         if(_S264)
         {
 
-#line 575
+#line 630
             thread array<float3, int(9)> kept_0;
 
-#line 575
+#line 630
             k_6 = 0U;
             for(;;)
             {
 
-#line 576
+#line 631
                 if(k_6 < 9U)
                 {
                 }
                 else
                 {
 
-#line 576
+#line 631
                     break;
                 }
 
-#line 577
+#line 632
                 kept_0[k_6] = (*kernelContext_52->spHistory_0)[k_6];
 
-#line 576
+#line 631
                 k_6 = k_6 + 1U;
 
-#line 576
+#line 631
             }
 
 
             float _S272 = *kernelContext_52->spHistoryCount_0;
 
-#line 579
+#line 634
             thread array<float3, int(9)> _S273 = kept_0;
 
-#line 579
+#line 634
             spStoreCoefficients_0(_S258, record_9, &_S273, _S272, kernelContext_52);
 
-#line 579
+#line 634
             thread array<float3, int(9)> _S274 = kept_0;
 
-#line 579
+#line 634
             spStoreFiltered_0(_S258, record_9, &_S274, kernelContext_52);
 
-#line 579
+#line 634
             uint _S275 = spRecordBase_0(1U - _S258, *kernelContext_52->spCarried_0, kernelContext_52);
 
-#line 579
+#line 634
             uint _S276 = spRecordBase_0(_S258, record_9, kernelContext_52);
 
 
@@ -29923,21 +30471,21 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
             *(kernelContext_52->giResolve_0->probes_1+(_S276 + 9U)) = *(kernelContext_52->giResolve_0->probes_1+(_S275 + 9U));
             *(kernelContext_52->giResolve_0->probes_1+(_S276 + 10U)) = *(kernelContext_52->giResolve_0->probes_1+(_S275 + 10U));
 
-#line 574
+#line 629
         }
 
-#line 586
+#line 641
         return;
     }
 
-#line 586
+#line 641
     float3 value_4;
 
 
     if(lane_0 < 16U)
     {
 
-#line 590
+#line 645
         float z_8 = (float(lane_0 / 4U) + 0.5) / 4.0;
 
         float3 direction_8 = spHemisphereDirection_0(_S263.normal_3, z_8, (float(lane_0 % 4U) + 0.5) / 4.0);
@@ -29945,136 +30493,136 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
         if((*kernelContext_52->spReprojected_0) != 0U)
         {
 
-#line 595
+#line 650
             thread array<float3, int(9)> previous_2;
 
-#line 595
+#line 650
             cell_4 = 0U;
             for(;;)
             {
 
-#line 596
+#line 651
                 if(cell_4 < 9U)
                 {
                 }
                 else
                 {
 
-#line 596
+#line 651
                     break;
                 }
 
-#line 597
+#line 652
                 previous_2[cell_4] = (*kernelContext_52->spHistory_0)[cell_4];
 
-#line 596
+#line 651
                 cell_4 = cell_4 + 1U;
 
-#line 596
+#line 651
             }
 
 
             float3 _S277 = float3(1.0, 1.0, 1.0);
 
-#line 599
+#line 654
             thread array<float3, int(9)> _S278 = previous_2;
 
-#line 599
+#line 654
             float3 _S279 = spEvaluate_0(&_S278, direction_8, _S277);
 
-#line 599
+#line 654
             value_4 = _S279;
 
-#line 594
+#line 649
         }
         else
         {
 
-#line 594
+#line 649
             float4 _S280 = gpSample_0(_S263.position_4, direction_8, cacheFrame_2, kernelContext_52);
 
-#line 594
+#line 649
             value_4 = _S280.xyz;
 
-#line 594
+#line 649
         }
 
-#line 603
+#line 658
         (*kernelContext_52->spWeights_0)[lane_0] = max(spLuminance_0(value_4), 0.0) * z_8;
 
-#line 589
+#line 644
     }
 
-#line 605
+#line 660
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-#line 605
+#line 660
     cell_4 = 0U;
 
-#line 605
+#line 660
     float guideTotal_0 = 0.0;
 
 
     for(;;)
     {
 
-#line 608
+#line 663
         if(cell_4 < 16U)
         {
         }
         else
         {
 
-#line 608
+#line 663
             break;
         }
 
-#line 609
+#line 664
         float guideTotal_1 = guideTotal_0 + (*kernelContext_52->spWeights_0)[cell_4];
 
-#line 608
+#line 663
         cell_4 = cell_4 + 1U;
 
-#line 608
+#line 663
         guideTotal_0 = guideTotal_1;
 
-#line 608
+#line 663
     }
 
-#line 608
+#line 663
     float guided_0;
 
 
     if(guideTotal_0 > 0.0)
     {
 
-#line 611
+#line 666
         guided_0 = gpClamp_0(weights_0.z, 0.0, 0.89999997615814209);
 
-#line 611
+#line 666
     }
     else
     {
 
-#line 611
+#line 666
         guided_0 = 0.0;
 
-#line 611
+#line 666
     }
     float uniformShare_0 = (1.0 - guided_0) * 0.5;
 
     uint _S281 = min(max(shape_1.x, 1U), 64U);
 
-#line 614
+#line 669
     float history_4;
 
-#line 614
+#line 669
     float openness_0;
 
     if(lane_0 < _S281)
     {
 
-#line 617
+#line 672
         uint hash_3 = grHash_0(_S263.id_0 * 64U + lane_0, frame_4, 8U);
         float u0_0 = grUnit_0(hash_3);
         float u1_0 = grUnit_0(hash_3 * 656542357U);
@@ -30084,151 +30632,151 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
         if(u0_0 >= uniformShare_0)
         {
 
-#line 623
+#line 678
             allowed_0 = u0_0 < (uniformShare_0 + uniformShare_0);
 
-#line 623
+#line 678
         }
         else
         {
 
-#line 623
+#line 678
             allowed_0 = false;
 
-#line 623
+#line 678
         }
 
-#line 623
+#line 678
         if(allowed_0)
         {
 
-#line 623
+#line 678
             history_4 = sqrt(u1_0);
 
-#line 623
+#line 678
             openness_0 = u2_0;
 
-#line 623
+#line 678
         }
         else
         {
 
-#line 625
+#line 680
             if(u0_0 >= (uniformShare_0 + uniformShare_0))
             {
 
-#line 626
+#line 681
                 float _S282 = (u0_0 - uniformShare_0 - uniformShare_0) / guided_0 * guideTotal_0;
 
-#line 626
+#line 681
                 cell_4 = 0U;
 
-#line 626
+#line 681
                 history_4 = 0.0;
 
 
                 for(;;)
                 {
 
-#line 629
+#line 684
                     if(cell_4 < 16U)
                     {
                     }
                     else
                     {
 
-#line 629
+#line 684
                         k_6 = 15U;
 
-#line 629
+#line 684
                         break;
                     }
 
-#line 630
+#line 685
                     float running_0 = history_4 + (*kernelContext_52->spWeights_0)[cell_4];
                     if(((*kernelContext_52->spWeights_0)[cell_4]) > 0.0)
                     {
 
-#line 631
+#line 686
                         allowed_0 = _S282 < running_0;
 
-#line 631
+#line 686
                     }
                     else
                     {
 
-#line 631
+#line 686
                         allowed_0 = false;
 
-#line 631
+#line 686
                     }
 
-#line 631
+#line 686
                     if(allowed_0)
                     {
 
-#line 631
+#line 686
                         k_6 = cell_4;
 
                         break;
                     }
 
-#line 629
+#line 684
                     cell_4 = cell_4 + 1U;
 
-#line 629
+#line 684
                     history_4 = running_0;
 
-#line 629
+#line 684
                 }
 
-#line 637
+#line 692
                 float _S283 = (float(k_6 % 4U) + u2_0) / 4.0;
 
-#line 637
+#line 692
                 history_4 = (float(k_6 / 4U) + u1_0) / 4.0;
 
-#line 637
+#line 692
                 openness_0 = _S283;
 
-#line 625
+#line 680
             }
             else
             {
 
-#line 625
+#line 680
                 history_4 = u1_0;
 
-#line 625
+#line 680
                 openness_0 = u2_0;
 
-#line 625
+#line 680
             }
 
-#line 623
+#line 678
         }
 
-#line 639
+#line 694
         float density_2 = uniformShare_0 / 6.28318548202514648 + uniformShare_0 * history_4 / 3.14159274101257324;
 
-#line 639
+#line 694
         float density_3;
 
         if(guided_0 > 0.0)
         {
 
-#line 641
+#line 696
             density_3 = density_2 + guided_0 * ((*kernelContext_52->spWeights_0)[spGuideCell_0(history_4, openness_0)] / guideTotal_0) * 2.5464789867401123;
 
-#line 641
+#line 696
         }
         else
         {
 
-#line 641
+#line 696
             density_3 = density_2;
 
-#line 641
+#line 696
         }
 
 
@@ -30237,154 +30785,154 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
         float3 direction_9 = spHemisphereDirection_0(_S263.normal_3, history_4, openness_0);
         bool _S285 = density_3 > 0.0;
 
-#line 647
+#line 702
         if(_S285)
         {
             uint excluded_1 = kernelContext_52->giResolve_0->constants_2[2U].w;
 
             float4 standIn_1 = *kernelContext_52->spStandIn_0;
 
-#line 651
+#line 706
             GrSample_0 _S286 = spProbeRay_0(*kernelContext_52->spOrigin_0, giNormalisedOr_0(direction_9, float3(0.0, 0.0, -1.0)), (as_type<float4>((kernelContext_52->giResolve_0->constants_2[2U]))).x, kernelContext_52);
 
 
             GrSample_0 _S287 = grSample_0(standIn_1.xyz, standIn_1.w, 3U);
 
-#line 654
+#line 709
             thread GrSample_0 _S288 = _S286;
 
-#line 654
+#line 709
             thread GrSample_0 _S289 = _S287;
 
-#line 654
+#line 709
 )cy_msl",
     R"cy_msl(            GrSample_0 _S290 = grGatherSample_0(&_S288, &_S289, excluded_1);
             if((_S290.source_0) != 0U)
             {
 
-#line 655
+#line 710
                 value_4 = _S290.radiance_0;
 
-#line 655
+#line 710
                 k_6 = 1U;
 
-#line 655
+#line 710
             }
             else
             {
 
-#line 655
+#line 710
                 value_4 = _S284;
 
-#line 655
+#line 710
                 k_6 = 0U;
 
-#line 655
+#line 710
             }
 
-#line 647
+#line 702
         }
         else
         {
 
-#line 647
+#line 702
             value_4 = _S284;
 
-#line 647
+#line 702
             k_6 = 0U;
 
-#line 647
+#line 702
         }
 
-#line 660
+#line 715
         (*kernelContext_52->spRayValue_0)[lane_0] = value_4;
         (*kernelContext_52->spRayDirection_0)[lane_0] = direction_9;
         if(_S285)
         {
 
-#line 662
+#line 717
             guideTotal_0 = 1.0 / (density_3 * float(_S281));
 
-#line 662
+#line 717
         }
         else
         {
 
-#line 662
+#line 717
             guideTotal_0 = 0.0;
 
-#line 662
+#line 717
         }
 
-#line 662
+#line 717
         (*kernelContext_52->spRayWeight_0)[lane_0] = guideTotal_0;
         (*kernelContext_52->spRayValid_0)[lane_0] = k_6;
 
-#line 616
+#line 671
     }
 
-#line 665
+#line 720
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if(lane_0 != 0U)
     {
 
-#line 667
+#line 722
         return;
     }
 
     thread array<float3, int(9)> sum_2;
 
-#line 670
+#line 725
     k_6 = 0U;
     for(;;)
     {
 
-#line 671
+#line 726
         if(k_6 < 9U)
         {
         }
         else
         {
 
-#line 671
+#line 726
             break;
         }
 
-#line 672
+#line 727
         sum_2[k_6] = float3(0.0, 0.0, 0.0);
 
-#line 671
+#line 726
         k_6 = k_6 + 1U;
 
-#line 671
+#line 726
     }
 
-#line 671
+#line 726
     uint ray_1 = 0U;
 
 
     for(;;)
     {
 
-#line 674
+#line 729
         if(ray_1 < _S281)
         {
         }
         else
         {
 
-#line 674
+#line 729
             break;
         }
 
-#line 675
+#line 730
         if(((*kernelContext_52->spRayValid_0)[ray_1]) == 0U)
         {
 
-#line 676
+#line 731
             ray_1 = ray_1 + 1U;
 
-#line 674
+#line 729
             continue;
         }
 
@@ -30393,264 +30941,264 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
         spBasis_0((*kernelContext_52->spRayDirection_0)[ray_1], &basis_2);
         float _S291 = (*kernelContext_52->spRayWeight_0)[ray_1];
 
-#line 680
+#line 735
         k_6 = 0U;
         for(;;)
         {
 
-#line 681
+#line 736
             if(k_6 < 9U)
             {
             }
             else
             {
 
-#line 681
+#line 736
                 break;
             }
 
-#line 682
+#line 737
             sum_2[k_6] = sum_2[k_6] + (*kernelContext_52->spRayValue_0)[ray_1] * float3((basis_2[k_6] * _S291)) ;
 
-#line 681
+#line 736
             k_6 = k_6 + 1U;
 
-#line 681
+#line 736
         }
 
-#line 674
+#line 729
         ray_1 = ray_1 + 1U;
 
-#line 674
+#line 729
     }
 
-#line 686
+#line 741
     float frames_0 = float(max(shape_1.y, 1U));
     thread array<float3, int(9)> blended_0;
 
     if((*kernelContext_52->spReprojected_0) != 0U)
     {
 
-#line 690
+#line 745
         float _S292 = max(1.0 / (*kernelContext_52->spHistoryCount_0 + 1.0), 1.0 / frames_0);
 
-#line 690
+#line 745
         k_6 = 0U;
         for(;;)
         {
 
-#line 691
+#line 746
             if(k_6 < 9U)
             {
             }
             else
             {
 
-#line 691
+#line 746
                 break;
             }
 
-#line 692
+#line 747
             blended_0[k_6] = (*kernelContext_52->spHistory_0)[k_6] + (sum_2[k_6] - (*kernelContext_52->spHistory_0)[k_6]) * float3(_S292) ;
 
-#line 691
+#line 746
             k_6 = k_6 + 1U;
 
-#line 691
+#line 746
         }
 
-#line 691
+#line 746
         history_4 = min(*kernelContext_52->spHistoryCount_0 + 1.0, frames_0);
 
-#line 689
+#line 744
     }
     else
     {
 
-#line 689
+#line 744
         k_6 = 0U;
 
-#line 696
+#line 751
         for(;;)
         {
 
-#line 696
+#line 751
             if(k_6 < 9U)
             {
             }
             else
             {
 
-#line 696
+#line 751
                 break;
             }
 
-#line 697
+#line 752
             blended_0[k_6] = sum_2[k_6];
 
-#line 696
+#line 751
             k_6 = k_6 + 1U;
 
-#line 696
+#line 751
         }
 
-#line 696
+#line 751
         history_4 = 1.0;
 
-#line 689
+#line 744
     }
 
-#line 689
+#line 744
     thread array<float3, int(9)> _S293 = blended_0;
 
-#line 689
+#line 744
     spStoreCoefficients_0(_S258, record_9, &_S293, history_4, kernelContext_52);
 
-#line 689
+#line 744
     thread array<float3, int(9)> _S294 = blended_0;
 
-#line 689
+#line 744
     spStoreFiltered_0(_S258, record_9, &_S294, kernelContext_52);
 
-#line 689
+#line 744
     float _S295 = grFarFieldWeight_0(length(_S263.position_4 - (as_type<float3>((kernelContext_52->giResolve_0->constants_2[1U].xyz)))), kernelContext_52);
 
-#line 706
+#line 761
     uint skyRays_0 = kernelContext_52->giResolve_0->constants_2[2U].z;
     if(_S295 > 0.0)
     {
 
-#line 707
+#line 762
         allowed_0 = skyRays_0 > 0U;
 
-#line 707
+#line 762
     }
     else
     {
 
-#line 707
+#line 762
         allowed_0 = false;
 
-#line 707
+#line 762
     }
 
-#line 707
+#line 762
     if(allowed_0)
     {
 
-#line 708
+#line 763
         uint _S296 = (frame_4 + _S263.id_0) % skyRays_0;
 
-#line 708
+#line 763
         float _S297 = grSkyVisibilityRay_0(_S263.position_4, _S263.normal_3, _S296, skyRays_0, kernelContext_52);
 
-#line 708
+#line 763
         openness_0 = _S297;
 
-#line 707
+#line 762
     }
     else
     {
 
-#line 707
+#line 762
         openness_0 = 1.0;
 
-#line 707
+#line 762
     }
 
-#line 707
+#line 762
     uint _S298 = spRecordBase_0(_S258, record_9, kernelContext_52);
 
-#line 712
+#line 767
     *(kernelContext_52->giResolve_0->probes_1+(_S298 + 9U)) = *kernelContext_52->spStandIn_0;
     *(kernelContext_52->giResolve_0->probes_1+(_S298 + 10U)) = float4(openness_0, 0.0, 0.0, 0.0);
     return;
 }
 
 
-#line 28 "src/rendering/gi_gpu/shaders/gi_screen_probes.slang"
+#line 36 "src/rendering/gi_gpu/shaders/gi_screen_probes.slang"
 [[kernel]] void cyGiProbeTrace(uint3 group_0 [[threadgroup_position_in_grid]], uint3 lane_1 [[thread_position_in_threadgroup]], GiProbeSet_default_0 constant* giProbes_1 [[buffer(2)]], GiSceneSet_default_0 constant* giScene_1 [[buffer(0)]], GiResolveSet_default_0 constant* giResolve_1 [[buffer(3)]])
 {
 
-#line 28
+#line 36
     thread KernelContext_0 kernelContext_53;
 
-#line 28
+#line 36
     (&kernelContext_53)->giProbes_0 = giProbes_1;
 
-#line 28
+#line 36
     (&kernelContext_53)->giScene_0 = giScene_1;
 
-#line 28
+#line 36
     (&kernelContext_53)->giResolve_0 = giResolve_1;
 
-#line 28
+#line 36
     threadgroup array<float3, int(9)> spHistory_1;
 
-#line 28
+#line 36
     (&kernelContext_53)->spHistory_0 = &spHistory_1;
 
-#line 28
+#line 36
     threadgroup float spHistoryCount_1;
 
-#line 28
+#line 36
     (&kernelContext_53)->spHistoryCount_0 = &spHistoryCount_1;
 
-#line 28
+#line 36
     threadgroup uint spReprojected_1;
 
-#line 28
+#line 36
     (&kernelContext_53)->spReprojected_0 = &spReprojected_1;
 
-#line 28
+#line 36
     threadgroup uint spCarried_1;
 
-#line 28
+#line 36
     (&kernelContext_53)->spCarried_0 = &spCarried_1;
 
-#line 28
+#line 36
     threadgroup float4 spStandIn_1;
 
-#line 28
+#line 36
     (&kernelContext_53)->spStandIn_0 = &spStandIn_1;
 
-#line 28
+#line 36
     threadgroup float3 spOrigin_1;
 
-#line 28
+#line 36
     (&kernelContext_53)->spOrigin_0 = &spOrigin_1;
 
-#line 28
+#line 36
     threadgroup array<float, int(16)> spWeights_1;
 
-#line 28
+#line 36
     (&kernelContext_53)->spWeights_0 = &spWeights_1;
 
-#line 28
+#line 36
     threadgroup array<float3, int(64)> spRayValue_1;
 
-#line 28
+#line 36
     (&kernelContext_53)->spRayValue_0 = &spRayValue_1;
 
-#line 28
+#line 36
     threadgroup array<float3, int(64)> spRayDirection_1;
 
-#line 28
+#line 36
     (&kernelContext_53)->spRayDirection_0 = &spRayDirection_1;
 
-#line 28
+#line 36
     threadgroup array<float, int(64)> spRayWeight_1;
 
-#line 28
+#line 36
     (&kernelContext_53)->spRayWeight_0 = &spRayWeight_1;
 
-#line 28
+#line 36
     threadgroup array<uint, int(64)> spRayValid_1;
 
-#line 28
+#line 36
     (&kernelContext_53)->spRayValid_0 = &spRayValid_1;
 
-#line 28
+#line 36
     spTrace_0(group_0.x, lane_1.x, &kernelContext_53);
 
     return;
@@ -31103,27 +31651,27 @@ uint spTilesY_0(KernelContext_0 thread* kernelContext_23)
 }
 
 
-#line 719
+#line 774
 float spFilterTent_0(int offset_0, uint reach_0)
 {
 
-#line 719
+#line 774
     int _S48;
     if(offset_0 < int(0))
     {
 
-#line 720
+#line 775
         _S48 = - offset_0;
 
-#line 720
+#line 775
     }
     else
     {
 
-#line 720
+#line 775
         _S48 = offset_0;
 
-#line 720
+#line 775
     }
     return 1.0 - float(_S48) / float(reach_0 + 1U);
 }
@@ -31237,283 +31785,283 @@ void spStoreFiltered_0(uint slot_5, uint record_4, const array<float3, int(9)> t
 }
 
 
-#line 727
+#line 782
 void spFilter_0(uint record_5, KernelContext_0 thread* kernelContext_26)
 {
 
-#line 727
+#line 782
     uint k_2;
 
-#line 727
+#line 782
     uint _S53 = spSlot_0(kernelContext_26);
 
-#line 727
+#line 782
     uint _S54 = spUniformCount_0(kernelContext_26);
 
 
     uint reach_2 = kernelContext_26->giResolve_0->constants_0[44U].y;
 
-#line 730
+#line 785
     bool _S55;
     if(reach_2 == 0U)
     {
 
-#line 731
+#line 786
         _S55 = true;
 
-#line 731
+#line 786
     }
     else
     {
 
 )cy_msl"
-    R"cy_msl(#line 731
+    R"cy_msl(#line 786
         uint _S56 = spRecords_0(kernelContext_26);
 
-#line 731
+#line 786
         _S55 = record_5 >= _S56;
 
-#line 731
+#line 786
     }
 
-#line 731
+#line 786
     if(_S55)
     {
 
-#line 732
+#line 787
         return;
     }
     if(record_5 >= _S54)
     {
 
-#line 734
+#line 789
         uint _S57 = record_5 - _S54;
 
-#line 734
+#line 789
         uint _S58 = *(kernelContext_26->giResolve_0->slots_0+spCounter_0(_S53));
 
-#line 734
+#line 789
         uint _S59 = spCapacity_0(kernelContext_26);
 
-#line 734
+#line 789
         _S55 = _S57 >= (min(_S58, _S59));
 
-#line 734
+#line 789
     }
     else
     {
 
-#line 734
+#line 789
         _S55 = false;
 
-#line 734
+#line 789
     }
 
-#line 734
+#line 789
     if(_S55)
     {
 
-#line 735
+#line 790
         return;
     }
 
-#line 735
+#line 790
     SpProbe_0 _S60 = spLoadProbe_0(_S53, record_5, kernelContext_26);
 
 
     if((_S60.depth_0) <= 0.0)
     {
 
-#line 739
+#line 794
         return;
     }
     thread array<float3, int(9)> sum_0;
     thread float history_1;
 
-#line 742
+#line 797
     spLoadCoefficients_0(_S53, record_5, &sum_0, &history_1, kernelContext_26);
 
-#line 742
+#line 797
     uint pixel_0;
 
-#line 747
+#line 802
     if((_S60.id_0) < _S54)
     {
 
-#line 747
+#line 802
         uint _S61 = spUniformPixel_0(_S60.id_0, kernelContext_26);
 
-#line 747
+#line 802
         pixel_0 = _S61;
 
-#line 747
+#line 802
     }
     else
     {
 
-#line 747
+#line 802
         uint _S62 = spAdaptivePixel_0(_S60.id_0 - _S54, kernelContext_26);
 
-#line 747
+#line 802
         pixel_0 = _S62;
 
-#line 747
+#line 802
     }
 
-#line 747
+#line 802
     uint _S63 = spWidth_0(kernelContext_26);
     uint _S64 = pixel_0 % _S63;
 
-#line 748
+#line 803
     uint _S65 = spSpacing_0(kernelContext_26);
 
-#line 748
+#line 803
     uint _S66 = _S64 / _S65;
 
-#line 748
+#line 803
     uint _S67 = spTilesX_0(kernelContext_26);
 
-#line 748
+#line 803
     int _S68 = int(min(_S66, _S67 - 1U));
 
-#line 748
+#line 803
     uint _S69 = spWidth_0(kernelContext_26);
     uint _S70 = pixel_0 / _S69;
 
-#line 749
+#line 804
     uint _S71 = spSpacing_0(kernelContext_26);
 
-#line 749
+#line 804
     uint _S72 = _S70 / _S71;
 
-#line 749
+#line 804
     uint _S73 = spTilesY_0(kernelContext_26);
 
-#line 749
+#line 804
     int _S74 = int(min(_S72, _S73 - 1U));
     float _S75 = (as_type<float>((kernelContext_26->giResolve_0->constants_0[43U].y)));
     float _S76 = (as_type<float>((kernelContext_26->giResolve_0->constants_0[44U].z)));
     int span_0 = int(reach_2);
     int _S77 = - span_0;
 
-#line 753
+#line 808
     int dy_0 = _S77;
 
-#line 753
+#line 808
     float total_0 = 1.0;
 
-#line 753
+#line 808
     for(;;)
     {
 
-#line 753
+#line 808
         if(dy_0 <= span_0)
         {
         }
         else
         {
 
-#line 753
+#line 808
             break;
         }
 
-#line 754
+#line 809
         int _S78 = _S74 + dy_0;
 
-#line 754
+#line 809
         int dx_0 = _S77;
 
-#line 754
+#line 809
         float total_1 = total_0;
         for(;;)
         {
 
-#line 755
+#line 810
             if(dx_0 <= span_0)
             {
             }
             else
             {
 
-#line 755
+#line 810
                 break;
             }
 
-#line 756
+#line 811
             int x_0 = _S68 + dx_0;
             if(x_0 < int(0))
             {
 
-#line 757
+#line 812
                 _S55 = true;
 
-#line 757
+#line 812
             }
             else
             {
 
-#line 757
+#line 812
                 _S55 = _S78 < int(0);
 
-#line 757
+#line 812
             }
 
-#line 757
+#line 812
             bool _S79;
 
-#line 757
+#line 812
             if(_S55)
             {
 
-#line 757
+#line 812
                 _S79 = true;
 
-#line 757
+#line 812
             }
             else
             {
 
-#line 757
+#line 812
                 uint _S80 = spTilesX_0(kernelContext_26);
 
-#line 757
+#line 812
                 _S79 = x_0 >= int(_S80);
 
-#line 757
+#line 812
             }
 
-#line 757
+#line 812
             bool _S81;
 
-#line 757
+#line 812
             if(_S79)
             {
 
-#line 757
+#line 812
                 _S81 = true;
 
-#line 757
+#line 812
             }
             else
             {
 
-#line 757
+#line 812
                 uint _S82 = spTilesY_0(kernelContext_26);
 
-#line 757
+#line 812
                 _S81 = _S78 >= int(_S82);
 
-#line 757
+#line 812
             }
 
-#line 757
+#line 812
             if(_S81)
             {
 
-#line 758
+#line 813
                 dx_0 = dx_0 + int(1);
 
-#line 755
+#line 810
                 continue;
             }
 
@@ -31521,47 +32069,47 @@ void spFilter_0(uint record_5, KernelContext_0 thread* kernelContext_26)
 
             uint _S83 = uint(_S78);
 
-#line 760
+#line 815
             uint _S84 = spTilesX_0(kernelContext_26);
 
-#line 760
+#line 815
             uint tile_1 = _S83 * _S84 + uint(x_0);
 
-#line 760
+#line 815
             SpProbe_0 _S85 = spLoadProbe_0(_S53, tile_1, kernelContext_26);
 
-#line 760
+#line 815
             bool _S86;
 
             if(tile_1 == (_S60.id_0))
             {
 
-#line 762
+#line 817
                 _S86 = true;
 
-#line 762
+#line 817
             }
             else
             {
 
-#line 762
+#line 817
                 _S86 = (_S85.depth_0) <= 0.0;
 
-#line 762
+#line 817
             }
 
-#line 762
+#line 817
             if(_S86)
             {
 
-#line 763
+#line 818
                 dx_0 = dx_0 + int(1);
 
-#line 755
+#line 810
                 continue;
             }
 
-#line 768
+#line 823
             float weight_0 = spFilterTent_0(dx_0, reach_2) * spFilterTent_0(dy_0, reach_2) * max(1.0 - length(_S85.position_0 - _S60.position_0) / (_S76 * _S60.depth_0), 0.0) * spGeometryWeight_0(_S85.position_0, _S85.normal_0, _S60.position_0, _S60.normal_0, _S60.depth_0, _S75);
 
 
@@ -31570,95 +32118,95 @@ void spFilter_0(uint record_5, KernelContext_0 thread* kernelContext_26)
             {
 
 )cy_msl"
-    R"cy_msl(#line 773
+    R"cy_msl(#line 828
                 dx_0 = dx_0 + int(1);
 
-#line 755
+#line 810
                 continue;
             }
 
-#line 775
+#line 830
             thread array<float3, int(9)> coefficients_4;
             thread float count_0;
 
-#line 776
+#line 831
             spLoadCoefficients_0(_S53, tile_1, &coefficients_4, &count_0, kernelContext_26);
 
-#line 776
+#line 831
             k_2 = 0U;
 
             for(;;)
             {
 
-#line 778
+#line 833
                 if(k_2 < 9U)
                 {
                 }
                 else
                 {
 
-#line 778
+#line 833
                     break;
                 }
 
-#line 779
+#line 834
                 sum_0[k_2] = sum_0[k_2] + coefficients_4[k_2] * float3(weight_0) ;
 
-#line 778
+#line 833
                 k_2 = k_2 + 1U;
 
-#line 778
+#line 833
             }
 
-#line 778
+#line 833
             total_1 = total_1 + weight_0;
 
-#line 755
+#line 810
             dx_0 = dx_0 + int(1);
 
-#line 755
+#line 810
         }
 
-#line 753
+#line 808
         dy_0 = dy_0 + int(1);
 
-#line 753
+#line 808
         total_0 = total_1;
 
-#line 753
+#line 808
     }
 
-#line 753
+#line 808
     k_2 = 0U;
 
-#line 784
+#line 839
     for(;;)
     {
 
-#line 784
+#line 839
         if(k_2 < 9U)
         {
         }
         else
         {
 
-#line 784
+#line 839
             break;
         }
 
-#line 785
+#line 840
         sum_0[k_2] = sum_0[k_2] / float3(total_0) ;
 
-#line 784
+#line 839
         k_2 = k_2 + 1U;
 
-#line 784
+#line 839
     }
 
-#line 784
+#line 839
     thread array<float3, int(9)> _S87 = sum_0;
 
-#line 784
+#line 839
     spStoreFiltered_0(_S53, record_5, &_S87, kernelContext_26);
 
 
@@ -31667,17 +32215,17 @@ void spFilter_0(uint record_5, KernelContext_0 thread* kernelContext_26)
 }
 
 
-#line 42 "src/rendering/gi_gpu/shaders/gi_screen_probes.slang"
+#line 50 "src/rendering/gi_gpu/shaders/gi_screen_probes.slang"
 [[kernel]] void cyGiProbeFilter(uint3 thread_0 [[thread_position_in_grid]], GiResolveSet_default_0 constant* giResolve_1 [[buffer(3)]])
 {
 
-#line 42
+#line 50
     thread KernelContext_0 kernelContext_27;
 
-#line 42
+#line 50
     (&kernelContext_27)->giResolve_0 = giResolve_1;
 
-#line 42
+#line 50
     spFilter_0(thread_0.x, &kernelContext_27);
 
     return;
@@ -33751,40 +34299,40 @@ GrSample_0 grGatherSample_0(const GrSample_0 thread* ray_0, const GrSample_0 thr
 }
 
 
-#line 793 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 848 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 void spIntegrate_0(uint pixel_2, KernelContext_0 thread* kernelContext_32)
 {
 
-#line 794
+#line 849
     uint4 counts_0 = kernelContext_32->giResolve_0->constants_2[0U];
     uint _S92 = counts_0.z;
 
-#line 795
+#line 850
     if(pixel_2 >= _S92)
     {
 
-#line 796
+#line 851
         return;
     }
     uint _S93 = counts_0.w;
 
-#line 798
+#line 853
     uint record_3 = (_S93 * _S92 + pixel_2) * 2U;
     float4 at_0 = kernelContext_32->giResolve_0->surfaces_0[record_3];
     float4 facing_2 = kernelContext_32->giResolve_0->surfaces_0[record_3 + 1U];
     float _S94 = at_0.w;
 
-#line 801
+#line 856
     if(_S94 <= 0.0)
     {
 
-#line 802
+#line 857
         uint _S95 = pixel_2 * 2U;
 
-#line 802
+#line 857
         float4 _S96 = float4(0.0, 0.0, 0.0, 0.0);
 
-#line 802
+#line 857
         *(kernelContext_32->giResolve_0->noisy_0+_S95) = _S96;
         *(kernelContext_32->giResolve_0->noisy_0+(_S95 + 1U)) = _S96;
         return;
@@ -33797,7 +34345,7 @@ void spIntegrate_0(uint pixel_2, KernelContext_0 thread* kernelContext_32)
     float3 offset_1 = position_7 - (as_type<float3>((kernelContext_32->giResolve_0->constants_2[1U].xyz)));
     float3 _S97 = float3(0.0, 0.0, -1.0);
 
-#line 812
+#line 867
     float3 incident_0 = giNormalisedOr_0(offset_1, _S97);
 
     float3 reflection_1 = giNormalisedOr_0(incident_0 - normal_7 * float3((2.0 * dot(incident_0, normal_7))) , normal_7);
@@ -33807,269 +34355,269 @@ void spIntegrate_0(uint pixel_2, KernelContext_0 thread* kernelContext_32)
     float3 irradianceBand_0 = float3(1.0, 0.66666668653488159, 0.25);
     float4 _S98 = (as_type<float4>((kernelContext_32->giResolve_0->constants_2[43U])));
 
-#line 819
+#line 874
     uint _S99 = spWidth_0(kernelContext_32);
     uint _S100 = pixel_2 % _S99;
 
-#line 820
+#line 875
     uint _S101 = spWidth_0(kernelContext_32);
     uint _S102 = pixel_2 / _S101;
 
 )cy_msl"
     R"cy_msl(    float3 _S103 = float3(0.0, 0.0, 0.0);
 
-#line 823
+#line 878
     float nearestPlane_0 = 1.00000001504746622e+30;
 
-#line 823
+#line 878
     float3 irradiance_0 = _S103;
 
-#line 823
+#line 878
     float3 glossy_0 = _S103;
 
-#line 823
+#line 878
     float3 cache_0 = _S103;
 
-#line 823
+#line 878
     uint nearest_0 = 4294967295U;
 
-#line 823
+#line 878
     uint pass_0 = 0U;
 
-#line 823
+#line 878
     float cacheConfidence_0 = 0.0;
 
-#line 823
+#line 878
     float openness_0 = 0.0;
 
-#line 823
+#line 878
     float total_1 = 0.0;
 
-#line 831
+#line 886
     for(;;)
     {
 
-#line 831
+#line 886
         if(pass_0 < 2U)
         {
         }
         else
         {
 
-#line 831
+#line 886
             break;
         }
 
-#line 831
+#line 886
         SpTaps_0 _S104;
 
         if(pass_0 == 0U)
         {
 
-#line 833
+#line 888
             uint _S105 = spSpacing_0(kernelContext_32);
 
-#line 833
+#line 888
             uint _S106 = spTilesX_0(kernelContext_32);
 
-#line 833
+#line 888
             uint _S107 = spTilesY_0(kernelContext_32);
 
-#line 833
+#line 888
             _S104 = spBilinearTaps_0(_S100, _S102, _S105, _S106, _S107);
 
-#line 833
+#line 888
         }
         else
         {
 
-#line 833
+#line 888
             uint _S108 = spCell_0(kernelContext_32);
 
-#line 833
+#line 888
             uint _S109 = spCellsX_0(kernelContext_32);
 
-#line 833
+#line 888
             uint _S110 = spCellsY_0(kernelContext_32);
 
-#line 833
+#line 888
             _S104 = spBilinearTaps_0(_S100, _S102, _S108, _S109, _S110);
 
-#line 833
+#line 888
         }
 
-#line 833
+#line 888
         float nearestPlane_1 = nearestPlane_0;
 
-#line 833
+#line 888
         float3 irradiance_1 = irradiance_0;
 
-#line 833
+#line 888
         float3 glossy_1 = glossy_0;
 
-#line 833
+#line 888
         float3 cache_1 = cache_0;
 
-#line 833
+#line 888
         uint nearest_1 = nearest_0;
 
-#line 833
+#line 888
         uint tap_0 = 0U;
 
-#line 833
+#line 888
         float cacheConfidence_1 = cacheConfidence_0;
 
-#line 833
+#line 888
         float openness_1 = openness_0;
 
-#line 833
+#line 888
         float total_2 = total_1;
 
         for(;;)
         {
 
-#line 835
+#line 890
             if(tap_0 < (_S104.count_0))
             {
             }
             else
             {
 
-#line 835
+#line 890
                 break;
             }
 
-#line 833
+#line 888
             SpTaps_0 _S111 = _S104;
 
             uint _S112 = tap_0;
 
-#line 835
+#line 890
             uint index_2;
 
             if(pass_0 == 1U)
             {
 
-#line 837
+#line 892
                 uint _S113 = spTableIndex_0(_S93, _S111.index_0[_S112], kernelContext_32);
                 uint device* _S114 = kernelContext_32->giResolve_0->slots_0+_S113;
 
-#line 838
+#line 893
                 uint taken_0 = *_S114;
                 if((*_S114) == 4294967295U)
                 {
 
-#line 840
+#line 895
                     tap_0 = tap_0 + 1U;
 
-#line 835
+#line 890
                     continue;
                 }
 
-#line 835
+#line 890
                 uint _S115 = spUniformCount_0(kernelContext_32);
 
-#line 835
+#line 890
                 index_2 = _S115 + taken_0;
 
             }
             else
             {
 
-#line 837
+#line 892
                 index_2 = _S111.index_0[_S112];
 
-#line 837
+#line 892
             }
 
-#line 837
+#line 892
             SpProbe_0 _S116 = spLoadProbe_0(_S93, index_2, kernelContext_32);
 
-#line 845
+#line 900
             if((_S116.depth_0) <= 0.0)
             {
 
-#line 846
+#line 901
                 tap_0 = tap_0 + 1U;
 
-#line 835
+#line 890
                 continue;
             }
 
-#line 848
+#line 903
             float plane_1 = abs(dot(_S116.normal_4, position_7 - _S116.position_5));
 
-#line 848
+#line 903
             float nearestPlane_2;
 
-#line 848
+#line 903
             uint nearest_2;
             if(plane_1 < nearestPlane_1)
             {
 
-#line 849
+#line 904
                 nearestPlane_2 = plane_1;
 
-#line 849
+#line 904
                 nearest_2 = index_2;
 
-#line 849
+#line 904
             }
             else
             {
 
-#line 849
+#line 904
                 nearestPlane_2 = nearestPlane_1;
 
-#line 849
+#line 904
                 nearest_2 = nearest_1;
 
-#line 849
+#line 904
             }
 
-#line 854
+#line 909
             float weight_3 = _S104.weight_0[tap_0] * spGeometryWeight_0(_S116.position_5, _S116.normal_4, position_7, normal_7, _S94, _S98.y);
 
             if(weight_3 <= 0.0)
             {
 
-#line 856
+#line 911
                 nearestPlane_1 = nearestPlane_2;
 
-#line 856
+#line 911
                 nearest_1 = nearest_2;
                 tap_0 = tap_0 + 1U;
 
-#line 835
+#line 890
                 continue;
             }
 
-#line 859
+#line 914
             thread array<float3, int(9)> coefficients_3;
 
-#line 859
+#line 914
             spLoadFiltered_0(_S93, index_2, &coefficients_3, kernelContext_32);
 
-#line 859
+#line 914
             uint _S117 = spRecordBase_0(_S93, index_2, kernelContext_32);
 
 
             float4 device* _S118 = kernelContext_32->giResolve_0->probes_1+(_S117 + 9U);
 
-#line 862
+#line 917
             thread array<float3, int(9)> _S119 = coefficients_3;
 
-#line 862
+#line 917
             float3 _S120 = spEvaluate_0(&_S119, normal_7, irradianceBand_0);
 
-#line 862
+#line 917
             float3 _S121 = float3(weight_3) ;
             float3 _S122 = irradiance_1 + _S120 * _S121;
 
-#line 863
+#line 918
             thread array<float3, int(9)> _S123 = coefficients_3;
 
-#line 863
+#line 918
             float3 _S124 = spEvaluate_0(&_S123, reflection_1, specularBand_0);
             float3 _S125 = glossy_1 + _S124 * _S121;
             float3 _S126 = cache_1 + (*_S118).xyz * _S121;
@@ -34077,314 +34625,314 @@ void spIntegrate_0(uint pixel_2, KernelContext_0 thread* kernelContext_32)
             float openness_2 = openness_1 + (*(kernelContext_32->giResolve_0->probes_1+(_S117 + 10U))).x * weight_3;
             float total_3 = total_2 + weight_3;
 
-#line 868
+#line 923
             nearestPlane_1 = nearestPlane_2;
 
-#line 868
+#line 923
             irradiance_1 = _S122;
 
-#line 868
+#line 923
             glossy_1 = _S125;
 
-#line 868
+#line 923
             cache_1 = _S126;
 
-#line 868
+#line 923
             nearest_1 = nearest_2;
 
-#line 868
+#line 923
             cacheConfidence_1 = cacheConfidence_2;
 
-#line 868
+#line 923
             openness_1 = openness_2;
 
-#line 868
+#line 923
             total_2 = total_3;
 
-#line 835
+#line 890
             tap_0 = tap_0 + 1U;
 
-#line 835
+#line 890
         }
 
-#line 831
+#line 886
         uint pass_1 = pass_0 + 1U;
 
-#line 831
+#line 886
         nearestPlane_0 = nearestPlane_1;
 
-#line 831
+#line 886
         irradiance_0 = irradiance_1;
 
-#line 831
+#line 886
         glossy_0 = glossy_1;
 
 )cy_msl"
-    R"cy_msl(#line 831
+    R"cy_msl(#line 886
         cache_0 = cache_1;
 
-#line 831
+#line 886
         nearest_0 = nearest_1;
 
-#line 831
+#line 886
         pass_0 = pass_1;
 
-#line 831
+#line 886
         cacheConfidence_0 = cacheConfidence_1;
 
-#line 831
+#line 886
         openness_0 = openness_1;
 
-#line 831
+#line 886
         total_1 = total_2;
 
-#line 831
+#line 886
     }
 
-#line 871
+#line 926
     if(total_1 < 0.00009999999747379)
     {
 
-#line 872
+#line 927
         if(nearest_0 == 4294967295U)
         {
             uint _S127 = pixel_2 * 2U;
 
-#line 874
+#line 929
             float4 _S128 = float4(0.0, 0.0, 0.0, (as_type<float>((kernelContext_32->giResolve_0->constants_2[44U].x))));
 
-#line 874
+#line 929
             *(kernelContext_32->giResolve_0->noisy_0+_S127) = _S128;
             *(kernelContext_32->giResolve_0->noisy_0+(_S127 + 1U)) = _S128;
             return;
         }
         thread array<float3, int(9)> coefficients_4;
 
-#line 878
+#line 933
         spLoadFiltered_0(_S93, nearest_0, &coefficients_4, kernelContext_32);
 
-#line 878
+#line 933
         uint _S129 = spRecordBase_0(_S93, nearest_0, kernelContext_32);
 
-#line 878
+#line 933
         thread array<float3, int(9)> _S130 = coefficients_4;
 
-#line 878
+#line 933
         float3 _S131 = spEvaluate_0(&_S130, normal_7, irradianceBand_0);
 
-#line 878
+#line 933
         thread array<float3, int(9)> _S132 = coefficients_4;
 
-#line 878
+#line 933
         float3 _S133 = spEvaluate_0(&_S132, reflection_1, specularBand_0);
 
-#line 883
+#line 938
         uint _S134 = _S129 + 9U;
         float _S135 = (*(kernelContext_32->giResolve_0->probes_1+_S134)).w;
         float _S136 = (*(kernelContext_32->giResolve_0->probes_1+(_S129 + 10U))).x;
 
-#line 885
+#line 940
         cache_0 = (*(kernelContext_32->giResolve_0->probes_1+_S134)).xyz;
 
-#line 885
+#line 940
         irradiance_0 = _S131;
 
-#line 885
+#line 940
         glossy_0 = _S133;
 
-#line 885
+#line 940
         cacheConfidence_0 = _S135;
 
-#line 885
+#line 940
         openness_0 = _S136;
 
-#line 871
+#line 926
     }
     else
     {
 
-#line 887
+#line 942
         float3 _S137 = irradiance_0 / float3(total_1) ;
         float3 _S138 = glossy_0 / float3(total_1) ;
 
         float cacheConfidence_3 = cacheConfidence_0 / total_1;
         float openness_3 = openness_0 / total_1;
 
-#line 891
+#line 946
         cache_0 = cache_0 / float3(total_1) ;
 
-#line 891
+#line 946
         irradiance_0 = _S137;
 
-#line 891
+#line 946
         glossy_0 = _S138;
 
-#line 891
+#line 946
         cacheConfidence_0 = cacheConfidence_3;
 
-#line 891
+#line 946
         openness_0 = openness_3;
 
-#line 871
+#line 926
     }
 
-#line 894
+#line 949
     uint4 shape_1 = kernelContext_32->giResolve_0->constants_2[42U];
     uint excluded_2 = kernelContext_32->giResolve_0->constants_2[2U].w;
     GrCombine_0 _S139 = grCombineBegin_0();
 
-#line 896
+#line 951
     thread GrCombine_0 state_3 = _S139;
     if(((shape_1.w) & 1U) != 0U)
     {
 
-#line 897
+#line 952
         thread GrSample_0 _S140 = grSample_0(cache_0, cacheConfidence_0, 3U);
 
-#line 897
+#line 952
         grCombineAdd_0(&state_3, &_S140, excluded_2);
 
-#line 897
+#line 952
     }
 
 
     uint _S141 = GiSoftwareTier_source_0();
 
-#line 900
+#line 955
     thread GrSample_0 _S142 = grSample_0(irradiance_0, 1.0, _S141);
 
-#line 900
+#line 955
     grCombineAdd_0(&state_3, &_S142, excluded_2);
     thread GrSample_0 sky_0 = grSample_0(_S103, 0.0, 9U);
 
-#line 901
+#line 956
     float _S143 = grFarFieldWeight_0(length(offset_1), kernelContext_32);
 
     if(_S143 > 0.0)
     {
 
-#line 903
+#line 958
         float3 _S144 = gpSky_0(normal_7, kernelContext_32);
         (&sky_0)->radiance_0 = _S144 * float3(openness_0) ;
         (&sky_0)->confidence_0 = gpClamp_0(_S143 * openness_0, 0.0, 1.0);
 
-#line 903
+#line 958
     }
 
-#line 903
+#line 958
     thread GrSample_0 _S145 = sky_0;
 
-#line 903
+#line 958
     grCombineAdd_0(&state_3, &_S145, excluded_2);
 
-#line 903
+#line 958
     thread GrCombine_0 _S146 = state_3;
 
-#line 903
+#line 958
     float3 _S147 = grCombineEnd_0(&_S146);
 
-#line 908
+#line 963
     float3 diffuse_0 = _S147 * float3((as_type<float>((kernelContext_32->giResolve_0->constants_2[5U].x)))) ;
 
     GrSample_0 probeSpecular_0 = grSample_0(glossy_0, gpClamp_0(roughness_2, 0.15000000596046448, 1.0), _S141);
     thread GrCombine_0 reflected_0 = _S139;
 
-#line 911
+#line 966
     uint _S148 = grReflectionRays_0(roughness_2, kernelContext_32);
 
     float density_1 = (as_type<float>((kernelContext_32->giResolve_0->constants_2[1U].w)));
 
-#line 913
+#line 968
     bool _S149;
     if(_S148 > 0U)
     {
 
-#line 914
+#line 969
         _S149 = grTraces_0(pixel_2, frame_2, density_1);
 
-#line 914
+#line 969
     }
     else
     {
 
-#line 914
+#line 969
         _S149 = false;
 
-#line 914
+#line 969
     }
 
-#line 914
+#line 969
     if(_S149)
     {
 
-#line 915
+#line 970
         float4 rays_1 = (as_type<float4>((kernelContext_32->giResolve_0->constants_2[2U])));
 
 
         uint _S150 = grHash_0(pixel_2, frame_2, 7U) % _S148;
 
-#line 918
+#line 973
         GrSample_0 _S151 = grWorldRay_0(position_7, normal_7, giNormalisedOr_0(grLobeDirection_0(reflection_1, normal_7, roughness_2, _S150, _S148, frame_2), _S97), rays_1.y, rays_1.x, kernelContext_32);
 
-#line 918
+#line 973
         thread GrSample_0 _S152 = _S151;
 
-#line 918
+#line 973
         thread GrSample_0 _S153 = probeSpecular_0;
 
-#line 918
+#line 973
         GrSample_0 _S154 = grGatherSample_0(&_S152, &_S153, 0U);
 
-#line 918
+#line 973
         thread GrSample_0 _S155 = _S154;
 
-#line 918
+#line 973
         grCombineAdd_0(&reflected_0, &_S155, 0U);
 
-#line 914
+#line 969
     }
 
-#line 914
+#line 969
     thread GrSample_0 _S156 = probeSpecular_0;
 
-#line 914
+#line 969
     grCombineAdd_0(&reflected_0, &_S156, 0U);
 
-#line 914
+#line 969
     thread GrCombine_0 _S157 = reflected_0;
 
-#line 914
+#line 969
     float3 _S158 = grCombineEnd_0(&_S157);
 
-#line 926
+#line 981
     float3 specular_0 = _S158 * float3((as_type<float>((kernelContext_32->giResolve_0->constants_2[5U].y)))) ;
     float samples_1 = (as_type<float>((kernelContext_32->giResolve_0->constants_2[44U].x)));
     uint _S159 = pixel_2 * 2U;
 
-#line 928
+#line 983
     *(kernelContext_32->giResolve_0->noisy_0+_S159) = float4(diffuse_0, samples_1);
     *(kernelContext_32->giResolve_0->noisy_0+(_S159 + 1U)) = float4(specular_0, samples_1);
     return;
 }
 
 
-#line 48 "src/rendering/gi_gpu/shaders/gi_screen_probes.slang"
+#line 56 "src/rendering/gi_gpu/shaders/gi_screen_probes.slang"
 [[kernel]] void cyGiProbeIntegrate(uint3 thread_0 [[thread_position_in_grid]], GiProbeSet_default_0 constant* giProbes_1 [[buffer(2)]], GiSceneSet_default_0 constant* giScene_1 [[buffer(0)]], GiResolveSet_default_0 constant* giResolve_1 [[buffer(3)]])
 {
 
-#line 48
+#line 56
     thread KernelContext_0 kernelContext_33;
 
-#line 48
+#line 56
     (&kernelContext_33)->giProbes_0 = giProbes_1;
 
-#line 48
+#line 56
     (&kernelContext_33)->giScene_0 = giScene_1;
 
-#line 48
+#line 56
     (&kernelContext_33)->giResolve_0 = giResolve_1;
 
-#line 48
+#line 56
     spIntegrate_0(thread_0.x, &kernelContext_33);
 
     return;
@@ -34459,7 +35007,7 @@ struct GiResolveSet_default_0
 };
 
 
-#line 663 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 718 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 struct KernelContext_0
 {
     GiProbeSet_default_0 constant* giProbes_0;
@@ -35400,49 +35948,49 @@ GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_3, float3 direct
 }
 
 
-#line 503 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 558 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 GrSample_0 spProbeRay_0(float3 origin_3, float3 unit_0, float reach_0, KernelContext_0 thread* kernelContext_11)
 {
 
-#line 504
+#line 559
     uint cacheFrame_1 = kernelContext_11->giProbes_0->constants_0[24U].w;
 
-#line 504
+#line 559
     GiWorldHit_0 _S54 = GiSoftwareTier_trace_0(origin_3, unit_0, reach_0, kernelContext_11);
 
-#line 504
+#line 559
     bool _S55;
 
     if(_S54.hit_0)
     {
 
-#line 506
+#line 561
         _S55 = (dot(_S54.normal_0, unit_0)) > 0.0;
 
-#line 506
+#line 561
     }
     else
     {
 
-#line 506
+#line 561
         _S55 = false;
 
-#line 506
+#line 561
     }
 
-#line 506
+#line 561
     if(_S55)
     {
 
-#line 507
+#line 562
         return grSample_0(float3(0.0, 0.0, 0.0), 0.0, 0U);
     }
     uint _S56 = GiSoftwareTier_source_0();
 
-#line 509
+#line 564
     thread GiWorldHit_0 _S57 = _S54;
 
-#line 509
+#line 564
     GiTierSample_0 _S58 = gpWorldRadiance_0(&_S57, unit_0, _S56, cacheFrame_1, kernelContext_11);
     return grSample_0(_S58.radiance_2, _S58.confidence_3, _S58.source_2);
 }
@@ -35458,125 +36006,125 @@ struct SpProbe_0
 };
 
 
-#line 478
+#line 533
 float3 spProbeOrigin_0(const SpProbe_0 thread* probe_0, float lift_0, KernelContext_0 thread* kernelContext_12)
 {
 
-#line 478
+#line 533
     uint _S59 = giLevelCount_0(kernelContext_12);
     if(_S59 == 0U)
     {
 
-#line 480
+#line 535
         return probe_0->position_4 + probe_0->normal_3 * float3(lift_0) ;
     }
 
-#line 480
+#line 535
     float _S60 = giFinestVoxel_0(kernelContext_12);
 
-#line 480
+#line 535
     float clearance_0;
 
 
     if((GiSoftwareTier_source_0()) == 7U)
     {
 
-#line 483
+#line 538
         clearance_0 = lift_0;
 
-#line 483
+#line 538
     }
     else
     {
 
-#line 483
+#line 538
         clearance_0 = max(lift_0, _S60);
 
-#line 483
+#line 538
     }
 
-#line 483
+#line 538
     float3 _S61 = probe_0->normal_3;
     float3 origin_4 = probe_0->position_4 + probe_0->normal_3 * float3(clearance_0) ;
     if(_S60 <= 0.0)
     {
 
-#line 486
+#line 541
         return origin_4;
     }
 
-#line 486
+#line 541
     float3 origin_5 = origin_4;
 
-#line 486
+#line 541
     uint step_2 = 0U;
 
     for(;;)
     {
 
-#line 488
+#line 543
         if(step_2 < 4U)
         {
         }
         else
         {
 
-#line 488
+#line 543
             break;
         }
 
-#line 488
+#line 543
         float _S62 = giDistance_0(origin_5, kernelContext_12);
 
         if(_S62 >= clearance_0)
         {
 
-#line 491
+#line 546
             break;
         }
 
         float3 _S63 = float3(_S60, 0.0, 0.0);
 
-#line 494
+#line 549
         float _S64 = giDistance_0(origin_5 + _S63, kernelContext_12);
 
-#line 494
+#line 549
         float _S65 = giDistance_0(origin_5 - _S63, kernelContext_12);
 
-#line 494
+#line 549
         float _S66 = _S64 - _S65;
         float3 _S67 = float3(0.0, _S60, 0.0);
 
-#line 495
+#line 550
         float _S68 = giDistance_0(origin_5 + _S67, kernelContext_12);
 
-#line 495
+#line 550
         float _S69 = giDistance_0(origin_5 - _S67, kernelContext_12);
 
-#line 495
+#line 550
         float _S70 = _S68 - _S69;
         float3 _S71 = float3(0.0, 0.0, _S60);
 
-#line 496
+#line 551
         float _S72 = giDistance_0(origin_5 + _S71, kernelContext_12);
 
-#line 496
+#line 551
         float _S73 = giDistance_0(origin_5 - _S71, kernelContext_12);
         float3 _S74 = origin_5 + giNormalisedOr_0(float3(_S66, _S70, _S72 - _S73), _S61) * float3((clearance_0 - _S62)) ;
 
-#line 488
+#line 543
         uint step_3 = step_2 + 1U;
 
-#line 488
+#line 543
         origin_5 = _S74;
 
-#line 488
+#line 543
         step_2 = step_3;
 
-#line 488
+#line 543
     }
 
-#line 499
+#line 554
     return origin_5;
 }
 
@@ -35678,153 +36226,153 @@ SpProbe_0 spLoadProbe_0(uint slot_4, uint record_1, KernelContext_0 thread* kern
 }
 
 
-#line 399
+#line 454
 bool spInvalidated_0(float3 point_0, KernelContext_0 thread* kernelContext_21)
 {
 
-#line 400
+#line 455
     uint _S81 = min(kernelContext_21->giResolve_0->constants_2[26U].x, 4U);
 
-#line 400
+#line 455
     uint region_0 = 0U;
     for(;;)
     {
 
-#line 401
+#line 456
         if(region_0 < _S81)
         {
         }
         else
         {
 
-#line 401
+#line 456
             break;
         }
 
-#line 402
+#line 457
         uint _S82 = region_0 * 2U;
 
-#line 402
+#line 457
         float3 lo_1 = (as_type<float3>((kernelContext_21->giResolve_0->constants_2[27U + _S82].xyz)));
         float3 hi_1 = (as_type<float3>((kernelContext_21->giResolve_0->constants_2[28U + _S82].xyz)));
         float _S83 = point_0.x;
 
-#line 404
+#line 459
         bool _S84;
 
-#line 404
+#line 459
         if(_S83 >= (lo_1.x))
         {
 
-#line 404
+#line 459
             _S84 = (point_0.y) >= (lo_1.y);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S84 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S85;
 
-#line 404
+#line 459
         if(_S84)
         {
 
-#line 404
+#line 459
             _S85 = (point_0.z) >= (lo_1.z);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S85 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S86;
 
-#line 404
+#line 459
         if(_S85)
         {
 
-#line 404
+#line 459
             _S86 = _S83 <= (hi_1.x);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S86 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S87;
 
-#line 404
+#line 459
         if(_S86)
         {
 
-#line 404
+#line 459
             _S87 = (point_0.y) <= (hi_1.y);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S87 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S88;
         if(_S87)
         {
 
-#line 405
+#line 460
             _S88 = (point_0.z) <= (hi_1.z);
 
-#line 405
+#line 460
         }
         else
         {
 
-#line 405
+#line 460
             _S88 = false;
 
-#line 405
+#line 460
         }
 
-#line 404
+#line 459
         if(_S88)
         {
             return true;
         }
 
-#line 401
+#line 456
         region_0 = region_0 + 1U;
 
-#line 401
+#line 456
     }
 
-#line 409
+#line 464
     return false;
 }
 
@@ -35847,50 +36395,50 @@ uint spHeight_0(KernelContext_0 thread* kernelContext_23)
 }
 
 
-#line 359
+#line 414
 bool spLanding_0(float3 position_5, uint thread* x_1, uint thread* y_1, KernelContext_0 thread* kernelContext_24)
 {
 
-#line 360
+#line 415
     *x_1 = 0U;
     *y_1 = 0U;
 
-#line 361
+#line 416
     float4 _S89 = float4(position_5.x) ;
 
-#line 361
+#line 416
     float4 _S90 = float4(position_5.y) ;
 
-#line 361
+#line 416
     float4 _S91 = float4(position_5.z) ;
 
-#line 366
+#line 421
     float4 clip_0 = (as_type<float4>((kernelContext_24->giResolve_0->constants_2[6U]))) * _S89 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[7U]))) * _S90 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[8U]))) * _S91 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[9U])));
     float _S92 = clip_0.w;
 
-#line 367
+#line 422
     if(_S92 <= 9.99999993922529029e-09)
     {
 
-#line 368
+#line 423
         return false;
     }
     float inverse_0 = 1.0 / _S92;
 
     float _S93 = clip_0.x * inverse_0 * 0.5 + 0.5;
 
-#line 372
+#line 427
     float _S94 = clip_0.y * inverse_0 * 0.5 + 0.5;
 
-#line 377
+#line 432
     float4 clip_1 = (as_type<float4>((kernelContext_24->giResolve_0->constants_2[10U]))) * _S89 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[11U]))) * _S90 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[12U]))) * _S91 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[13U])));
     float _S95 = clip_1.w;
 
-#line 378
+#line 433
     if(_S95 <= 9.99999993922529029e-09)
     {
 
-#line 379
+#line 434
         return false;
     }
     float inverse_1 = 1.0 / _S95;
@@ -35899,79 +36447,79 @@ bool spLanding_0(float3 position_5, uint thread* x_1, uint thread* y_1, KernelCo
 
     float _S96 = _S93 + (clip_1.x * inverse_1 * 0.5 + 0.5 - _S93);
 
-#line 385
+#line 440
     float _S97 = _S94 + (clip_1.y * inverse_1 * 0.5 + 0.5 - _S94);
 
-#line 385
+#line 440
     uint _S98 = spWidth_0(kernelContext_24);
     float width_0 = float(_S98);
 
-#line 386
+#line 441
     uint _S99 = spHeight_0(kernelContext_24);
     float height_0 = float(_S99);
     float fx_1 = floor(_S96 * width_0);
     float fy_1 = floor((1.0 - _S97) * height_0);
 
-#line 389
+#line 444
     bool _S100;
     if(fx_1 < 0.0)
     {
 
-#line 390
+#line 445
         _S100 = true;
 
-#line 390
+#line 445
     }
     else
     {
 
-#line 390
+#line 445
         _S100 = fy_1 < 0.0;
 
-#line 390
+#line 445
     }
 
-#line 390
+#line 445
     if(_S100)
     {
 
-#line 390
+#line 445
         _S100 = true;
 
-#line 390
+#line 445
     }
     else
     {
 
-#line 390
+#line 445
         _S100 = fx_1 >= width_0;
 
-#line 390
+#line 445
     }
 
-#line 390
+#line 445
     if(_S100)
     {
 
-#line 390
+#line 445
         _S100 = true;
 
-#line 390
+#line 445
     }
     else
     {
 
-#line 390
+#line 445
         _S100 = fy_1 >= height_0;
 
-#line 390
+#line 445
     }
 
-#line 390
+#line 445
     if(_S100)
     {
 
-#line 391
+#line 446
         return false;
     }
     *x_1 = uint(fx_1);
@@ -36386,300 +36934,300 @@ void spLoadCoefficients_0(uint slot_7, uint record_3, array<float3, int(9)> thre
 }
 
 
-#line 413
+#line 468
 bool spReproject_0(const SpProbe_0 thread* probe_2, float tolerance_1, array<float3, int(9)> thread* coefficients_2, float thread* history_1, uint thread* matched_0, KernelContext_0 thread* kernelContext_37)
 {
 
-#line 414
+#line 469
     uint k_1 = 0U;
     for(;;)
     {
 
-#line 415
+#line 470
         if(k_1 < 9U)
         {
         }
         else
         {
 
-#line 415
+#line 470
             break;
         }
 
-#line 416
+#line 471
         (*coefficients_2)[k_1] = float3(0.0, 0.0, 0.0);
 
-#line 415
+#line 470
         k_1 = k_1 + 1U;
 
-#line 415
+#line 470
     }
 
 
     *history_1 = 0.0;
     *matched_0 = 4294967295U;
 
-#line 419
+#line 474
     float3 _S113 = probe_2->position_4;
 
-#line 419
+#line 474
     bool _S114 = spInvalidated_0(probe_2->position_4, kernelContext_37);
     if(_S114)
     {
 
-#line 421
+#line 476
         return false;
     }
     thread uint x_3;
     thread uint y_3;
 
-#line 424
+#line 479
     bool _S115 = spLanding_0(_S113, &x_3, &y_3, kernelContext_37);
     if(!_S115)
     {
 
-#line 426
+#line 481
         return false;
     }
 
-#line 426
+#line 481
     uint _S116 = spSlot_0(kernelContext_37);
 
 
     uint previous_0 = 1U - _S116;
 
-#line 429
+#line 484
     float bestWeight_0 = 0.0;
 
-#line 429
+#line 484
     uint best_2 = 4294967295U;
 
-#line 429
+#line 484
     uint pass_0 = 0U;
 
 
     for(;;)
     {
 
-#line 432
+#line 487
         if(pass_0 < 2U)
         {
         }
         else
         {
 
-#line 432
+#line 487
             break;
         }
 
-#line 432
+#line 487
         SpTaps_0 _S117;
 
         if(pass_0 == 0U)
         {
 
-#line 434
+#line 489
             uint _S118 = spSpacing_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S119 = spTilesX_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S120 = spTilesY_0(kernelContext_37);
 
-#line 434
+#line 489
             _S117 = spBilinearTaps_0(x_3, y_3, _S118, _S119, _S120);
 
-#line 434
+#line 489
         }
         else
         {
 
-#line 434
+#line 489
             uint _S121 = spCell_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S122 = spCellsX_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S123 = spCellsY_0(kernelContext_37);
 
-#line 434
+#line 489
             _S117 = spBilinearTaps_0(x_3, y_3, _S121, _S122, _S123);
 
-#line 434
+#line 489
         }
 
-#line 434
+#line 489
         float bestWeight_1 = bestWeight_0;
 
-#line 434
+#line 489
         uint best_3 = best_2;
 
-#line 434
+#line 489
         uint tap_0 = 0U;
 
         for(;;)
         {
 
-#line 436
+#line 491
             if(tap_0 < (_S117.count_0))
             {
             }
             else
             {
 
-#line 436
+#line 491
                 break;
             }
 
-#line 434
+#line 489
             SpTaps_0 _S124 = _S117;
 
             uint _S125 = tap_0;
 
-#line 436
+#line 491
             uint record_4;
 
             if(pass_0 == 1U)
             {
 
-#line 438
+#line 493
                 uint _S126 = spTableIndex_0(previous_0, _S124.index_0[_S125], kernelContext_37);
                 uint device* _S127 = kernelContext_37->giResolve_0->slots_0+_S126;
 
-#line 439
+#line 494
                 uint slot_8 = *_S127;
                 if((*_S127) == 4294967295U)
                 {
 
-#line 441
+#line 496
                     tap_0 = tap_0 + 1U;
 
-#line 436
+#line 491
                     continue;
                 }
 
-#line 436
+#line 491
                 uint _S128 = spUniformCount_0(kernelContext_37);
 
-#line 436
+#line 491
                 record_4 = _S128 + slot_8;
 
             }
             else
             {
 
-#line 438
+#line 493
                 record_4 = _S124.index_0[_S125];
 
-#line 438
+#line 493
             }
 
-#line 438
+#line 493
             SpProbe_0 _S129 = spLoadProbe_0(previous_0, record_4, kernelContext_37);
 
-#line 446
+#line 501
             if((_S129.depth_0) <= 0.0)
             {
 
-#line 447
+#line 502
                 tap_0 = tap_0 + 1U;
 
-#line 436
+#line 491
                 continue;
             }
 
-#line 450
+#line 505
             float weight_2 = _S117.weight_0[tap_0] * spGeometryWeight_0(_S129.position_4, _S129.normal_3, _S113, probe_2->normal_3, probe_2->depth_0, tolerance_1);
 
-#line 450
+#line 505
             uint best_4;
 
-#line 450
+#line 505
             float bestWeight_2;
 
 
             if(weight_2 > bestWeight_1)
             {
 
-#line 453
+#line 508
                 bestWeight_2 = weight_2;
 
-#line 453
+#line 508
                 best_4 = record_4;
 
-#line 453
+#line 508
             }
             else
             {
 
-#line 453
+#line 508
                 bestWeight_2 = bestWeight_1;
 
-#line 453
+#line 508
                 best_4 = best_3;
 
-#line 453
+#line 508
             }
 
-#line 453
+#line 508
             bestWeight_1 = bestWeight_2;
 
-#line 453
+#line 508
             best_3 = best_4;
 
-#line 436
+#line 491
             tap_0 = tap_0 + 1U;
 
-#line 436
+#line 491
         }
 
-#line 432
+#line 487
         uint pass_1 = pass_0 + 1U;
 
-#line 432
+#line 487
         bestWeight_0 = bestWeight_1;
 
-#line 432
+#line 487
         best_2 = best_3;
 
-#line 432
+#line 487
         pass_0 = pass_1;
 
-#line 432
+#line 487
     }
 
-#line 432
+#line 487
     bool _S130;
 
-#line 459
+#line 514
     if(best_2 == 4294967295U)
     {
 
-#line 459
+#line 514
         _S130 = true;
 
-#line 459
+#line 514
     }
     else
     {
 
-#line 459
+#line 514
         _S130 = bestWeight_0 < 0.25;
 
-#line 459
+#line 514
     }
 
-#line 459
+#line 514
     if(_S130)
     {
 
-#line 460
+#line 515
         return false;
     }
 
-#line 460
+#line 515
     spLoadCoefficients_0(previous_0, best_2, coefficients_2, history_1, kernelContext_37);
 
 
@@ -36707,15 +37255,15 @@ float grUnit_0(uint hash_2)
 }
 
 
-#line 468 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 523 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 bool spProbeTraces_0(uint id_1, uint frame_1, float density_0)
 {
 
-#line 469
+#line 524
     if(density_0 >= 1.0)
     {
 
-#line 470
+#line 525
         return true;
     }
     return (grUnit_0(grHash_0(id_1, frame_1, 9U))) < density_0;
@@ -38959,45 +39507,45 @@ float grSkyVisibilityRay_0(float3 position_11, float3 normal_11, uint index_3, u
 }
 
 
-#line 528 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 583 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext_52)
 {
 
-#line 528
+#line 583
     uint _S258 = spSlot_0(kernelContext_52);
 
-#line 528
+#line 583
     bool allowed_0;
 
 
     if(record_9 == 0U)
     {
 
-#line 531
+#line 586
         allowed_0 = lane_0 == 0U;
 
-#line 531
+#line 586
     }
     else
     {
 
-#line 531
+#line 586
         allowed_0 = false;
 
-#line 531
+#line 586
     }
 
-#line 531
+#line 586
     if(allowed_0)
     {
 
-#line 532
+#line 587
         *(kernelContext_52->giResolve_0->slots_0+spCounter_0(1U - _S258)) = 0U;
 
-#line 531
+#line 586
     }
 
-#line 531
+#line 586
     uint _S259 = spUniformCount_0(kernelContext_52);
 
 
@@ -39005,43 +39553,43 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
     if(record_9 >= _S259)
     {
 
-#line 536
+#line 591
         uint _S260 = record_9 - _S259;
 
-#line 536
+#line 591
         uint _S261 = *(kernelContext_52->giResolve_0->slots_0+spCounter_0(_S258));
 
-#line 536
+#line 591
         uint _S262 = spCapacity_0(kernelContext_52);
 
-#line 536
+#line 591
         allowed_0 = _S260 >= (min(_S261, _S262));
 
-#line 535
+#line 590
     }
     else
     {
 
-#line 535
+#line 590
         allowed_0 = false;
 
-#line 535
+#line 590
     }
 
-#line 535
+#line 590
     if(allowed_0)
     {
         return;
     }
 
-#line 537
+#line 592
     SpProbe_0 _S263 = spLoadProbe_0(_S258, record_9, kernelContext_52);
 
 
     if((_S263.depth_0) <= 0.0)
     {
 
-#line 541
+#line 596
         return;
     }
     uint4 shape_1 = kernelContext_52->giResolve_0->constants_2[42U];
@@ -39051,85 +39599,85 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
 
     bool _S264 = lane_0 == 0U;
 
-#line 548
+#line 603
     uint cell_4;
 
-#line 548
+#line 603
     if(_S264)
     {
 
-#line 549
+#line 604
         thread array<float3, int(9)> previous_1;
         thread float history_3 = 0.0;
         thread uint matched_1 = 4294967295U;
         if(((shape_1.w) & 2U) != 0U)
         {
 
-#line 552
+#line 607
             allowed_0 = (kernelContext_52->giResolve_0->constants_2[5U].w) != 0U;
 
-#line 552
+#line 607
         }
         else
         {
 
-#line 552
+#line 607
             allowed_0 = false;
 
-#line 552
+#line 607
         }
 
-#line 552
+#line 607
         bool found_0;
         if(allowed_0)
         {
 
-#line 553
+#line 608
             float _S265 = weights_0.y;
 
-#line 553
+#line 608
             thread SpProbe_0 _S266 = _S263;
 
-#line 553
+#line 608
             bool _S267 = spReproject_0(&_S266, _S265, &previous_1, &history_3, &matched_1, kernelContext_52);
 
-#line 553
+#line 608
             found_0 = _S267;
 
-#line 553
+#line 608
         }
         else
         {
 
-#line 553
+#line 608
             found_0 = false;
 
-#line 553
+#line 608
         }
 
-#line 553
+#line 608
         cell_4 = 0U;
         for(;;)
         {
 
-#line 554
+#line 609
             if(cell_4 < 9U)
             {
             }
             else
             {
 
-#line 554
+#line 609
                 break;
             }
 
-#line 555
+#line 610
             (*kernelContext_52->spHistory_0)[cell_4] = previous_1[cell_4];
 
-#line 554
+#line 609
             cell_4 = cell_4 + 1U;
 
-#line 554
+#line 609
         }
 
 
@@ -39137,94 +39685,94 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
         if(found_0)
         {
 
-#line 558
+#line 613
             cell_4 = 1U;
 
-#line 558
+#line 613
         }
         else
         {
 
-#line 558
+#line 613
             cell_4 = 0U;
 
-#line 558
+#line 613
         }
 
-#line 558
+#line 613
         *kernelContext_52->spReprojected_0 = cell_4;
         float density_1 = (as_type<float>((kernelContext_52->giResolve_0->constants_2[1U].w)));
         if(found_0)
         {
 
-#line 560
+#line 615
             allowed_0 = !spProbeTraces_0(_S263.id_0, frame_4, density_1);
 
-#line 560
+#line 615
         }
         else
         {
 
-#line 560
+#line 615
             allowed_0 = false;
 
-#line 560
+#line 615
         }
 
-#line 560
+#line 615
         if(allowed_0)
         {
 
-#line 560
+#line 615
             cell_4 = matched_1;
 
-#line 560
+#line 615
         }
         else
         {
 
-#line 560
+#line 615
             cell_4 = 4294967295U;
 
-#line 560
+#line 615
         }
 
-#line 560
+#line 615
         *kernelContext_52->spCarried_0 = cell_4;
         if(cell_4 == 4294967295U)
         {
 
-#line 561
+#line 616
             float3 _S268 = _S263.normal_3;
             thread float4 diffuse_1;
             thread float4 specular_1;
 
-#line 563
+#line 618
             grSampleTraced_0(_S263.position_4, _S268, _S268, cacheFrame_2, &diffuse_1, &specular_1, kernelContext_52);
 
 
             *kernelContext_52->spStandIn_0 = diffuse_1;
             float _S269 = (as_type<float>((kernelContext_52->giResolve_0->constants_2[2U].y)));
 
-#line 567
+#line 622
             thread SpProbe_0 _S270 = _S263;
 
-#line 567
+#line 622
             float3 _S271 = spProbeOrigin_0(&_S270, _S269, kernelContext_52);
 
-#line 567
+#line 622
             *kernelContext_52->spOrigin_0 = _S271;
 
-#line 561
+#line 616
         }
 
-#line 548
+#line 603
     }
 
-#line 570
+#line 625
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-#line 570
+#line 625
     uint k_6;
     if((*kernelContext_52->spCarried_0) != 4294967295U)
     {
@@ -39232,53 +39780,53 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
         if(_S264)
         {
 
-#line 575
+#line 630
             thread array<float3, int(9)> kept_0;
 
-#line 575
+#line 630
             k_6 = 0U;
             for(;;)
             {
 
-#line 576
+#line 631
                 if(k_6 < 9U)
                 {
                 }
                 else
                 {
 
-#line 576
+#line 631
                     break;
                 }
 
-#line 577
+#line 632
                 kept_0[k_6] = (*kernelContext_52->spHistory_0)[k_6];
 
-#line 576
+#line 631
                 k_6 = k_6 + 1U;
 
-#line 576
+#line 631
             }
 
 
             float _S272 = *kernelContext_52->spHistoryCount_0;
 
-#line 579
+#line 634
             thread array<float3, int(9)> _S273 = kept_0;
 
-#line 579
+#line 634
             spStoreCoefficients_0(_S258, record_9, &_S273, _S272, kernelContext_52);
 
-#line 579
+#line 634
             thread array<float3, int(9)> _S274 = kept_0;
 
-#line 579
+#line 634
             spStoreFiltered_0(_S258, record_9, &_S274, kernelContext_52);
 
-#line 579
+#line 634
             uint _S275 = spRecordBase_0(1U - _S258, *kernelContext_52->spCarried_0, kernelContext_52);
 
-#line 579
+#line 634
             uint _S276 = spRecordBase_0(_S258, record_9, kernelContext_52);
 
 
@@ -39286,21 +39834,21 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
             *(kernelContext_52->giResolve_0->probes_1+(_S276 + 9U)) = *(kernelContext_52->giResolve_0->probes_1+(_S275 + 9U));
             *(kernelContext_52->giResolve_0->probes_1+(_S276 + 10U)) = *(kernelContext_52->giResolve_0->probes_1+(_S275 + 10U));
 
-#line 574
+#line 629
         }
 
-#line 586
+#line 641
         return;
     }
 
-#line 586
+#line 641
     float3 value_4;
 
 
     if(lane_0 < 16U)
     {
 
-#line 590
+#line 645
         float z_8 = (float(lane_0 / 4U) + 0.5) / 4.0;
 
         float3 direction_8 = spHemisphereDirection_0(_S263.normal_3, z_8, (float(lane_0 % 4U) + 0.5) / 4.0);
@@ -39308,136 +39856,136 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
         if((*kernelContext_52->spReprojected_0) != 0U)
         {
 
-#line 595
+#line 650
             thread array<float3, int(9)> previous_2;
 
-#line 595
+#line 650
             cell_4 = 0U;
             for(;;)
             {
 
-#line 596
+#line 651
                 if(cell_4 < 9U)
                 {
                 }
                 else
                 {
 
-#line 596
+#line 651
                     break;
                 }
 
-#line 597
+#line 652
                 previous_2[cell_4] = (*kernelContext_52->spHistory_0)[cell_4];
 
-#line 596
+#line 651
                 cell_4 = cell_4 + 1U;
 
-#line 596
+#line 651
             }
 
 
             float3 _S277 = float3(1.0, 1.0, 1.0);
 
-#line 599
+#line 654
             thread array<float3, int(9)> _S278 = previous_2;
 
-#line 599
+#line 654
             float3 _S279 = spEvaluate_0(&_S278, direction_8, _S277);
 
-#line 599
+#line 654
             value_4 = _S279;
 
-#line 594
+#line 649
         }
         else
         {
 
-#line 594
+#line 649
             float4 _S280 = gpSample_0(_S263.position_4, direction_8, cacheFrame_2, kernelContext_52);
 
-#line 594
+#line 649
             value_4 = _S280.xyz;
 
-#line 594
+#line 649
         }
 
-#line 603
+#line 658
         (*kernelContext_52->spWeights_0)[lane_0] = max(spLuminance_0(value_4), 0.0) * z_8;
 
-#line 589
+#line 644
     }
 
-#line 605
+#line 660
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-#line 605
+#line 660
     cell_4 = 0U;
 
-#line 605
+#line 660
     float guideTotal_0 = 0.0;
 
 
     for(;;)
     {
 
-#line 608
+#line 663
         if(cell_4 < 16U)
         {
         }
         else
         {
 
-#line 608
+#line 663
             break;
         }
 
-#line 609
+#line 664
         float guideTotal_1 = guideTotal_0 + (*kernelContext_52->spWeights_0)[cell_4];
 
-#line 608
+#line 663
         cell_4 = cell_4 + 1U;
 
-#line 608
+#line 663
         guideTotal_0 = guideTotal_1;
 
-#line 608
+#line 663
     }
 
-#line 608
+#line 663
     float guided_0;
 
 
     if(guideTotal_0 > 0.0)
     {
 
-#line 611
+#line 666
         guided_0 = gpClamp_0(weights_0.z, 0.0, 0.89999997615814209);
 
-#line 611
+#line 666
     }
     else
     {
 
-#line 611
+#line 666
         guided_0 = 0.0;
 
-#line 611
+#line 666
     }
     float uniformShare_0 = (1.0 - guided_0) * 0.5;
 
     uint _S281 = min(max(shape_1.x, 1U), 64U);
 
-#line 614
+#line 669
     float history_4;
 
-#line 614
+#line 669
     float openness_0;
 
     if(lane_0 < _S281)
     {
 
-#line 617
+#line 672
         uint hash_3 = grHash_0(_S263.id_0 * 64U + lane_0, frame_4, 8U);
         float u0_0 = grUnit_0(hash_3);
         float u1_0 = grUnit_0(hash_3 * 656542357U);
@@ -39447,151 +39995,151 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
         if(u0_0 >= uniformShare_0)
         {
 
-#line 623
+#line 678
             allowed_0 = u0_0 < (uniformShare_0 + uniformShare_0);
 
-#line 623
+#line 678
         }
         else
         {
 
-#line 623
+#line 678
             allowed_0 = false;
 
-#line 623
+#line 678
         }
 
-#line 623
+#line 678
         if(allowed_0)
         {
 
-#line 623
+#line 678
             history_4 = sqrt(u1_0);
 
-#line 623
+#line 678
             openness_0 = u2_0;
 
-#line 623
+#line 678
         }
         else
         {
 
-#line 625
+#line 680
             if(u0_0 >= (uniformShare_0 + uniformShare_0))
             {
 
-#line 626
+#line 681
                 float _S282 = (u0_0 - uniformShare_0 - uniformShare_0) / guided_0 * guideTotal_0;
 
-#line 626
+#line 681
                 cell_4 = 0U;
 
-#line 626
+#line 681
                 history_4 = 0.0;
 
 
                 for(;;)
                 {
 
-#line 629
+#line 684
                     if(cell_4 < 16U)
                     {
                     }
                     else
                     {
 
-#line 629
+#line 684
                         k_6 = 15U;
 
-#line 629
+#line 684
                         break;
                     }
 
-#line 630
+#line 685
                     float running_0 = history_4 + (*kernelContext_52->spWeights_0)[cell_4];
                     if(((*kernelContext_52->spWeights_0)[cell_4]) > 0.0)
                     {
 
-#line 631
+#line 686
                         allowed_0 = _S282 < running_0;
 
-#line 631
+#line 686
                     }
                     else
                     {
 
-#line 631
+#line 686
                         allowed_0 = false;
 
-#line 631
+#line 686
                     }
 
-#line 631
+#line 686
                     if(allowed_0)
                     {
 
-#line 631
+#line 686
                         k_6 = cell_4;
 
                         break;
                     }
 
-#line 629
+#line 684
                     cell_4 = cell_4 + 1U;
 
-#line 629
+#line 684
                     history_4 = running_0;
 
-#line 629
+#line 684
                 }
 
-#line 637
+#line 692
                 float _S283 = (float(k_6 % 4U) + u2_0) / 4.0;
 
-#line 637
+#line 692
                 history_4 = (float(k_6 / 4U) + u1_0) / 4.0;
 
-#line 637
+#line 692
                 openness_0 = _S283;
 
-#line 625
+#line 680
             }
             else
             {
 
-#line 625
+#line 680
                 history_4 = u1_0;
 
-#line 625
+#line 680
                 openness_0 = u2_0;
 
-#line 625
+#line 680
             }
 
-#line 623
+#line 678
         }
 
-#line 639
+#line 694
         float density_2 = uniformShare_0 / 6.28318548202514648 + uniformShare_0 * history_4 / 3.14159274101257324;
 
-#line 639
+#line 694
         float density_3;
 
         if(guided_0 > 0.0)
         {
 
-#line 641
+#line 696
             density_3 = density_2 + guided_0 * ((*kernelContext_52->spWeights_0)[spGuideCell_0(history_4, openness_0)] / guideTotal_0) * 2.5464789867401123;
 
-#line 641
+#line 696
         }
         else
         {
 
-#line 641
+#line 696
             density_3 = density_2;
 
-#line 641
+#line 696
         }
 
 
@@ -39600,154 +40148,154 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
         float3 direction_9 = spHemisphereDirection_0(_S263.normal_3, history_4, openness_0);
         bool _S285 = density_3 > 0.0;
 
-#line 647
+#line 702
         if(_S285)
         {
             uint excluded_1 = kernelContext_52->giResolve_0->constants_2[2U].w;
 
             float4 standIn_1 = *kernelContext_52->spStandIn_0;
 
-#line 651
+#line 706
             GrSample_0 _S286 = spProbeRay_0(*kernelContext_52->spOrigin_0, giNormalisedOr_0(direction_9, float3(0.0, 0.0, -1.0)), (as_type<float4>((kernelContext_52->giResolve_0->constants_2[2U]))).x, kernelContext_52);
 
 
             GrSample_0 _S287 = grSample_0(standIn_1.xyz, standIn_1.w, 3U);
 
-#line 654
+#line 709
             thread GrSample_0 _S288 = _S286;
 
-#line 654
+#line 709
             thread GrSample_0 _S289 = _S287;
 
-#line 654
+#line 709
 )cy_msl",
     R"cy_msl(            GrSample_0 _S290 = grGatherSample_0(&_S288, &_S289, excluded_1);
             if((_S290.source_0) != 0U)
             {
 
-#line 655
+#line 710
                 value_4 = _S290.radiance_0;
 
-#line 655
+#line 710
                 k_6 = 1U;
 
-#line 655
+#line 710
             }
             else
             {
 
-#line 655
+#line 710
                 value_4 = _S284;
 
-#line 655
+#line 710
                 k_6 = 0U;
 
-#line 655
+#line 710
             }
 
-#line 647
+#line 702
         }
         else
         {
 
-#line 647
+#line 702
             value_4 = _S284;
 
-#line 647
+#line 702
             k_6 = 0U;
 
-#line 647
+#line 702
         }
 
-#line 660
+#line 715
         (*kernelContext_52->spRayValue_0)[lane_0] = value_4;
         (*kernelContext_52->spRayDirection_0)[lane_0] = direction_9;
         if(_S285)
         {
 
-#line 662
+#line 717
             guideTotal_0 = 1.0 / (density_3 * float(_S281));
 
-#line 662
+#line 717
         }
         else
         {
 
-#line 662
+#line 717
             guideTotal_0 = 0.0;
 
-#line 662
+#line 717
         }
 
-#line 662
+#line 717
         (*kernelContext_52->spRayWeight_0)[lane_0] = guideTotal_0;
         (*kernelContext_52->spRayValid_0)[lane_0] = k_6;
 
-#line 616
+#line 671
     }
 
-#line 665
+#line 720
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if(lane_0 != 0U)
     {
 
-#line 667
+#line 722
         return;
     }
 
     thread array<float3, int(9)> sum_2;
 
-#line 670
+#line 725
     k_6 = 0U;
     for(;;)
     {
 
-#line 671
+#line 726
         if(k_6 < 9U)
         {
         }
         else
         {
 
-#line 671
+#line 726
             break;
         }
 
-#line 672
+#line 727
         sum_2[k_6] = float3(0.0, 0.0, 0.0);
 
-#line 671
+#line 726
         k_6 = k_6 + 1U;
 
-#line 671
+#line 726
     }
 
-#line 671
+#line 726
     uint ray_1 = 0U;
 
 
     for(;;)
     {
 
-#line 674
+#line 729
         if(ray_1 < _S281)
         {
         }
         else
         {
 
-#line 674
+#line 729
             break;
         }
 
-#line 675
+#line 730
         if(((*kernelContext_52->spRayValid_0)[ray_1]) == 0U)
         {
 
-#line 676
+#line 731
             ray_1 = ray_1 + 1U;
 
-#line 674
+#line 729
             continue;
         }
 
@@ -39756,264 +40304,264 @@ void spTrace_0(uint record_9, uint lane_0, KernelContext_0 thread* kernelContext
         spBasis_0((*kernelContext_52->spRayDirection_0)[ray_1], &basis_2);
         float _S291 = (*kernelContext_52->spRayWeight_0)[ray_1];
 
-#line 680
+#line 735
         k_6 = 0U;
         for(;;)
         {
 
-#line 681
+#line 736
             if(k_6 < 9U)
             {
             }
             else
             {
 
-#line 681
+#line 736
                 break;
             }
 
-#line 682
+#line 737
             sum_2[k_6] = sum_2[k_6] + (*kernelContext_52->spRayValue_0)[ray_1] * float3((basis_2[k_6] * _S291)) ;
 
-#line 681
+#line 736
             k_6 = k_6 + 1U;
 
-#line 681
+#line 736
         }
 
-#line 674
+#line 729
         ray_1 = ray_1 + 1U;
 
-#line 674
+#line 729
     }
 
-#line 686
+#line 741
     float frames_0 = float(max(shape_1.y, 1U));
     thread array<float3, int(9)> blended_0;
 
     if((*kernelContext_52->spReprojected_0) != 0U)
     {
 
-#line 690
+#line 745
         float _S292 = max(1.0 / (*kernelContext_52->spHistoryCount_0 + 1.0), 1.0 / frames_0);
 
-#line 690
+#line 745
         k_6 = 0U;
         for(;;)
         {
 
-#line 691
+#line 746
             if(k_6 < 9U)
             {
             }
             else
             {
 
-#line 691
+#line 746
                 break;
             }
 
-#line 692
+#line 747
             blended_0[k_6] = (*kernelContext_52->spHistory_0)[k_6] + (sum_2[k_6] - (*kernelContext_52->spHistory_0)[k_6]) * float3(_S292) ;
 
-#line 691
+#line 746
             k_6 = k_6 + 1U;
 
-#line 691
+#line 746
         }
 
-#line 691
+#line 746
         history_4 = min(*kernelContext_52->spHistoryCount_0 + 1.0, frames_0);
 
-#line 689
+#line 744
     }
     else
     {
 
-#line 689
+#line 744
         k_6 = 0U;
 
-#line 696
+#line 751
         for(;;)
         {
 
-#line 696
+#line 751
             if(k_6 < 9U)
             {
             }
             else
             {
 
-#line 696
+#line 751
                 break;
             }
 
-#line 697
+#line 752
             blended_0[k_6] = sum_2[k_6];
 
-#line 696
+#line 751
             k_6 = k_6 + 1U;
 
-#line 696
+#line 751
         }
 
-#line 696
+#line 751
         history_4 = 1.0;
 
-#line 689
+#line 744
     }
 
-#line 689
+#line 744
     thread array<float3, int(9)> _S293 = blended_0;
 
-#line 689
+#line 744
     spStoreCoefficients_0(_S258, record_9, &_S293, history_4, kernelContext_52);
 
-#line 689
+#line 744
     thread array<float3, int(9)> _S294 = blended_0;
 
-#line 689
+#line 744
     spStoreFiltered_0(_S258, record_9, &_S294, kernelContext_52);
 
-#line 689
+#line 744
     float _S295 = grFarFieldWeight_0(length(_S263.position_4 - (as_type<float3>((kernelContext_52->giResolve_0->constants_2[1U].xyz)))), kernelContext_52);
 
-#line 706
+#line 761
     uint skyRays_0 = kernelContext_52->giResolve_0->constants_2[2U].z;
     if(_S295 > 0.0)
     {
 
-#line 707
+#line 762
         allowed_0 = skyRays_0 > 0U;
 
-#line 707
+#line 762
     }
     else
     {
 
-#line 707
+#line 762
         allowed_0 = false;
 
-#line 707
+#line 762
     }
 
-#line 707
+#line 762
     if(allowed_0)
     {
 
-#line 708
+#line 763
         uint _S296 = (frame_4 + _S263.id_0) % skyRays_0;
 
-#line 708
+#line 763
         float _S297 = grSkyVisibilityRay_0(_S263.position_4, _S263.normal_3, _S296, skyRays_0, kernelContext_52);
 
-#line 708
+#line 763
         openness_0 = _S297;
 
-#line 707
+#line 762
     }
     else
     {
 
-#line 707
+#line 762
         openness_0 = 1.0;
 
-#line 707
+#line 762
     }
 
-#line 707
+#line 762
     uint _S298 = spRecordBase_0(_S258, record_9, kernelContext_52);
 
-#line 712
+#line 767
     *(kernelContext_52->giResolve_0->probes_1+(_S298 + 9U)) = *kernelContext_52->spStandIn_0;
     *(kernelContext_52->giResolve_0->probes_1+(_S298 + 10U)) = float4(openness_0, 0.0, 0.0, 0.0);
     return;
 }
 
 
-#line 36 "src/rendering/gi_gpu/shaders/gi_screen_probes.slang"
+#line 44 "src/rendering/gi_gpu/shaders/gi_screen_probes.slang"
 [[kernel]] void cyGiProbeTraceNarrow(uint3 group_0 [[threadgroup_position_in_grid]], uint3 lane_1 [[thread_position_in_threadgroup]], GiProbeSet_default_0 constant* giProbes_1 [[buffer(2)]], GiSceneSet_default_0 constant* giScene_1 [[buffer(0)]], GiResolveSet_default_0 constant* giResolve_1 [[buffer(3)]])
 {
 
-#line 36
+#line 44
     thread KernelContext_0 kernelContext_53;
 
-#line 36
+#line 44
     (&kernelContext_53)->giProbes_0 = giProbes_1;
 
-#line 36
+#line 44
     (&kernelContext_53)->giScene_0 = giScene_1;
 
-#line 36
+#line 44
     (&kernelContext_53)->giResolve_0 = giResolve_1;
 
-#line 36
+#line 44
     threadgroup array<float3, int(9)> spHistory_1;
 
-#line 36
+#line 44
     (&kernelContext_53)->spHistory_0 = &spHistory_1;
 
-#line 36
+#line 44
     threadgroup float spHistoryCount_1;
 
-#line 36
+#line 44
     (&kernelContext_53)->spHistoryCount_0 = &spHistoryCount_1;
 
-#line 36
+#line 44
     threadgroup uint spReprojected_1;
 
-#line 36
+#line 44
     (&kernelContext_53)->spReprojected_0 = &spReprojected_1;
 
-#line 36
+#line 44
     threadgroup uint spCarried_1;
 
-#line 36
+#line 44
     (&kernelContext_53)->spCarried_0 = &spCarried_1;
 
-#line 36
+#line 44
     threadgroup float4 spStandIn_1;
 
-#line 36
+#line 44
     (&kernelContext_53)->spStandIn_0 = &spStandIn_1;
 
-#line 36
+#line 44
     threadgroup float3 spOrigin_1;
 
-#line 36
+#line 44
     (&kernelContext_53)->spOrigin_0 = &spOrigin_1;
 
-#line 36
+#line 44
     threadgroup array<float, int(16)> spWeights_1;
 
-#line 36
+#line 44
     (&kernelContext_53)->spWeights_0 = &spWeights_1;
 
-#line 36
+#line 44
     threadgroup array<float3, int(64)> spRayValue_1;
 
-#line 36
+#line 44
     (&kernelContext_53)->spRayValue_0 = &spRayValue_1;
 
-#line 36
+#line 44
     threadgroup array<float3, int(64)> spRayDirection_1;
 
-#line 36
+#line 44
     (&kernelContext_53)->spRayDirection_0 = &spRayDirection_1;
 
-#line 36
+#line 44
     threadgroup array<float, int(64)> spRayWeight_1;
 
-#line 36
+#line 44
     (&kernelContext_53)->spRayWeight_0 = &spRayWeight_1;
 
-#line 36
+#line 44
     threadgroup array<uint, int(64)> spRayValid_1;
 
-#line 36
+#line 44
     (&kernelContext_53)->spRayValid_0 = &spRayValid_1;
 
-#line 36
+#line 44
     spTrace_0(group_0.x, lane_1.x, &kernelContext_53);
 
     return;
@@ -40135,7 +40683,7 @@ struct GiHardwareSet_default_0
 };
 
 
-#line 663 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 718 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 struct KernelContext_0
 {
     GiProbeSet_default_0 constant* giProbes_0;
@@ -40713,49 +41261,49 @@ GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_2, float3 direct
 }
 
 
-#line 503 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 558 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 GrSample_0 spProbeRay_0(float3 origin_1, float3 unit_0, float reach_0, KernelContext_0 thread* kernelContext_5)
 {
 
-#line 504
+#line 559
     uint cacheFrame_1 = kernelContext_5->giProbes_0->constants_0[24U].w;
 
-#line 504
+#line 559
     GiWorldHit_0 _S18 = GiHardwareTier_trace_0(origin_1, unit_0, reach_0, kernelContext_5);
 
-#line 504
+#line 559
     bool _S19;
 
     if(_S18.hit_0)
     {
 
-#line 506
+#line 561
         _S19 = (dot(_S18.normal_0, unit_0)) > 0.0;
 
-#line 506
+#line 561
     }
     else
     {
 
-#line 506
+#line 561
         _S19 = false;
 
-#line 506
+#line 561
     }
 
-#line 506
+#line 561
     if(_S19)
     {
 
-#line 507
+#line 562
         return grSample_0(float3(0.0, 0.0, 0.0), 0.0, 0U);
     }
     uint _S20 = GiHardwareTier_source_0();
 
-#line 509
+#line 564
     thread GiWorldHit_0 _S21 = _S18;
 
-#line 509
+#line 564
     GiTierSample_0 _S22 = gpWorldRadiance_0(&_S21, unit_0, _S20, cacheFrame_1, kernelContext_5);
     return grSample_0(_S22.radiance_2, _S22.confidence_3, _S22.source_2);
 }
@@ -41068,125 +41616,125 @@ float giDistance_0(float3 p_1, KernelContext_0 thread* kernelContext_11)
 }
 
 
-#line 478 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 533 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 float3 spProbeOrigin_0(const SpProbe_0 thread* probe_0, float lift_0, KernelContext_0 thread* kernelContext_12)
 {
 
-#line 478
+#line 533
     uint _S49 = giLevelCount_0(kernelContext_12);
     if(_S49 == 0U)
     {
 
-#line 480
+#line 535
         return probe_0->position_2 + probe_0->normal_4 * float3(lift_0) ;
     }
 
-#line 480
+#line 535
     float _S50 = giFinestVoxel_0(kernelContext_12);
 
-#line 480
+#line 535
     float clearance_0;
 
 
     if((GiHardwareTier_source_0()) == 7U)
     {
 
-#line 483
+#line 538
         clearance_0 = lift_0;
 
-#line 483
+#line 538
     }
     else
     {
 
-#line 483
+#line 538
         clearance_0 = max(lift_0, _S50);
 
-#line 483
+#line 538
     }
 
-#line 483
+#line 538
     float3 _S51 = probe_0->normal_4;
     float3 origin_3 = probe_0->position_2 + probe_0->normal_4 * float3(clearance_0) ;
     if(_S50 <= 0.0)
     {
 
-#line 486
+#line 541
         return origin_3;
     }
 
-#line 486
+#line 541
     float3 origin_4 = origin_3;
 
-#line 486
+#line 541
     uint step_0 = 0U;
 
     for(;;)
     {
 
-#line 488
+#line 543
         if(step_0 < 4U)
         {
         }
         else
         {
 
-#line 488
+#line 543
             break;
         }
 
-#line 488
+#line 543
         float _S52 = giDistance_0(origin_4, kernelContext_12);
 
         if(_S52 >= clearance_0)
         {
 
-#line 491
+#line 546
             break;
         }
 
         float3 _S53 = float3(_S50, 0.0, 0.0);
 
-#line 494
+#line 549
         float _S54 = giDistance_0(origin_4 + _S53, kernelContext_12);
 
-#line 494
+#line 549
         float _S55 = giDistance_0(origin_4 - _S53, kernelContext_12);
 
-#line 494
+#line 549
         float _S56 = _S54 - _S55;
         float3 _S57 = float3(0.0, _S50, 0.0);
 
-#line 495
+#line 550
         float _S58 = giDistance_0(origin_4 + _S57, kernelContext_12);
 
-#line 495
+#line 550
         float _S59 = giDistance_0(origin_4 - _S57, kernelContext_12);
 
-#line 495
+#line 550
         float _S60 = _S58 - _S59;
         float3 _S61 = float3(0.0, 0.0, _S50);
 
-#line 496
+#line 551
         float _S62 = giDistance_0(origin_4 + _S61, kernelContext_12);
 
-#line 496
+#line 551
         float _S63 = giDistance_0(origin_4 - _S61, kernelContext_12);
         float3 _S64 = origin_4 + giNormalisedOr_0(float3(_S56, _S60, _S62 - _S63), _S51) * float3((clearance_0 - _S52)) ;
 
-#line 488
+#line 543
         uint step_1 = step_0 + 1U;
 
-#line 488
+#line 543
         origin_4 = _S64;
 
-#line 488
+#line 543
         step_0 = step_1;
 
-#line 488
+#line 543
     }
 
-#line 499
+#line 554
     return origin_4;
 }
 
@@ -41288,153 +41836,153 @@ SpProbe_0 spLoadProbe_0(uint slot_4, uint record_2, KernelContext_0 thread* kern
 }
 
 
-#line 399
+#line 454
 bool spInvalidated_0(float3 point_0, KernelContext_0 thread* kernelContext_21)
 {
 
-#line 400
+#line 455
     uint _S71 = min(kernelContext_21->giResolve_0->constants_2[26U].x, 4U);
 
-#line 400
+#line 455
     uint region_0 = 0U;
     for(;;)
     {
 
-#line 401
+#line 456
         if(region_0 < _S71)
         {
         }
         else
         {
 
-#line 401
+#line 456
             break;
         }
 
-#line 402
+#line 457
         uint _S72 = region_0 * 2U;
 
-#line 402
+#line 457
         float3 lo_1 = (as_type<float3>((kernelContext_21->giResolve_0->constants_2[27U + _S72].xyz)));
         float3 hi_1 = (as_type<float3>((kernelContext_21->giResolve_0->constants_2[28U + _S72].xyz)));
         float _S73 = point_0.x;
 
-#line 404
+#line 459
         bool _S74;
 
-#line 404
+#line 459
         if(_S73 >= (lo_1.x))
         {
 
-#line 404
+#line 459
             _S74 = (point_0.y) >= (lo_1.y);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S74 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S75;
 
-#line 404
+#line 459
         if(_S74)
         {
 
-#line 404
+#line 459
             _S75 = (point_0.z) >= (lo_1.z);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S75 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S76;
 
-#line 404
+#line 459
         if(_S75)
         {
 
-#line 404
+#line 459
             _S76 = _S73 <= (hi_1.x);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S76 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S77;
 
-#line 404
+#line 459
         if(_S76)
         {
 
-#line 404
+#line 459
             _S77 = (point_0.y) <= (hi_1.y);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S77 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S78;
         if(_S77)
         {
 
-#line 405
+#line 460
             _S78 = (point_0.z) <= (hi_1.z);
 
-#line 405
+#line 460
         }
         else
         {
 
-#line 405
+#line 460
             _S78 = false;
 
-#line 405
+#line 460
         }
 
-#line 404
+#line 459
         if(_S78)
         {
             return true;
         }
 
-#line 401
+#line 456
         region_0 = region_0 + 1U;
 
-#line 401
+#line 456
     }
 
-#line 409
+#line 464
     return false;
 }
 
@@ -41457,50 +42005,50 @@ uint spHeight_0(KernelContext_0 thread* kernelContext_23)
 }
 
 
-#line 359
+#line 414
 bool spLanding_0(float3 position_3, uint thread* x_1, uint thread* y_1, KernelContext_0 thread* kernelContext_24)
 {
 
-#line 360
+#line 415
     *x_1 = 0U;
     *y_1 = 0U;
 
-#line 361
+#line 416
     float4 _S79 = float4(position_3.x) ;
 
-#line 361
+#line 416
     float4 _S80 = float4(position_3.y) ;
 
-#line 361
+#line 416
     float4 _S81 = float4(position_3.z) ;
 
-#line 366
+#line 421
     float4 clip_0 = (as_type<float4>((kernelContext_24->giResolve_0->constants_2[6U]))) * _S79 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[7U]))) * _S80 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[8U]))) * _S81 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[9U])));
     float _S82 = clip_0.w;
 
-#line 367
+#line 422
     if(_S82 <= 9.99999993922529029e-09)
     {
 
-#line 368
+#line 423
         return false;
     }
     float inverse_0 = 1.0 / _S82;
 
     float _S83 = clip_0.x * inverse_0 * 0.5 + 0.5;
 
-#line 372
+#line 427
     float _S84 = clip_0.y * inverse_0 * 0.5 + 0.5;
 
-#line 377
+#line 432
     float4 clip_1 = (as_type<float4>((kernelContext_24->giResolve_0->constants_2[10U]))) * _S79 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[11U]))) * _S80 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[12U]))) * _S81 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[13U])));
     float _S85 = clip_1.w;
 
-#line 378
+#line 433
     if(_S85 <= 9.99999993922529029e-09)
     {
 
-#line 379
+#line 434
         return false;
     }
     float inverse_1 = 1.0 / _S85;
@@ -41509,79 +42057,79 @@ bool spLanding_0(float3 position_3, uint thread* x_1, uint thread* y_1, KernelCo
 
     float _S86 = _S83 + (clip_1.x * inverse_1 * 0.5 + 0.5 - _S83);
 
-#line 385
+#line 440
     float _S87 = _S84 + (clip_1.y * inverse_1 * 0.5 + 0.5 - _S84);
 
-#line 385
+#line 440
     uint _S88 = spWidth_0(kernelContext_24);
     float width_0 = float(_S88);
 
-#line 386
+#line 441
     uint _S89 = spHeight_0(kernelContext_24);
     float height_0 = float(_S89);
     float fx_1 = floor(_S86 * width_0);
     float fy_1 = floor((1.0 - _S87) * height_0);
 
-#line 389
+#line 444
     bool _S90;
     if(fx_1 < 0.0)
     {
 
-#line 390
+#line 445
         _S90 = true;
 
-#line 390
+#line 445
     }
     else
     {
 
-#line 390
+#line 445
         _S90 = fy_1 < 0.0;
 
-#line 390
+#line 445
     }
 
-#line 390
+#line 445
     if(_S90)
     {
 
-#line 390
+#line 445
         _S90 = true;
 
-#line 390
+#line 445
     }
     else
     {
 
-#line 390
+#line 445
         _S90 = fx_1 >= width_0;
 
-#line 390
+#line 445
     }
 
-#line 390
+#line 445
     if(_S90)
     {
 
-#line 390
+#line 445
         _S90 = true;
 
-#line 390
+#line 445
     }
     else
     {
 
-#line 390
+#line 445
         _S90 = fy_1 >= height_0;
 
-#line 390
+#line 445
     }
 
-#line 390
+#line 445
     if(_S90)
     {
 
-#line 391
+#line 446
         return false;
     }
     *x_1 = uint(fx_1);
@@ -41996,300 +42544,300 @@ void spLoadCoefficients_0(uint slot_7, uint record_4, array<float3, int(9)> thre
 }
 
 
-#line 413
+#line 468
 bool spReproject_0(const SpProbe_0 thread* probe_2, float tolerance_1, array<float3, int(9)> thread* coefficients_2, float thread* history_1, uint thread* matched_0, KernelContext_0 thread* kernelContext_37)
 {
 
-#line 414
+#line 469
     uint k_1 = 0U;
     for(;;)
     {
 
-#line 415
+#line 470
         if(k_1 < 9U)
         {
         }
         else
         {
 
-#line 415
+#line 470
             break;
         }
 
-#line 416
+#line 471
         (*coefficients_2)[k_1] = float3(0.0, 0.0, 0.0);
 
-#line 415
+#line 470
         k_1 = k_1 + 1U;
 
-#line 415
+#line 470
     }
 
 
     *history_1 = 0.0;
     *matched_0 = 4294967295U;
 
-#line 419
+#line 474
     float3 _S103 = probe_2->position_2;
 
-#line 419
+#line 474
     bool _S104 = spInvalidated_0(probe_2->position_2, kernelContext_37);
     if(_S104)
     {
 
-#line 421
+#line 476
         return false;
     }
     thread uint x_3;
     thread uint y_3;
 
-#line 424
+#line 479
     bool _S105 = spLanding_0(_S103, &x_3, &y_3, kernelContext_37);
     if(!_S105)
     {
 
-#line 426
+#line 481
         return false;
     }
 
-#line 426
+#line 481
     uint _S106 = spSlot_0(kernelContext_37);
 
 
     uint previous_0 = 1U - _S106;
 
-#line 429
+#line 484
     float bestWeight_0 = 0.0;
 
-#line 429
+#line 484
     uint best_2 = 4294967295U;
 
-#line 429
+#line 484
     uint pass_0 = 0U;
 
 
     for(;;)
     {
 
-#line 432
+#line 487
         if(pass_0 < 2U)
         {
         }
         else
         {
 
-#line 432
+#line 487
             break;
         }
 
-#line 432
+#line 487
         SpTaps_0 _S107;
 
         if(pass_0 == 0U)
         {
 
-#line 434
+#line 489
             uint _S108 = spSpacing_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S109 = spTilesX_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S110 = spTilesY_0(kernelContext_37);
 
-#line 434
+#line 489
             _S107 = spBilinearTaps_0(x_3, y_3, _S108, _S109, _S110);
 
-#line 434
+#line 489
         }
         else
         {
 
-#line 434
+#line 489
             uint _S111 = spCell_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S112 = spCellsX_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S113 = spCellsY_0(kernelContext_37);
 
-#line 434
+#line 489
             _S107 = spBilinearTaps_0(x_3, y_3, _S111, _S112, _S113);
 
-#line 434
+#line 489
         }
 
-#line 434
+#line 489
         float bestWeight_1 = bestWeight_0;
 
-#line 434
+#line 489
         uint best_3 = best_2;
 
-#line 434
+#line 489
         uint tap_0 = 0U;
 
         for(;;)
         {
 
-#line 436
+#line 491
             if(tap_0 < (_S107.count_0))
             {
             }
             else
             {
 
-#line 436
+#line 491
                 break;
             }
 
-#line 434
+#line 489
             SpTaps_0 _S114 = _S107;
 
             uint _S115 = tap_0;
 
-#line 436
+#line 491
             uint record_5;
 
             if(pass_0 == 1U)
             {
 
-#line 438
+#line 493
                 uint _S116 = spTableIndex_0(previous_0, _S114.index_0[_S115], kernelContext_37);
                 uint device* _S117 = kernelContext_37->giResolve_0->slots_0+_S116;
 
-#line 439
+#line 494
                 uint slot_8 = *_S117;
                 if((*_S117) == 4294967295U)
                 {
 
-#line 441
+#line 496
                     tap_0 = tap_0 + 1U;
 
-#line 436
+#line 491
                     continue;
                 }
 
-#line 436
+#line 491
                 uint _S118 = spUniformCount_0(kernelContext_37);
 
-#line 436
+#line 491
                 record_5 = _S118 + slot_8;
 
             }
             else
             {
 
-#line 438
+#line 493
                 record_5 = _S114.index_0[_S115];
 
-#line 438
+#line 493
             }
 
-#line 438
+#line 493
             SpProbe_0 _S119 = spLoadProbe_0(previous_0, record_5, kernelContext_37);
 
-#line 446
+#line 501
             if((_S119.depth_0) <= 0.0)
             {
 
-#line 447
+#line 502
                 tap_0 = tap_0 + 1U;
 
-#line 436
+#line 491
                 continue;
             }
 
-#line 450
+#line 505
             float weight_2 = _S107.weight_0[tap_0] * spGeometryWeight_0(_S119.position_2, _S119.normal_4, _S103, probe_2->normal_4, probe_2->depth_0, tolerance_1);
 
-#line 450
+#line 505
             uint best_4;
 
-#line 450
+#line 505
             float bestWeight_2;
 
 
             if(weight_2 > bestWeight_1)
             {
 
-#line 453
+#line 508
                 bestWeight_2 = weight_2;
 
-#line 453
+#line 508
                 best_4 = record_5;
 
-#line 453
+#line 508
             }
             else
             {
 
-#line 453
+#line 508
                 bestWeight_2 = bestWeight_1;
 
-#line 453
+#line 508
                 best_4 = best_3;
 
-#line 453
+#line 508
             }
 
-#line 453
+#line 508
             bestWeight_1 = bestWeight_2;
 
-#line 453
+#line 508
             best_3 = best_4;
 
-#line 436
+#line 491
             tap_0 = tap_0 + 1U;
 
-#line 436
+#line 491
         }
 
-#line 432
+#line 487
         uint pass_1 = pass_0 + 1U;
 
-#line 432
+#line 487
         bestWeight_0 = bestWeight_1;
 
-#line 432
+#line 487
         best_2 = best_3;
 
-#line 432
+#line 487
         pass_0 = pass_1;
 
-#line 432
+#line 487
     }
 
-#line 432
+#line 487
     bool _S120;
 
-#line 459
+#line 514
     if(best_2 == 4294967295U)
     {
 
-#line 459
+#line 514
         _S120 = true;
 
-#line 459
+#line 514
     }
     else
     {
 
-#line 459
+#line 514
         _S120 = bestWeight_0 < 0.25;
 
-#line 459
+#line 514
     }
 
-#line 459
+#line 514
     if(_S120)
     {
 
-#line 460
+#line 515
         return false;
     }
 
-#line 460
+#line 515
     spLoadCoefficients_0(previous_0, best_2, coefficients_2, history_1, kernelContext_37);
 
 
@@ -42317,15 +42865,15 @@ float grUnit_0(uint hash_2)
 }
 
 
-#line 468 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 523 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 bool spProbeTraces_0(uint id_1, uint frame_1, float density_0)
 {
 
-#line 469
+#line 524
     if(density_0 >= 1.0)
     {
 
-#line 470
+#line 525
         return true;
     }
     return (grUnit_0(grHash_0(id_1, frame_1, 9U))) < density_0;
@@ -44728,45 +45276,45 @@ float grSkyVisibilityRay_0(float3 position_11, float3 normal_13, uint index_3, u
 }
 
 
-#line 528 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 583 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContext_53)
 {
 
-#line 528
+#line 583
     uint _S265 = spSlot_0(kernelContext_53);
 
-#line 528
+#line 583
     bool allowed_0;
 
 
     if(record_10 == 0U)
     {
 
-#line 531
+#line 586
         allowed_0 = lane_0 == 0U;
 
-#line 531
+#line 586
     }
     else
     {
 
-#line 531
+#line 586
         allowed_0 = false;
 
-#line 531
+#line 586
     }
 
-#line 531
+#line 586
     if(allowed_0)
     {
 
-#line 532
+#line 587
         *(kernelContext_53->giResolve_0->slots_0+spCounter_0(1U - _S265)) = 0U;
 
-#line 531
+#line 586
     }
 
-#line 531
+#line 586
     uint _S266 = spUniformCount_0(kernelContext_53);
 
 
@@ -44774,43 +45322,43 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
     if(record_10 >= _S266)
     {
 
-#line 536
+#line 591
         uint _S267 = record_10 - _S266;
 
-#line 536
+#line 591
         uint _S268 = *(kernelContext_53->giResolve_0->slots_0+spCounter_0(_S265));
 
-#line 536
+#line 591
         uint _S269 = spCapacity_0(kernelContext_53);
 
-#line 536
+#line 591
         allowed_0 = _S267 >= (min(_S268, _S269));
 
-#line 535
+#line 590
     }
     else
     {
 
-#line 535
+#line 590
         allowed_0 = false;
 
-#line 535
+#line 590
     }
 
-#line 535
+#line 590
     if(allowed_0)
     {
         return;
     }
 
-#line 537
+#line 592
     SpProbe_0 _S270 = spLoadProbe_0(_S265, record_10, kernelContext_53);
 
 
     if((_S270.depth_0) <= 0.0)
     {
 
-#line 541
+#line 596
         return;
     }
     uint4 shape_1 = kernelContext_53->giResolve_0->constants_2[42U];
@@ -44820,85 +45368,85 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
 
     bool _S271 = lane_0 == 0U;
 
-#line 548
+#line 603
     uint cell_4;
 
-#line 548
+#line 603
     if(_S271)
     {
 
-#line 549
+#line 604
         thread array<float3, int(9)> previous_1;
         thread float history_3 = 0.0;
         thread uint matched_1 = 4294967295U;
         if(((shape_1.w) & 2U) != 0U)
         {
 
-#line 552
+#line 607
             allowed_0 = (kernelContext_53->giResolve_0->constants_2[5U].w) != 0U;
 
-#line 552
+#line 607
         }
         else
         {
 
-#line 552
+#line 607
             allowed_0 = false;
 
-#line 552
+#line 607
         }
 
-#line 552
+#line 607
         bool found_0;
         if(allowed_0)
         {
 
-#line 553
+#line 608
             float _S272 = weights_0.y;
 
-#line 553
+#line 608
             thread SpProbe_0 _S273 = _S270;
 
-#line 553
+#line 608
             bool _S274 = spReproject_0(&_S273, _S272, &previous_1, &history_3, &matched_1, kernelContext_53);
 
-#line 553
+#line 608
             found_0 = _S274;
 
-#line 553
+#line 608
         }
         else
         {
 
-#line 553
+#line 608
             found_0 = false;
 
-#line 553
+#line 608
         }
 
-#line 553
+#line 608
         cell_4 = 0U;
         for(;;)
         {
 
-#line 554
+#line 609
             if(cell_4 < 9U)
             {
             }
             else
             {
 
-#line 554
+#line 609
                 break;
             }
 
-#line 555
+#line 610
             (*kernelContext_53->spHistory_0)[cell_4] = previous_1[cell_4];
 
-#line 554
+#line 609
             cell_4 = cell_4 + 1U;
 
-#line 554
+#line 609
         }
 
 
@@ -44906,94 +45454,94 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
         if(found_0)
         {
 
-#line 558
+#line 613
             cell_4 = 1U;
 
-#line 558
+#line 613
         }
         else
         {
 
-#line 558
+#line 613
             cell_4 = 0U;
 
-#line 558
+#line 613
         }
 
-#line 558
+#line 613
         *kernelContext_53->spReprojected_0 = cell_4;
         float density_1 = (as_type<float>((kernelContext_53->giResolve_0->constants_2[1U].w)));
         if(found_0)
         {
 
-#line 560
+#line 615
             allowed_0 = !spProbeTraces_0(_S270.id_0, frame_4, density_1);
 
-#line 560
+#line 615
         }
         else
         {
 
-#line 560
+#line 615
             allowed_0 = false;
 
-#line 560
+#line 615
         }
 
-#line 560
+#line 615
         if(allowed_0)
         {
 
-#line 560
+#line 615
             cell_4 = matched_1;
 
-#line 560
+#line 615
         }
         else
         {
 
-#line 560
+#line 615
             cell_4 = 4294967295U;
 
-#line 560
+#line 615
         }
 
-#line 560
+#line 615
         *kernelContext_53->spCarried_0 = cell_4;
         if(cell_4 == 4294967295U)
         {
 
-#line 561
+#line 616
             float3 _S275 = _S270.normal_4;
             thread float4 diffuse_1;
             thread float4 specular_1;
 
-#line 563
+#line 618
             grSampleTraced_0(_S270.position_2, _S275, _S275, cacheFrame_2, &diffuse_1, &specular_1, kernelContext_53);
 
 
             *kernelContext_53->spStandIn_0 = diffuse_1;
             float _S276 = (as_type<float>((kernelContext_53->giResolve_0->constants_2[2U].y)));
 
-#line 567
+#line 622
             thread SpProbe_0 _S277 = _S270;
 
-#line 567
+#line 622
             float3 _S278 = spProbeOrigin_0(&_S277, _S276, kernelContext_53);
 
-#line 567
+#line 622
             *kernelContext_53->spOrigin_0 = _S278;
 
-#line 561
+#line 616
         }
 
-#line 548
+#line 603
     }
 
-#line 570
+#line 625
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-#line 570
+#line 625
     uint k_6;
     if((*kernelContext_53->spCarried_0) != 4294967295U)
     {
@@ -45001,53 +45549,53 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
         if(_S271)
         {
 
-#line 575
+#line 630
             thread array<float3, int(9)> kept_0;
 
-#line 575
+#line 630
             k_6 = 0U;
             for(;;)
             {
 
-#line 576
+#line 631
                 if(k_6 < 9U)
                 {
                 }
                 else
                 {
 
-#line 576
+#line 631
                     break;
                 }
 
-#line 577
+#line 632
                 kept_0[k_6] = (*kernelContext_53->spHistory_0)[k_6];
 
-#line 576
+#line 631
                 k_6 = k_6 + 1U;
 
-#line 576
+#line 631
             }
 
 
             float _S279 = *kernelContext_53->spHistoryCount_0;
 
-#line 579
+#line 634
             thread array<float3, int(9)> _S280 = kept_0;
 
-#line 579
+#line 634
             spStoreCoefficients_0(_S265, record_10, &_S280, _S279, kernelContext_53);
 
-#line 579
+#line 634
             thread array<float3, int(9)> _S281 = kept_0;
 
-#line 579
+#line 634
             spStoreFiltered_0(_S265, record_10, &_S281, kernelContext_53);
 
-#line 579
+#line 634
             uint _S282 = spRecordBase_0(1U - _S265, *kernelContext_53->spCarried_0, kernelContext_53);
 
-#line 579
+#line 634
             uint _S283 = spRecordBase_0(_S265, record_10, kernelContext_53);
 
 
@@ -45055,21 +45603,21 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
             *(kernelContext_53->giResolve_0->probes_1+(_S283 + 9U)) = *(kernelContext_53->giResolve_0->probes_1+(_S282 + 9U));
             *(kernelContext_53->giResolve_0->probes_1+(_S283 + 10U)) = *(kernelContext_53->giResolve_0->probes_1+(_S282 + 10U));
 
-#line 574
+#line 629
         }
 
-#line 586
+#line 641
         return;
     }
 
-#line 586
+#line 641
     float3 value_4;
 
 
     if(lane_0 < 16U)
     {
 
-#line 590
+#line 645
         float z_8 = (float(lane_0 / 4U) + 0.5) / 4.0;
 
         float3 direction_8 = spHemisphereDirection_0(_S270.normal_4, z_8, (float(lane_0 % 4U) + 0.5) / 4.0);
@@ -45077,15 +45625,15 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
         if((*kernelContext_53->spReprojected_0) != 0U)
         {
 
-#line 595
+#line 650
             thread array<float3, int(9)> previous_2;
 
-#line 595
+#line 650
             cell_4 = 0U;
             for(;;)
             {
 
-#line 596
+#line 651
                 if(cell_4 < 9U)
                 {
                 }
@@ -45093,121 +45641,121 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
     R"cy_msl(                else
                 {
 
-#line 596
+#line 651
                     break;
                 }
 
-#line 597
+#line 652
                 previous_2[cell_4] = (*kernelContext_53->spHistory_0)[cell_4];
 
-#line 596
+#line 651
                 cell_4 = cell_4 + 1U;
 
-#line 596
+#line 651
             }
 
 
             float3 _S284 = float3(1.0, 1.0, 1.0);
 
-#line 599
+#line 654
             thread array<float3, int(9)> _S285 = previous_2;
 
-#line 599
+#line 654
             float3 _S286 = spEvaluate_0(&_S285, direction_8, _S284);
 
-#line 599
+#line 654
             value_4 = _S286;
 
-#line 594
+#line 649
         }
         else
         {
 
-#line 594
+#line 649
             float4 _S287 = gpSample_0(_S270.position_2, direction_8, cacheFrame_2, kernelContext_53);
 
-#line 594
+#line 649
             value_4 = _S287.xyz;
 
-#line 594
+#line 649
         }
 
-#line 603
+#line 658
         (*kernelContext_53->spWeights_0)[lane_0] = max(spLuminance_0(value_4), 0.0) * z_8;
 
-#line 589
+#line 644
     }
 
-#line 605
+#line 660
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-#line 605
+#line 660
     cell_4 = 0U;
 
-#line 605
+#line 660
     float guideTotal_0 = 0.0;
 
 
     for(;;)
     {
 
-#line 608
+#line 663
         if(cell_4 < 16U)
         {
         }
         else
         {
 
-#line 608
+#line 663
             break;
         }
 
-#line 609
+#line 664
         float guideTotal_1 = guideTotal_0 + (*kernelContext_53->spWeights_0)[cell_4];
 
-#line 608
+#line 663
         cell_4 = cell_4 + 1U;
 
-#line 608
+#line 663
         guideTotal_0 = guideTotal_1;
 
-#line 608
+#line 663
     }
 
-#line 608
+#line 663
     float guided_0;
 
 
     if(guideTotal_0 > 0.0)
     {
 
-#line 611
+#line 666
         guided_0 = gpClamp_0(weights_0.z, 0.0, 0.89999997615814209);
 
-#line 611
+#line 666
     }
     else
     {
 
-#line 611
+#line 666
         guided_0 = 0.0;
 
-#line 611
+#line 666
     }
     float uniformShare_0 = (1.0 - guided_0) * 0.5;
 
     uint _S288 = min(max(shape_1.x, 1U), 64U);
 
-#line 614
+#line 669
     float history_4;
 
-#line 614
+#line 669
     float openness_0;
 
     if(lane_0 < _S288)
     {
 
-#line 617
+#line 672
         uint hash_3 = grHash_0(_S270.id_0 * 64U + lane_0, frame_4, 8U);
         float u0_0 = grUnit_0(hash_3);
         float u1_0 = grUnit_0(hash_3 * 656542357U);
@@ -45217,151 +45765,151 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
         if(u0_0 >= uniformShare_0)
         {
 
-#line 623
+#line 678
             allowed_0 = u0_0 < (uniformShare_0 + uniformShare_0);
 
-#line 623
+#line 678
         }
         else
         {
 
-#line 623
+#line 678
             allowed_0 = false;
 
-#line 623
+#line 678
         }
 
-#line 623
+#line 678
         if(allowed_0)
         {
 
-#line 623
+#line 678
             history_4 = sqrt(u1_0);
 
-#line 623
+#line 678
             openness_0 = u2_0;
 
-#line 623
+#line 678
         }
         else
         {
 
-#line 625
+#line 680
             if(u0_0 >= (uniformShare_0 + uniformShare_0))
             {
 
-#line 626
+#line 681
                 float _S289 = (u0_0 - uniformShare_0 - uniformShare_0) / guided_0 * guideTotal_0;
 
-#line 626
+#line 681
                 cell_4 = 0U;
 
-#line 626
+#line 681
                 history_4 = 0.0;
 
 
                 for(;;)
                 {
 
-#line 629
+#line 684
                     if(cell_4 < 16U)
                     {
                     }
                     else
                     {
 
-#line 629
+#line 684
                         k_6 = 15U;
 
-#line 629
+#line 684
                         break;
                     }
 
-#line 630
+#line 685
                     float running_0 = history_4 + (*kernelContext_53->spWeights_0)[cell_4];
                     if(((*kernelContext_53->spWeights_0)[cell_4]) > 0.0)
                     {
 
-#line 631
+#line 686
                         allowed_0 = _S289 < running_0;
 
-#line 631
+#line 686
                     }
                     else
                     {
 
-#line 631
+#line 686
                         allowed_0 = false;
 
-#line 631
+#line 686
                     }
 
-#line 631
+#line 686
                     if(allowed_0)
                     {
 
-#line 631
+#line 686
                         k_6 = cell_4;
 
                         break;
                     }
 
-#line 629
+#line 684
                     cell_4 = cell_4 + 1U;
 
-#line 629
+#line 684
                     history_4 = running_0;
 
-#line 629
+#line 684
                 }
 
-#line 637
+#line 692
                 float _S290 = (float(k_6 % 4U) + u2_0) / 4.0;
 
-#line 637
+#line 692
                 history_4 = (float(k_6 / 4U) + u1_0) / 4.0;
 
-#line 637
+#line 692
                 openness_0 = _S290;
 
-#line 625
+#line 680
             }
             else
             {
 
-#line 625
+#line 680
                 history_4 = u1_0;
 
-#line 625
+#line 680
                 openness_0 = u2_0;
 
-#line 625
+#line 680
             }
 
-#line 623
+#line 678
         }
 
-#line 639
+#line 694
         float density_2 = uniformShare_0 / 6.28318548202514648 + uniformShare_0 * history_4 / 3.14159274101257324;
 
-#line 639
+#line 694
         float density_3;
 
         if(guided_0 > 0.0)
         {
 
-#line 641
+#line 696
             density_3 = density_2 + guided_0 * ((*kernelContext_53->spWeights_0)[spGuideCell_0(history_4, openness_0)] / guideTotal_0) * 2.5464789867401123;
 
-#line 641
+#line 696
         }
         else
         {
 
-#line 641
+#line 696
             density_3 = density_2;
 
-#line 641
+#line 696
         }
 
 
@@ -45370,153 +45918,153 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
         float3 direction_9 = spHemisphereDirection_0(_S270.normal_4, history_4, openness_0);
         bool _S292 = density_3 > 0.0;
 
-#line 647
+#line 702
         if(_S292)
         {
             uint excluded_1 = kernelContext_53->giResolve_0->constants_2[2U].w;
 
             float4 standIn_1 = *kernelContext_53->spStandIn_0;
 
-#line 651
+#line 706
             GrSample_0 _S293 = spProbeRay_0(*kernelContext_53->spOrigin_0, giNormalisedOr_0(direction_9, float3(0.0, 0.0, -1.0)), (as_type<float4>((kernelContext_53->giResolve_0->constants_2[2U]))).x, kernelContext_53);
 
 
             GrSample_0 _S294 = grSample_0(standIn_1.xyz, standIn_1.w, 3U);
 
-#line 654
+#line 709
             thread GrSample_0 _S295 = _S293;
 
-#line 654
+#line 709
             thread GrSample_0 _S296 = _S294;
 
-#line 654
+#line 709
             GrSample_0 _S297 = grGatherSample_0(&_S295, &_S296, excluded_1);
             if((_S297.source_0) != 0U)
             {
 
-#line 655
+#line 710
                 value_4 = _S297.radiance_0;
 
-#line 655
+#line 710
                 k_6 = 1U;
 
-#line 655
+#line 710
             }
             else
             {
 
-#line 655
+#line 710
                 value_4 = _S291;
 
-#line 655
+#line 710
                 k_6 = 0U;
 
-#line 655
+#line 710
             }
 
-#line 647
+#line 702
         }
         else
         {
 
-#line 647
+#line 702
             value_4 = _S291;
 
-#line 647
+#line 702
             k_6 = 0U;
 
-#line 647
+#line 702
         }
 
-#line 660
+#line 715
         (*kernelContext_53->spRayValue_0)[lane_0] = value_4;
         (*kernelContext_53->spRayDirection_0)[lane_0] = direction_9;
         if(_S292)
         {
 
-#line 662
+#line 717
             guideTotal_0 = 1.0 / (density_3 * float(_S288));
 
-#line 662
+#line 717
         }
         else
         {
 
-#line 662
+#line 717
             guideTotal_0 = 0.0;
 
-#line 662
+#line 717
         }
 
-#line 662
+#line 717
         (*kernelContext_53->spRayWeight_0)[lane_0] = guideTotal_0;
         (*kernelContext_53->spRayValid_0)[lane_0] = k_6;
 
-#line 616
+#line 671
     }
 
-#line 665
+#line 720
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if(lane_0 != 0U)
     {
 
-#line 667
+#line 722
         return;
     }
 
     thread array<float3, int(9)> sum_2;
 
-#line 670
+#line 725
     k_6 = 0U;
     for(;;)
     {
 
-#line 671
+#line 726
         if(k_6 < 9U)
         {
         }
         else
         {
 
-#line 671
+#line 726
             break;
         }
 
-#line 672
+#line 727
         sum_2[k_6] = float3(0.0, 0.0, 0.0);
 
-#line 671
+#line 726
         k_6 = k_6 + 1U;
 
-#line 671
+#line 726
     }
 
-#line 671
+#line 726
     uint ray_2 = 0U;
 
 
     for(;;)
     {
 
-#line 674
+#line 729
         if(ray_2 < _S288)
         {
         }
         else
         {
 
-#line 674
+#line 729
             break;
         }
 
-#line 675
+#line 730
         if(((*kernelContext_53->spRayValid_0)[ray_2]) == 0U)
         {
 
-#line 676
+#line 731
             ray_2 = ray_2 + 1U;
 
-#line 674
+#line 729
             continue;
         }
 
@@ -45525,175 +46073,175 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
         spBasis_0((*kernelContext_53->spRayDirection_0)[ray_2], &basis_2);
         float _S298 = (*kernelContext_53->spRayWeight_0)[ray_2];
 
-#line 680
+#line 735
         k_6 = 0U;
         for(;;)
         {
 
-#line 681
+#line 736
             if(k_6 < 9U)
             {
             }
             else
             {
 
-#line 681
+#line 736
                 break;
             }
 
-#line 682
+#line 737
             sum_2[k_6] = sum_2[k_6] + (*kernelContext_53->spRayValue_0)[ray_2] * float3((basis_2[k_6] * _S298)) ;
 
-#line 681
+#line 736
             k_6 = k_6 + 1U;
 
-#line 681
+#line 736
         }
 
-#line 674
+#line 729
         ray_2 = ray_2 + 1U;
 
-#line 674
+#line 729
     }
 
-#line 686
+#line 741
     float frames_0 = float(max(shape_1.y, 1U));
     thread array<float3, int(9)> blended_0;
 
     if((*kernelContext_53->spReprojected_0) != 0U)
     {
 
-#line 690
+#line 745
         float _S299 = max(1.0 / (*kernelContext_53->spHistoryCount_0 + 1.0), 1.0 / frames_0);
 
-#line 690
+#line 745
         k_6 = 0U;
         for(;;)
         {
 
-#line 691
+#line 746
             if(k_6 < 9U)
             {
             }
             else
             {
 
-#line 691
+#line 746
                 break;
             }
 
-#line 692
+#line 747
             blended_0[k_6] = (*kernelContext_53->spHistory_0)[k_6] + (sum_2[k_6] - (*kernelContext_53->spHistory_0)[k_6]) * float3(_S299) ;
 
-#line 691
+#line 746
             k_6 = k_6 + 1U;
 
-#line 691
+#line 746
         }
 
-#line 691
+#line 746
         history_4 = min(*kernelContext_53->spHistoryCount_0 + 1.0, frames_0);
 
-#line 689
+#line 744
     }
     else
     {
 
-#line 689
+#line 744
         k_6 = 0U;
 
-#line 696
+#line 751
         for(;;)
         {
 
-#line 696
+#line 751
             if(k_6 < 9U)
             {
             }
             else
             {
 
-#line 696
+#line 751
                 break;
             }
 
-#line 697
+#line 752
             blended_0[k_6] = sum_2[k_6];
 
-#line 696
+#line 751
             k_6 = k_6 + 1U;
 
-#line 696
+#line 751
         }
 
-#line 696
+#line 751
         history_4 = 1.0;
 
-#line 689
+#line 744
     }
 
-#line 689
+#line 744
     thread array<float3, int(9)> _S300 = blended_0;
 
-#line 689
+#line 744
     spStoreCoefficients_0(_S265, record_10, &_S300, history_4, kernelContext_53);
 
-#line 689
+#line 744
     thread array<float3, int(9)> _S301 = blended_0;
 
-#line 689
+#line 744
     spStoreFiltered_0(_S265, record_10, &_S301, kernelContext_53);
 
-#line 689
+#line 744
     float _S302 = grFarFieldWeight_0(length(_S270.position_2 - (as_type<float3>((kernelContext_53->giResolve_0->constants_2[1U].xyz)))), kernelContext_53);
 
-#line 706
+#line 761
     uint skyRays_0 = kernelContext_53->giResolve_0->constants_2[2U].z;
     if(_S302 > 0.0)
     {
 
-#line 707
+#line 762
         allowed_0 = skyRays_0 > 0U;
 
-#line 707
+#line 762
     }
     else
     {
 
-#line 707
+#line 762
         allowed_0 = false;
 
-#line 707
+#line 762
     }
 
-#line 707
+#line 762
     if(allowed_0)
     {
 
-#line 708
+#line 763
         uint _S303 = (frame_4 + _S270.id_0) % skyRays_0;
 
-#line 708
+#line 763
         float _S304 = grSkyVisibilityRay_0(_S270.position_2, _S270.normal_4, _S303, skyRays_0, kernelContext_53);
 
-#line 708
+#line 763
         openness_0 = _S304;
 
-#line 707
+#line 762
     }
     else
     {
 
-#line 707
+#line 762
         openness_0 = 1.0;
 
-#line 707
+#line 762
     }
 
-#line 707
+#line 762
     uint _S305 = spRecordBase_0(_S265, record_10, kernelContext_53);
 
-#line 712
+#line 767
     *(kernelContext_53->giResolve_0->probes_1+(_S305 + 9U)) = *kernelContext_53->spStandIn_0;
     *(kernelContext_53->giResolve_0->probes_1+(_S305 + 10U)) = float4(openness_0, 0.0, 0.0, 0.0);
     return;
@@ -47553,40 +48101,40 @@ GrSample_0 grGatherSample_0(const GrSample_0 thread* ray_1, const GrSample_0 thr
 }
 
 
-#line 793 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 848 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 void spIntegrate_0(uint pixel_2, KernelContext_0 thread* kernelContext_27)
 {
 
-#line 794
+#line 849
     uint4 counts_0 = kernelContext_27->giResolve_0->constants_2[0U];
     uint _S56 = counts_0.z;
 
-#line 795
+#line 850
     if(pixel_2 >= _S56)
     {
 
-#line 796
+#line 851
         return;
     }
     uint _S57 = counts_0.w;
 
-#line 798
+#line 853
     uint record_4 = (_S57 * _S56 + pixel_2) * 2U;
     float4 at_0 = kernelContext_27->giResolve_0->surfaces_0[record_4];
     float4 facing_2 = kernelContext_27->giResolve_0->surfaces_0[record_4 + 1U];
     float _S58 = at_0.w;
 
-#line 801
+#line 856
     if(_S58 <= 0.0)
     {
 
-#line 802
+#line 857
         uint _S59 = pixel_2 * 2U;
 
-#line 802
+#line 857
         float4 _S60 = float4(0.0, 0.0, 0.0, 0.0);
 
-#line 802
+#line 857
         *(kernelContext_27->giResolve_0->noisy_0+_S59) = _S60;
         *(kernelContext_27->giResolve_0->noisy_0+(_S59 + 1U)) = _S60;
         return;
@@ -47599,7 +48147,7 @@ void spIntegrate_0(uint pixel_2, KernelContext_0 thread* kernelContext_27)
     float3 offset_1 = position_5 - (as_type<float3>((kernelContext_27->giResolve_0->constants_2[1U].xyz)));
     float3 _S61 = float3(0.0, 0.0, -1.0);
 
-#line 812
+#line 867
     float3 incident_0 = giNormalisedOr_0(offset_1, _S61);
 
     float3 reflection_1 = giNormalisedOr_0(incident_0 - normal_8 * float3((2.0 * dot(incident_0, normal_8))) , normal_8);
@@ -47609,269 +48157,269 @@ void spIntegrate_0(uint pixel_2, KernelContext_0 thread* kernelContext_27)
     float3 irradianceBand_0 = float3(1.0, 0.66666668653488159, 0.25);
     float4 _S62 = (as_type<float4>((kernelContext_27->giResolve_0->constants_2[43U])));
 
-#line 819
+#line 874
     uint _S63 = spWidth_0(kernelContext_27);
     uint _S64 = pixel_2 % _S63;
 
-#line 820
+#line 875
     uint _S65 = spWidth_0(kernelContext_27);
     uint _S66 = pixel_2 / _S65;
 
     float3 _S67 = float3(0.0, 0.0, 0.0);
 
-#line 823
+#line 878
     float nearestPlane_0 = 1.00000001504746622e+30;
 
 )cy_msl"
-    R"cy_msl(#line 823
+    R"cy_msl(#line 878
     float3 irradiance_0 = _S67;
 
-#line 823
+#line 878
     float3 glossy_0 = _S67;
 
-#line 823
+#line 878
     float3 cache_0 = _S67;
 
-#line 823
+#line 878
     uint nearest_0 = 4294967295U;
 
-#line 823
+#line 878
     uint pass_0 = 0U;
 
-#line 823
+#line 878
     float cacheConfidence_0 = 0.0;
 
-#line 823
+#line 878
     float openness_0 = 0.0;
 
-#line 823
+#line 878
     float total_1 = 0.0;
 
-#line 831
+#line 886
     for(;;)
     {
 
-#line 831
+#line 886
         if(pass_0 < 2U)
         {
         }
         else
         {
 
-#line 831
+#line 886
             break;
         }
 
-#line 831
+#line 886
         SpTaps_0 _S68;
 
         if(pass_0 == 0U)
         {
 
-#line 833
+#line 888
             uint _S69 = spSpacing_0(kernelContext_27);
 
-#line 833
+#line 888
             uint _S70 = spTilesX_0(kernelContext_27);
 
-#line 833
+#line 888
             uint _S71 = spTilesY_0(kernelContext_27);
 
-#line 833
+#line 888
             _S68 = spBilinearTaps_0(_S64, _S66, _S69, _S70, _S71);
 
-#line 833
+#line 888
         }
         else
         {
 
-#line 833
+#line 888
             uint _S72 = spCell_0(kernelContext_27);
 
-#line 833
+#line 888
             uint _S73 = spCellsX_0(kernelContext_27);
 
-#line 833
+#line 888
             uint _S74 = spCellsY_0(kernelContext_27);
 
-#line 833
+#line 888
             _S68 = spBilinearTaps_0(_S64, _S66, _S72, _S73, _S74);
 
-#line 833
+#line 888
         }
 
-#line 833
+#line 888
         float nearestPlane_1 = nearestPlane_0;
 
-#line 833
+#line 888
         float3 irradiance_1 = irradiance_0;
 
-#line 833
+#line 888
         float3 glossy_1 = glossy_0;
 
-#line 833
+#line 888
         float3 cache_1 = cache_0;
 
-#line 833
+#line 888
         uint nearest_1 = nearest_0;
 
-#line 833
+#line 888
         uint tap_0 = 0U;
 
-#line 833
+#line 888
         float cacheConfidence_1 = cacheConfidence_0;
 
-#line 833
+#line 888
         float openness_1 = openness_0;
 
-#line 833
+#line 888
         float total_2 = total_1;
 
         for(;;)
         {
 
-#line 835
+#line 890
             if(tap_0 < (_S68.count_0))
             {
             }
             else
             {
 
-#line 835
+#line 890
                 break;
             }
 
-#line 833
+#line 888
             SpTaps_0 _S75 = _S68;
 
             uint _S76 = tap_0;
 
-#line 835
+#line 890
             uint index_2;
 
             if(pass_0 == 1U)
             {
 
-#line 837
+#line 892
                 uint _S77 = spTableIndex_0(_S57, _S75.index_0[_S76], kernelContext_27);
                 uint device* _S78 = kernelContext_27->giResolve_0->slots_0+_S77;
 
-#line 838
+#line 893
                 uint taken_0 = *_S78;
                 if((*_S78) == 4294967295U)
                 {
 
-#line 840
+#line 895
                     tap_0 = tap_0 + 1U;
 
-#line 835
+#line 890
                     continue;
                 }
 
-#line 835
+#line 890
                 uint _S79 = spUniformCount_0(kernelContext_27);
 
-#line 835
+#line 890
                 index_2 = _S79 + taken_0;
 
             }
             else
             {
 
-#line 837
+#line 892
                 index_2 = _S75.index_0[_S76];
 
-#line 837
+#line 892
             }
 
-#line 837
+#line 892
             SpProbe_0 _S80 = spLoadProbe_0(_S57, index_2, kernelContext_27);
 
-#line 845
+#line 900
             if((_S80.depth_0) <= 0.0)
             {
 
-#line 846
+#line 901
                 tap_0 = tap_0 + 1U;
 
-#line 835
+#line 890
                 continue;
             }
 
-#line 848
+#line 903
             float plane_1 = abs(dot(_S80.normal_5, position_5 - _S80.position_3));
 
-#line 848
+#line 903
             float nearestPlane_2;
 
-#line 848
+#line 903
             uint nearest_2;
             if(plane_1 < nearestPlane_1)
             {
 
-#line 849
+#line 904
                 nearestPlane_2 = plane_1;
 
-#line 849
+#line 904
                 nearest_2 = index_2;
 
-#line 849
+#line 904
             }
             else
             {
 
-#line 849
+#line 904
                 nearestPlane_2 = nearestPlane_1;
 
-#line 849
+#line 904
                 nearest_2 = nearest_1;
 
-#line 849
+#line 904
             }
 
-#line 854
+#line 909
             float weight_3 = _S68.weight_0[tap_0] * spGeometryWeight_0(_S80.position_3, _S80.normal_5, position_5, normal_8, _S58, _S62.y);
 
             if(weight_3 <= 0.0)
             {
 
-#line 856
+#line 911
                 nearestPlane_1 = nearestPlane_2;
 
-#line 856
+#line 911
                 nearest_1 = nearest_2;
                 tap_0 = tap_0 + 1U;
 
-#line 835
+#line 890
                 continue;
             }
 
-#line 859
+#line 914
             thread array<float3, int(9)> coefficients_3;
 
-#line 859
+#line 914
             spLoadFiltered_0(_S57, index_2, &coefficients_3, kernelContext_27);
 
-#line 859
+#line 914
             uint _S81 = spRecordBase_0(_S57, index_2, kernelContext_27);
 
 
             float4 device* _S82 = kernelContext_27->giResolve_0->probes_1+(_S81 + 9U);
 
-#line 862
+#line 917
             thread array<float3, int(9)> _S83 = coefficients_3;
 
-#line 862
+#line 917
             float3 _S84 = spEvaluate_0(&_S83, normal_8, irradianceBand_0);
 
-#line 862
+#line 917
             float3 _S85 = float3(weight_3) ;
             float3 _S86 = irradiance_1 + _S84 * _S85;
 
-#line 863
+#line 918
             thread array<float3, int(9)> _S87 = coefficients_3;
 
-#line 863
+#line 918
             float3 _S88 = spEvaluate_0(&_S87, reflection_1, specularBand_0);
             float3 _S89 = glossy_1 + _S88 * _S85;
             float3 _S90 = cache_1 + (*_S82).xyz * _S85;
@@ -47879,291 +48427,291 @@ void spIntegrate_0(uint pixel_2, KernelContext_0 thread* kernelContext_27)
             float openness_2 = openness_1 + (*(kernelContext_27->giResolve_0->probes_1+(_S81 + 10U))).x * weight_3;
             float total_3 = total_2 + weight_3;
 
-#line 868
+#line 923
             nearestPlane_1 = nearestPlane_2;
 
-#line 868
+#line 923
             irradiance_1 = _S86;
 
-#line 868
+#line 923
             glossy_1 = _S89;
 
-#line 868
+#line 923
             cache_1 = _S90;
 
-#line 868
+#line 923
             nearest_1 = nearest_2;
 
-#line 868
+#line 923
             cacheConfidence_1 = cacheConfidence_2;
 
-#line 868
+#line 923
             openness_1 = openness_2;
 
-#line 868
+#line 923
             total_2 = total_3;
 
-#line 835
+#line 890
             tap_0 = tap_0 + 1U;
 
-#line 835
+#line 890
         }
 
-#line 831
+#line 886
         uint pass_1 = pass_0 + 1U;
 
-#line 831
+#line 886
         nearestPlane_0 = nearestPlane_1;
 
-#line 831
+#line 886
         irradiance_0 = irradiance_1;
 
-#line 831
+#line 886
         glossy_0 = glossy_1;
 
-#line 831
+#line 886
         cache_0 = cache_1;
 
 )cy_msl"
-    R"cy_msl(#line 831
+    R"cy_msl(#line 886
         nearest_0 = nearest_1;
 
-#line 831
+#line 886
         pass_0 = pass_1;
 
-#line 831
+#line 886
         cacheConfidence_0 = cacheConfidence_1;
 
-#line 831
+#line 886
         openness_0 = openness_1;
 
-#line 831
+#line 886
         total_1 = total_2;
 
-#line 831
+#line 886
     }
 
-#line 871
+#line 926
     if(total_1 < 0.00009999999747379)
     {
 
-#line 872
+#line 927
         if(nearest_0 == 4294967295U)
         {
             uint _S91 = pixel_2 * 2U;
 
-#line 874
+#line 929
             float4 _S92 = float4(0.0, 0.0, 0.0, (as_type<float>((kernelContext_27->giResolve_0->constants_2[44U].x))));
 
-#line 874
+#line 929
             *(kernelContext_27->giResolve_0->noisy_0+_S91) = _S92;
             *(kernelContext_27->giResolve_0->noisy_0+(_S91 + 1U)) = _S92;
             return;
         }
         thread array<float3, int(9)> coefficients_4;
 
-#line 878
+#line 933
         spLoadFiltered_0(_S57, nearest_0, &coefficients_4, kernelContext_27);
 
-#line 878
+#line 933
         uint _S93 = spRecordBase_0(_S57, nearest_0, kernelContext_27);
 
-#line 878
+#line 933
         thread array<float3, int(9)> _S94 = coefficients_4;
 
-#line 878
+#line 933
         float3 _S95 = spEvaluate_0(&_S94, normal_8, irradianceBand_0);
 
-#line 878
+#line 933
         thread array<float3, int(9)> _S96 = coefficients_4;
 
-#line 878
+#line 933
         float3 _S97 = spEvaluate_0(&_S96, reflection_1, specularBand_0);
 
-#line 883
+#line 938
         uint _S98 = _S93 + 9U;
         float _S99 = (*(kernelContext_27->giResolve_0->probes_1+_S98)).w;
         float _S100 = (*(kernelContext_27->giResolve_0->probes_1+(_S93 + 10U))).x;
 
-#line 885
+#line 940
         cache_0 = (*(kernelContext_27->giResolve_0->probes_1+_S98)).xyz;
 
-#line 885
+#line 940
         irradiance_0 = _S95;
 
-#line 885
+#line 940
         glossy_0 = _S97;
 
-#line 885
+#line 940
         cacheConfidence_0 = _S99;
 
-#line 885
+#line 940
         openness_0 = _S100;
 
-#line 871
+#line 926
     }
     else
     {
 
-#line 887
+#line 942
         float3 _S101 = irradiance_0 / float3(total_1) ;
         float3 _S102 = glossy_0 / float3(total_1) ;
 
         float cacheConfidence_3 = cacheConfidence_0 / total_1;
         float openness_3 = openness_0 / total_1;
 
-#line 891
+#line 946
         cache_0 = cache_0 / float3(total_1) ;
 
-#line 891
+#line 946
         irradiance_0 = _S101;
 
-#line 891
+#line 946
         glossy_0 = _S102;
 
-#line 891
+#line 946
         cacheConfidence_0 = cacheConfidence_3;
 
-#line 891
+#line 946
         openness_0 = openness_3;
 
-#line 871
+#line 926
     }
 
-#line 894
+#line 949
     uint4 shape_0 = kernelContext_27->giResolve_0->constants_2[42U];
     uint excluded_2 = kernelContext_27->giResolve_0->constants_2[2U].w;
     GrCombine_0 _S103 = grCombineBegin_0();
 
-#line 896
+#line 951
     thread GrCombine_0 state_3 = _S103;
     if(((shape_0.w) & 1U) != 0U)
     {
 
-#line 897
+#line 952
         thread GrSample_0 _S104 = grSample_0(cache_0, cacheConfidence_0, 3U);
 
-#line 897
+#line 952
         grCombineAdd_0(&state_3, &_S104, excluded_2);
 
-#line 897
+#line 952
     }
 
 
     uint _S105 = GiHardwareTier_source_0();
 
-#line 900
+#line 955
     thread GrSample_0 _S106 = grSample_0(irradiance_0, 1.0, _S105);
 
-#line 900
+#line 955
     grCombineAdd_0(&state_3, &_S106, excluded_2);
     thread GrSample_0 sky_0 = grSample_0(_S67, 0.0, 9U);
 
-#line 901
+#line 956
     float _S107 = grFarFieldWeight_0(length(offset_1), kernelContext_27);
 
     if(_S107 > 0.0)
     {
 
-#line 903
+#line 958
         float3 _S108 = gpSky_0(normal_8, kernelContext_27);
         (&sky_0)->radiance_0 = _S108 * float3(openness_0) ;
         (&sky_0)->confidence_0 = gpClamp_0(_S107 * openness_0, 0.0, 1.0);
 
-#line 903
+#line 958
     }
 
-#line 903
+#line 958
     thread GrSample_0 _S109 = sky_0;
 
-#line 903
+#line 958
     grCombineAdd_0(&state_3, &_S109, excluded_2);
 
-#line 903
+#line 958
     thread GrCombine_0 _S110 = state_3;
 
-#line 903
+#line 958
     float3 _S111 = grCombineEnd_0(&_S110);
 
-#line 908
+#line 963
     float3 diffuse_0 = _S111 * float3((as_type<float>((kernelContext_27->giResolve_0->constants_2[5U].x)))) ;
 
     GrSample_0 probeSpecular_0 = grSample_0(glossy_0, gpClamp_0(roughness_2, 0.15000000596046448, 1.0), _S105);
     thread GrCombine_0 reflected_0 = _S103;
 
-#line 911
+#line 966
     uint _S112 = grReflectionRays_0(roughness_2, kernelContext_27);
 
     float density_1 = (as_type<float>((kernelContext_27->giResolve_0->constants_2[1U].w)));
 
-#line 913
+#line 968
     bool _S113;
     if(_S112 > 0U)
     {
 
-#line 914
+#line 969
         _S113 = grTraces_0(pixel_2, frame_2, density_1);
 
-#line 914
+#line 969
     }
     else
     {
 
-#line 914
+#line 969
         _S113 = false;
 
-#line 914
+#line 969
     }
 
-#line 914
+#line 969
     if(_S113)
     {
 
-#line 915
+#line 970
         float4 rays_1 = (as_type<float4>((kernelContext_27->giResolve_0->constants_2[2U])));
 
 
         uint _S114 = grHash_0(pixel_2, frame_2, 7U) % _S112;
 
-#line 918
+#line 973
         GrSample_0 _S115 = grWorldRay_0(position_5, normal_8, giNormalisedOr_0(grLobeDirection_0(reflection_1, normal_8, roughness_2, _S114, _S112, frame_2), _S61), rays_1.y, rays_1.x, kernelContext_27);
 
-#line 918
+#line 973
         thread GrSample_0 _S116 = _S115;
 
-#line 918
+#line 973
         thread GrSample_0 _S117 = probeSpecular_0;
 
-#line 918
+#line 973
         GrSample_0 _S118 = grGatherSample_0(&_S116, &_S117, 0U);
 
-#line 918
+#line 973
         thread GrSample_0 _S119 = _S118;
 
-#line 918
+#line 973
         grCombineAdd_0(&reflected_0, &_S119, 0U);
 
-#line 914
+#line 969
     }
 
-#line 914
+#line 969
     thread GrSample_0 _S120 = probeSpecular_0;
 
-#line 914
+#line 969
     grCombineAdd_0(&reflected_0, &_S120, 0U);
 
-#line 914
+#line 969
     thread GrCombine_0 _S121 = reflected_0;
 
-#line 914
+#line 969
     float3 _S122 = grCombineEnd_0(&_S121);
 
-#line 926
+#line 981
     float3 specular_0 = _S122 * float3((as_type<float>((kernelContext_27->giResolve_0->constants_2[5U].y)))) ;
     float samples_1 = (as_type<float>((kernelContext_27->giResolve_0->constants_2[44U].x)));
     uint _S123 = pixel_2 * 2U;
 
-#line 928
+#line 983
     *(kernelContext_27->giResolve_0->noisy_0+_S123) = float4(diffuse_0, samples_1);
     *(kernelContext_27->giResolve_0->noisy_0+(_S123 + 1U)) = float4(specular_0, samples_1);
     return;
@@ -48310,7 +48858,7 @@ struct GiHardwareSet_default_0
 };
 
 
-#line 663 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 718 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 struct KernelContext_0
 {
     GiProbeSet_default_0 constant* giProbes_0;
@@ -48888,49 +49436,49 @@ GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_2, float3 direct
 }
 
 
-#line 503 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 558 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 GrSample_0 spProbeRay_0(float3 origin_1, float3 unit_0, float reach_0, KernelContext_0 thread* kernelContext_5)
 {
 
-#line 504
+#line 559
     uint cacheFrame_1 = kernelContext_5->giProbes_0->constants_0[24U].w;
 
-#line 504
+#line 559
     GiWorldHit_0 _S18 = GiHardwareTier_trace_0(origin_1, unit_0, reach_0, kernelContext_5);
 
-#line 504
+#line 559
     bool _S19;
 
     if(_S18.hit_0)
     {
 
-#line 506
+#line 561
         _S19 = (dot(_S18.normal_0, unit_0)) > 0.0;
 
-#line 506
+#line 561
     }
     else
     {
 
-#line 506
+#line 561
         _S19 = false;
 
-#line 506
+#line 561
     }
 
-#line 506
+#line 561
     if(_S19)
     {
 
-#line 507
+#line 562
         return grSample_0(float3(0.0, 0.0, 0.0), 0.0, 0U);
     }
     uint _S20 = GiHardwareTier_source_0();
 
-#line 509
+#line 564
     thread GiWorldHit_0 _S21 = _S18;
 
-#line 509
+#line 564
     GiTierSample_0 _S22 = gpWorldRadiance_0(&_S21, unit_0, _S20, cacheFrame_1, kernelContext_5);
     return grSample_0(_S22.radiance_2, _S22.confidence_3, _S22.source_2);
 }
@@ -49243,125 +49791,125 @@ float giDistance_0(float3 p_1, KernelContext_0 thread* kernelContext_11)
 }
 
 
-#line 478 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 533 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 float3 spProbeOrigin_0(const SpProbe_0 thread* probe_0, float lift_0, KernelContext_0 thread* kernelContext_12)
 {
 
-#line 478
+#line 533
     uint _S49 = giLevelCount_0(kernelContext_12);
     if(_S49 == 0U)
     {
 
-#line 480
+#line 535
         return probe_0->position_2 + probe_0->normal_4 * float3(lift_0) ;
     }
 
-#line 480
+#line 535
     float _S50 = giFinestVoxel_0(kernelContext_12);
 
-#line 480
+#line 535
     float clearance_0;
 
 
     if((GiHardwareTier_source_0()) == 7U)
     {
 
-#line 483
+#line 538
         clearance_0 = lift_0;
 
-#line 483
+#line 538
     }
     else
     {
 
-#line 483
+#line 538
         clearance_0 = max(lift_0, _S50);
 
-#line 483
+#line 538
     }
 
-#line 483
+#line 538
     float3 _S51 = probe_0->normal_4;
     float3 origin_3 = probe_0->position_2 + probe_0->normal_4 * float3(clearance_0) ;
     if(_S50 <= 0.0)
     {
 
-#line 486
+#line 541
         return origin_3;
     }
 
-#line 486
+#line 541
     float3 origin_4 = origin_3;
 
-#line 486
+#line 541
     uint step_0 = 0U;
 
     for(;;)
     {
 
-#line 488
+#line 543
         if(step_0 < 4U)
         {
         }
         else
         {
 
-#line 488
+#line 543
             break;
         }
 
-#line 488
+#line 543
         float _S52 = giDistance_0(origin_4, kernelContext_12);
 
         if(_S52 >= clearance_0)
         {
 
-#line 491
+#line 546
             break;
         }
 
         float3 _S53 = float3(_S50, 0.0, 0.0);
 
-#line 494
+#line 549
         float _S54 = giDistance_0(origin_4 + _S53, kernelContext_12);
 
-#line 494
+#line 549
         float _S55 = giDistance_0(origin_4 - _S53, kernelContext_12);
 
-#line 494
+#line 549
         float _S56 = _S54 - _S55;
         float3 _S57 = float3(0.0, _S50, 0.0);
 
-#line 495
+#line 550
         float _S58 = giDistance_0(origin_4 + _S57, kernelContext_12);
 
-#line 495
+#line 550
         float _S59 = giDistance_0(origin_4 - _S57, kernelContext_12);
 
-#line 495
+#line 550
         float _S60 = _S58 - _S59;
         float3 _S61 = float3(0.0, 0.0, _S50);
 
-#line 496
+#line 551
         float _S62 = giDistance_0(origin_4 + _S61, kernelContext_12);
 
-#line 496
+#line 551
         float _S63 = giDistance_0(origin_4 - _S61, kernelContext_12);
         float3 _S64 = origin_4 + giNormalisedOr_0(float3(_S56, _S60, _S62 - _S63), _S51) * float3((clearance_0 - _S52)) ;
 
-#line 488
+#line 543
         uint step_1 = step_0 + 1U;
 
-#line 488
+#line 543
         origin_4 = _S64;
 
-#line 488
+#line 543
         step_0 = step_1;
 
-#line 488
+#line 543
     }
 
-#line 499
+#line 554
     return origin_4;
 }
 
@@ -49463,153 +50011,153 @@ SpProbe_0 spLoadProbe_0(uint slot_4, uint record_2, KernelContext_0 thread* kern
 }
 
 
-#line 399
+#line 454
 bool spInvalidated_0(float3 point_0, KernelContext_0 thread* kernelContext_21)
 {
 
-#line 400
+#line 455
     uint _S71 = min(kernelContext_21->giResolve_0->constants_2[26U].x, 4U);
 
-#line 400
+#line 455
     uint region_0 = 0U;
     for(;;)
     {
 
-#line 401
+#line 456
         if(region_0 < _S71)
         {
         }
         else
         {
 
-#line 401
+#line 456
             break;
         }
 
-#line 402
+#line 457
         uint _S72 = region_0 * 2U;
 
-#line 402
+#line 457
         float3 lo_1 = (as_type<float3>((kernelContext_21->giResolve_0->constants_2[27U + _S72].xyz)));
         float3 hi_1 = (as_type<float3>((kernelContext_21->giResolve_0->constants_2[28U + _S72].xyz)));
         float _S73 = point_0.x;
 
-#line 404
+#line 459
         bool _S74;
 
-#line 404
+#line 459
         if(_S73 >= (lo_1.x))
         {
 
-#line 404
+#line 459
             _S74 = (point_0.y) >= (lo_1.y);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S74 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S75;
 
-#line 404
+#line 459
         if(_S74)
         {
 
-#line 404
+#line 459
             _S75 = (point_0.z) >= (lo_1.z);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S75 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S76;
 
-#line 404
+#line 459
         if(_S75)
         {
 
-#line 404
+#line 459
             _S76 = _S73 <= (hi_1.x);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S76 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S77;
 
-#line 404
+#line 459
         if(_S76)
         {
 
-#line 404
+#line 459
             _S77 = (point_0.y) <= (hi_1.y);
 
-#line 404
+#line 459
         }
         else
         {
 
-#line 404
+#line 459
             _S77 = false;
 
-#line 404
+#line 459
         }
 
-#line 404
+#line 459
         bool _S78;
         if(_S77)
         {
 
-#line 405
+#line 460
             _S78 = (point_0.z) <= (hi_1.z);
 
-#line 405
+#line 460
         }
         else
         {
 
-#line 405
+#line 460
             _S78 = false;
 
-#line 405
+#line 460
         }
 
-#line 404
+#line 459
         if(_S78)
         {
             return true;
         }
 
-#line 401
+#line 456
         region_0 = region_0 + 1U;
 
-#line 401
+#line 456
     }
 
-#line 409
+#line 464
     return false;
 }
 
@@ -49632,50 +50180,50 @@ uint spHeight_0(KernelContext_0 thread* kernelContext_23)
 }
 
 
-#line 359
+#line 414
 bool spLanding_0(float3 position_3, uint thread* x_1, uint thread* y_1, KernelContext_0 thread* kernelContext_24)
 {
 
-#line 360
+#line 415
     *x_1 = 0U;
     *y_1 = 0U;
 
-#line 361
+#line 416
     float4 _S79 = float4(position_3.x) ;
 
-#line 361
+#line 416
     float4 _S80 = float4(position_3.y) ;
 
-#line 361
+#line 416
     float4 _S81 = float4(position_3.z) ;
 
-#line 366
+#line 421
     float4 clip_0 = (as_type<float4>((kernelContext_24->giResolve_0->constants_2[6U]))) * _S79 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[7U]))) * _S80 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[8U]))) * _S81 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[9U])));
     float _S82 = clip_0.w;
 
-#line 367
+#line 422
     if(_S82 <= 9.99999993922529029e-09)
     {
 
-#line 368
+#line 423
         return false;
     }
     float inverse_0 = 1.0 / _S82;
 
     float _S83 = clip_0.x * inverse_0 * 0.5 + 0.5;
 
-#line 372
+#line 427
     float _S84 = clip_0.y * inverse_0 * 0.5 + 0.5;
 
-#line 377
+#line 432
     float4 clip_1 = (as_type<float4>((kernelContext_24->giResolve_0->constants_2[10U]))) * _S79 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[11U]))) * _S80 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[12U]))) * _S81 + (as_type<float4>((kernelContext_24->giResolve_0->constants_2[13U])));
     float _S85 = clip_1.w;
 
-#line 378
+#line 433
     if(_S85 <= 9.99999993922529029e-09)
     {
 
-#line 379
+#line 434
         return false;
     }
     float inverse_1 = 1.0 / _S85;
@@ -49684,79 +50232,79 @@ bool spLanding_0(float3 position_3, uint thread* x_1, uint thread* y_1, KernelCo
 
     float _S86 = _S83 + (clip_1.x * inverse_1 * 0.5 + 0.5 - _S83);
 
-#line 385
+#line 440
     float _S87 = _S84 + (clip_1.y * inverse_1 * 0.5 + 0.5 - _S84);
 
-#line 385
+#line 440
     uint _S88 = spWidth_0(kernelContext_24);
     float width_0 = float(_S88);
 
-#line 386
+#line 441
     uint _S89 = spHeight_0(kernelContext_24);
     float height_0 = float(_S89);
     float fx_1 = floor(_S86 * width_0);
     float fy_1 = floor((1.0 - _S87) * height_0);
 
-#line 389
+#line 444
     bool _S90;
     if(fx_1 < 0.0)
     {
 
-#line 390
+#line 445
         _S90 = true;
 
-#line 390
+#line 445
     }
     else
     {
 
-#line 390
+#line 445
         _S90 = fy_1 < 0.0;
 
-#line 390
+#line 445
     }
 
-#line 390
+#line 445
     if(_S90)
     {
 
-#line 390
+#line 445
         _S90 = true;
 
-#line 390
+#line 445
     }
     else
     {
 
-#line 390
+#line 445
         _S90 = fx_1 >= width_0;
 
-#line 390
+#line 445
     }
 
-#line 390
+#line 445
     if(_S90)
     {
 
-#line 390
+#line 445
         _S90 = true;
 
-#line 390
+#line 445
     }
     else
     {
 
-#line 390
+#line 445
         _S90 = fy_1 >= height_0;
 
-#line 390
+#line 445
     }
 
-#line 390
+#line 445
     if(_S90)
     {
 
-#line 391
+#line 446
         return false;
     }
     *x_1 = uint(fx_1);
@@ -50171,300 +50719,300 @@ void spLoadCoefficients_0(uint slot_7, uint record_4, array<float3, int(9)> thre
 }
 
 
-#line 413
+#line 468
 bool spReproject_0(const SpProbe_0 thread* probe_2, float tolerance_1, array<float3, int(9)> thread* coefficients_2, float thread* history_1, uint thread* matched_0, KernelContext_0 thread* kernelContext_37)
 {
 
-#line 414
+#line 469
     uint k_1 = 0U;
     for(;;)
     {
 
-#line 415
+#line 470
         if(k_1 < 9U)
         {
         }
         else
         {
 
-#line 415
+#line 470
             break;
         }
 
-#line 416
+#line 471
         (*coefficients_2)[k_1] = float3(0.0, 0.0, 0.0);
 
-#line 415
+#line 470
         k_1 = k_1 + 1U;
 
-#line 415
+#line 470
     }
 
 
     *history_1 = 0.0;
     *matched_0 = 4294967295U;
 
-#line 419
+#line 474
     float3 _S103 = probe_2->position_2;
 
-#line 419
+#line 474
     bool _S104 = spInvalidated_0(probe_2->position_2, kernelContext_37);
     if(_S104)
     {
 
-#line 421
+#line 476
         return false;
     }
     thread uint x_3;
     thread uint y_3;
 
-#line 424
+#line 479
     bool _S105 = spLanding_0(_S103, &x_3, &y_3, kernelContext_37);
     if(!_S105)
     {
 
-#line 426
+#line 481
         return false;
     }
 
-#line 426
+#line 481
     uint _S106 = spSlot_0(kernelContext_37);
 
 
     uint previous_0 = 1U - _S106;
 
-#line 429
+#line 484
     float bestWeight_0 = 0.0;
 
-#line 429
+#line 484
     uint best_2 = 4294967295U;
 
-#line 429
+#line 484
     uint pass_0 = 0U;
 
 
     for(;;)
     {
 
-#line 432
+#line 487
         if(pass_0 < 2U)
         {
         }
         else
         {
 
-#line 432
+#line 487
             break;
         }
 
-#line 432
+#line 487
         SpTaps_0 _S107;
 
         if(pass_0 == 0U)
         {
 
-#line 434
+#line 489
             uint _S108 = spSpacing_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S109 = spTilesX_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S110 = spTilesY_0(kernelContext_37);
 
-#line 434
+#line 489
             _S107 = spBilinearTaps_0(x_3, y_3, _S108, _S109, _S110);
 
-#line 434
+#line 489
         }
         else
         {
 
-#line 434
+#line 489
             uint _S111 = spCell_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S112 = spCellsX_0(kernelContext_37);
 
-#line 434
+#line 489
             uint _S113 = spCellsY_0(kernelContext_37);
 
-#line 434
+#line 489
             _S107 = spBilinearTaps_0(x_3, y_3, _S111, _S112, _S113);
 
-#line 434
+#line 489
         }
 
-#line 434
+#line 489
         float bestWeight_1 = bestWeight_0;
 
-#line 434
+#line 489
         uint best_3 = best_2;
 
-#line 434
+#line 489
         uint tap_0 = 0U;
 
         for(;;)
         {
 
-#line 436
+#line 491
             if(tap_0 < (_S107.count_0))
             {
             }
             else
             {
 
-#line 436
+#line 491
                 break;
             }
 
-#line 434
+#line 489
             SpTaps_0 _S114 = _S107;
 
             uint _S115 = tap_0;
 
-#line 436
+#line 491
             uint record_5;
 
             if(pass_0 == 1U)
             {
 
-#line 438
+#line 493
                 uint _S116 = spTableIndex_0(previous_0, _S114.index_0[_S115], kernelContext_37);
                 uint device* _S117 = kernelContext_37->giResolve_0->slots_0+_S116;
 
-#line 439
+#line 494
                 uint slot_8 = *_S117;
                 if((*_S117) == 4294967295U)
                 {
 
-#line 441
+#line 496
                     tap_0 = tap_0 + 1U;
 
-#line 436
+#line 491
                     continue;
                 }
 
-#line 436
+#line 491
                 uint _S118 = spUniformCount_0(kernelContext_37);
 
-#line 436
+#line 491
                 record_5 = _S118 + slot_8;
 
             }
             else
             {
 
-#line 438
+#line 493
                 record_5 = _S114.index_0[_S115];
 
-#line 438
+#line 493
             }
 
-#line 438
+#line 493
             SpProbe_0 _S119 = spLoadProbe_0(previous_0, record_5, kernelContext_37);
 
-#line 446
+#line 501
             if((_S119.depth_0) <= 0.0)
             {
 
-#line 447
+#line 502
                 tap_0 = tap_0 + 1U;
 
-#line 436
+#line 491
                 continue;
             }
 
-#line 450
+#line 505
             float weight_2 = _S107.weight_0[tap_0] * spGeometryWeight_0(_S119.position_2, _S119.normal_4, _S103, probe_2->normal_4, probe_2->depth_0, tolerance_1);
 
-#line 450
+#line 505
             uint best_4;
 
-#line 450
+#line 505
             float bestWeight_2;
 
 
             if(weight_2 > bestWeight_1)
             {
 
-#line 453
+#line 508
                 bestWeight_2 = weight_2;
 
-#line 453
+#line 508
                 best_4 = record_5;
 
-#line 453
+#line 508
             }
             else
             {
 
-#line 453
+#line 508
                 bestWeight_2 = bestWeight_1;
 
-#line 453
+#line 508
                 best_4 = best_3;
 
-#line 453
+#line 508
             }
 
-#line 453
+#line 508
             bestWeight_1 = bestWeight_2;
 
-#line 453
+#line 508
             best_3 = best_4;
 
-#line 436
+#line 491
             tap_0 = tap_0 + 1U;
 
-#line 436
+#line 491
         }
 
-#line 432
+#line 487
         uint pass_1 = pass_0 + 1U;
 
-#line 432
+#line 487
         bestWeight_0 = bestWeight_1;
 
-#line 432
+#line 487
         best_2 = best_3;
 
-#line 432
+#line 487
         pass_0 = pass_1;
 
-#line 432
+#line 487
     }
 
-#line 432
+#line 487
     bool _S120;
 
-#line 459
+#line 514
     if(best_2 == 4294967295U)
     {
 
-#line 459
+#line 514
         _S120 = true;
 
-#line 459
+#line 514
     }
     else
     {
 
-#line 459
+#line 514
         _S120 = bestWeight_0 < 0.25;
 
-#line 459
+#line 514
     }
 
-#line 459
+#line 514
     if(_S120)
     {
 
-#line 460
+#line 515
         return false;
     }
 
-#line 460
+#line 515
     spLoadCoefficients_0(previous_0, best_2, coefficients_2, history_1, kernelContext_37);
 
 
@@ -50492,15 +51040,15 @@ float grUnit_0(uint hash_2)
 }
 
 
-#line 468 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 523 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 bool spProbeTraces_0(uint id_1, uint frame_1, float density_0)
 {
 
-#line 469
+#line 524
     if(density_0 >= 1.0)
     {
 
-#line 470
+#line 525
         return true;
     }
     return (grUnit_0(grHash_0(id_1, frame_1, 9U))) < density_0;
@@ -52903,45 +53451,45 @@ float grSkyVisibilityRay_0(float3 position_11, float3 normal_13, uint index_3, u
 }
 
 
-#line 528 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
+#line 583 "src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang"
 void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContext_53)
 {
 
-#line 528
+#line 583
     uint _S265 = spSlot_0(kernelContext_53);
 
-#line 528
+#line 583
     bool allowed_0;
 
 
     if(record_10 == 0U)
     {
 
-#line 531
+#line 586
         allowed_0 = lane_0 == 0U;
 
-#line 531
+#line 586
     }
     else
     {
 
-#line 531
+#line 586
         allowed_0 = false;
 
-#line 531
+#line 586
     }
 
-#line 531
+#line 586
     if(allowed_0)
     {
 
-#line 532
+#line 587
         *(kernelContext_53->giResolve_0->slots_0+spCounter_0(1U - _S265)) = 0U;
 
-#line 531
+#line 586
     }
 
-#line 531
+#line 586
     uint _S266 = spUniformCount_0(kernelContext_53);
 
 
@@ -52949,43 +53497,43 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
     if(record_10 >= _S266)
     {
 
-#line 536
+#line 591
         uint _S267 = record_10 - _S266;
 
-#line 536
+#line 591
         uint _S268 = *(kernelContext_53->giResolve_0->slots_0+spCounter_0(_S265));
 
-#line 536
+#line 591
         uint _S269 = spCapacity_0(kernelContext_53);
 
-#line 536
+#line 591
         allowed_0 = _S267 >= (min(_S268, _S269));
 
-#line 535
+#line 590
     }
     else
     {
 
-#line 535
+#line 590
         allowed_0 = false;
 
-#line 535
+#line 590
     }
 
-#line 535
+#line 590
     if(allowed_0)
     {
         return;
     }
 
-#line 537
+#line 592
     SpProbe_0 _S270 = spLoadProbe_0(_S265, record_10, kernelContext_53);
 
 
     if((_S270.depth_0) <= 0.0)
     {
 
-#line 541
+#line 596
         return;
     }
     uint4 shape_1 = kernelContext_53->giResolve_0->constants_2[42U];
@@ -52995,85 +53543,85 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
 
     bool _S271 = lane_0 == 0U;
 
-#line 548
+#line 603
     uint cell_4;
 
-#line 548
+#line 603
     if(_S271)
     {
 
-#line 549
+#line 604
         thread array<float3, int(9)> previous_1;
         thread float history_3 = 0.0;
         thread uint matched_1 = 4294967295U;
         if(((shape_1.w) & 2U) != 0U)
         {
 
-#line 552
+#line 607
             allowed_0 = (kernelContext_53->giResolve_0->constants_2[5U].w) != 0U;
 
-#line 552
+#line 607
         }
         else
         {
 
-#line 552
+#line 607
             allowed_0 = false;
 
-#line 552
+#line 607
         }
 
-#line 552
+#line 607
         bool found_0;
         if(allowed_0)
         {
 
-#line 553
+#line 608
             float _S272 = weights_0.y;
 
-#line 553
+#line 608
             thread SpProbe_0 _S273 = _S270;
 
-#line 553
+#line 608
             bool _S274 = spReproject_0(&_S273, _S272, &previous_1, &history_3, &matched_1, kernelContext_53);
 
-#line 553
+#line 608
             found_0 = _S274;
 
-#line 553
+#line 608
         }
         else
         {
 
-#line 553
+#line 608
             found_0 = false;
 
-#line 553
+#line 608
         }
 
-#line 553
+#line 608
         cell_4 = 0U;
         for(;;)
         {
 
-#line 554
+#line 609
             if(cell_4 < 9U)
             {
             }
             else
             {
 
-#line 554
+#line 609
                 break;
             }
 
-#line 555
+#line 610
             (*kernelContext_53->spHistory_0)[cell_4] = previous_1[cell_4];
 
-#line 554
+#line 609
             cell_4 = cell_4 + 1U;
 
-#line 554
+#line 609
         }
 
 
@@ -53081,94 +53629,94 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
         if(found_0)
         {
 
-#line 558
+#line 613
             cell_4 = 1U;
 
-#line 558
+#line 613
         }
         else
         {
 
-#line 558
+#line 613
             cell_4 = 0U;
 
-#line 558
+#line 613
         }
 
-#line 558
+#line 613
         *kernelContext_53->spReprojected_0 = cell_4;
         float density_1 = (as_type<float>((kernelContext_53->giResolve_0->constants_2[1U].w)));
         if(found_0)
         {
 
-#line 560
+#line 615
             allowed_0 = !spProbeTraces_0(_S270.id_0, frame_4, density_1);
 
-#line 560
+#line 615
         }
         else
         {
 
-#line 560
+#line 615
             allowed_0 = false;
 
-#line 560
+#line 615
         }
 
-#line 560
+#line 615
         if(allowed_0)
         {
 
-#line 560
+#line 615
             cell_4 = matched_1;
 
-#line 560
+#line 615
         }
         else
         {
 
-#line 560
+#line 615
             cell_4 = 4294967295U;
 
-#line 560
+#line 615
         }
 
-#line 560
+#line 615
         *kernelContext_53->spCarried_0 = cell_4;
         if(cell_4 == 4294967295U)
         {
 
-#line 561
+#line 616
             float3 _S275 = _S270.normal_4;
             thread float4 diffuse_1;
             thread float4 specular_1;
 
-#line 563
+#line 618
             grSampleTraced_0(_S270.position_2, _S275, _S275, cacheFrame_2, &diffuse_1, &specular_1, kernelContext_53);
 
 
             *kernelContext_53->spStandIn_0 = diffuse_1;
             float _S276 = (as_type<float>((kernelContext_53->giResolve_0->constants_2[2U].y)));
 
-#line 567
+#line 622
             thread SpProbe_0 _S277 = _S270;
 
-#line 567
+#line 622
             float3 _S278 = spProbeOrigin_0(&_S277, _S276, kernelContext_53);
 
-#line 567
+#line 622
             *kernelContext_53->spOrigin_0 = _S278;
 
-#line 561
+#line 616
         }
 
-#line 548
+#line 603
     }
 
-#line 570
+#line 625
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-#line 570
+#line 625
     uint k_6;
     if((*kernelContext_53->spCarried_0) != 4294967295U)
     {
@@ -53176,53 +53724,53 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
         if(_S271)
         {
 
-#line 575
+#line 630
             thread array<float3, int(9)> kept_0;
 
-#line 575
+#line 630
             k_6 = 0U;
             for(;;)
             {
 
-#line 576
+#line 631
                 if(k_6 < 9U)
                 {
                 }
                 else
                 {
 
-#line 576
+#line 631
                     break;
                 }
 
-#line 577
+#line 632
                 kept_0[k_6] = (*kernelContext_53->spHistory_0)[k_6];
 
-#line 576
+#line 631
                 k_6 = k_6 + 1U;
 
-#line 576
+#line 631
             }
 
 
             float _S279 = *kernelContext_53->spHistoryCount_0;
 
-#line 579
+#line 634
             thread array<float3, int(9)> _S280 = kept_0;
 
-#line 579
+#line 634
             spStoreCoefficients_0(_S265, record_10, &_S280, _S279, kernelContext_53);
 
-#line 579
+#line 634
             thread array<float3, int(9)> _S281 = kept_0;
 
-#line 579
+#line 634
             spStoreFiltered_0(_S265, record_10, &_S281, kernelContext_53);
 
-#line 579
+#line 634
             uint _S282 = spRecordBase_0(1U - _S265, *kernelContext_53->spCarried_0, kernelContext_53);
 
-#line 579
+#line 634
             uint _S283 = spRecordBase_0(_S265, record_10, kernelContext_53);
 
 
@@ -53230,21 +53778,21 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
             *(kernelContext_53->giResolve_0->probes_1+(_S283 + 9U)) = *(kernelContext_53->giResolve_0->probes_1+(_S282 + 9U));
             *(kernelContext_53->giResolve_0->probes_1+(_S283 + 10U)) = *(kernelContext_53->giResolve_0->probes_1+(_S282 + 10U));
 
-#line 574
+#line 629
         }
 
-#line 586
+#line 641
         return;
     }
 
-#line 586
+#line 641
     float3 value_4;
 
 
     if(lane_0 < 16U)
     {
 
-#line 590
+#line 645
         float z_8 = (float(lane_0 / 4U) + 0.5) / 4.0;
 
         float3 direction_8 = spHemisphereDirection_0(_S270.normal_4, z_8, (float(lane_0 % 4U) + 0.5) / 4.0);
@@ -53252,15 +53800,15 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
         if((*kernelContext_53->spReprojected_0) != 0U)
         {
 
-#line 595
+#line 650
             thread array<float3, int(9)> previous_2;
 
-#line 595
+#line 650
             cell_4 = 0U;
             for(;;)
             {
 
-#line 596
+#line 651
                 if(cell_4 < 9U)
                 {
                 }
@@ -53268,121 +53816,121 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
     R"cy_msl(                else
                 {
 
-#line 596
+#line 651
                     break;
                 }
 
-#line 597
+#line 652
                 previous_2[cell_4] = (*kernelContext_53->spHistory_0)[cell_4];
 
-#line 596
+#line 651
                 cell_4 = cell_4 + 1U;
 
-#line 596
+#line 651
             }
 
 
             float3 _S284 = float3(1.0, 1.0, 1.0);
 
-#line 599
+#line 654
             thread array<float3, int(9)> _S285 = previous_2;
 
-#line 599
+#line 654
             float3 _S286 = spEvaluate_0(&_S285, direction_8, _S284);
 
-#line 599
+#line 654
             value_4 = _S286;
 
-#line 594
+#line 649
         }
         else
         {
 
-#line 594
+#line 649
             float4 _S287 = gpSample_0(_S270.position_2, direction_8, cacheFrame_2, kernelContext_53);
 
-#line 594
+#line 649
             value_4 = _S287.xyz;
 
-#line 594
+#line 649
         }
 
-#line 603
+#line 658
         (*kernelContext_53->spWeights_0)[lane_0] = max(spLuminance_0(value_4), 0.0) * z_8;
 
-#line 589
+#line 644
     }
 
-#line 605
+#line 660
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-#line 605
+#line 660
     cell_4 = 0U;
 
-#line 605
+#line 660
     float guideTotal_0 = 0.0;
 
 
     for(;;)
     {
 
-#line 608
+#line 663
         if(cell_4 < 16U)
         {
         }
         else
         {
 
-#line 608
+#line 663
             break;
         }
 
-#line 609
+#line 664
         float guideTotal_1 = guideTotal_0 + (*kernelContext_53->spWeights_0)[cell_4];
 
-#line 608
+#line 663
         cell_4 = cell_4 + 1U;
 
-#line 608
+#line 663
         guideTotal_0 = guideTotal_1;
 
-#line 608
+#line 663
     }
 
-#line 608
+#line 663
     float guided_0;
 
 
     if(guideTotal_0 > 0.0)
     {
 
-#line 611
+#line 666
         guided_0 = gpClamp_0(weights_0.z, 0.0, 0.89999997615814209);
 
-#line 611
+#line 666
     }
     else
     {
 
-#line 611
+#line 666
         guided_0 = 0.0;
 
-#line 611
+#line 666
     }
     float uniformShare_0 = (1.0 - guided_0) * 0.5;
 
     uint _S288 = min(max(shape_1.x, 1U), 64U);
 
-#line 614
+#line 669
     float history_4;
 
-#line 614
+#line 669
     float openness_0;
 
     if(lane_0 < _S288)
     {
 
-#line 617
+#line 672
         uint hash_3 = grHash_0(_S270.id_0 * 64U + lane_0, frame_4, 8U);
         float u0_0 = grUnit_0(hash_3);
         float u1_0 = grUnit_0(hash_3 * 656542357U);
@@ -53392,151 +53940,151 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
         if(u0_0 >= uniformShare_0)
         {
 
-#line 623
+#line 678
             allowed_0 = u0_0 < (uniformShare_0 + uniformShare_0);
 
-#line 623
+#line 678
         }
         else
         {
 
-#line 623
+#line 678
             allowed_0 = false;
 
-#line 623
+#line 678
         }
 
-#line 623
+#line 678
         if(allowed_0)
         {
 
-#line 623
+#line 678
             history_4 = sqrt(u1_0);
 
-#line 623
+#line 678
             openness_0 = u2_0;
 
-#line 623
+#line 678
         }
         else
         {
 
-#line 625
+#line 680
             if(u0_0 >= (uniformShare_0 + uniformShare_0))
             {
 
-#line 626
+#line 681
                 float _S289 = (u0_0 - uniformShare_0 - uniformShare_0) / guided_0 * guideTotal_0;
 
-#line 626
+#line 681
                 cell_4 = 0U;
 
-#line 626
+#line 681
                 history_4 = 0.0;
 
 
                 for(;;)
                 {
 
-#line 629
+#line 684
                     if(cell_4 < 16U)
                     {
                     }
                     else
                     {
 
-#line 629
+#line 684
                         k_6 = 15U;
 
-#line 629
+#line 684
                         break;
                     }
 
-#line 630
+#line 685
                     float running_0 = history_4 + (*kernelContext_53->spWeights_0)[cell_4];
                     if(((*kernelContext_53->spWeights_0)[cell_4]) > 0.0)
                     {
 
-#line 631
+#line 686
                         allowed_0 = _S289 < running_0;
 
-#line 631
+#line 686
                     }
                     else
                     {
 
-#line 631
+#line 686
                         allowed_0 = false;
 
-#line 631
+#line 686
                     }
 
-#line 631
+#line 686
                     if(allowed_0)
                     {
 
-#line 631
+#line 686
                         k_6 = cell_4;
 
                         break;
                     }
 
-#line 629
+#line 684
                     cell_4 = cell_4 + 1U;
 
-#line 629
+#line 684
                     history_4 = running_0;
 
-#line 629
+#line 684
                 }
 
-#line 637
+#line 692
                 float _S290 = (float(k_6 % 4U) + u2_0) / 4.0;
 
-#line 637
+#line 692
                 history_4 = (float(k_6 / 4U) + u1_0) / 4.0;
 
-#line 637
+#line 692
                 openness_0 = _S290;
 
-#line 625
+#line 680
             }
             else
             {
 
-#line 625
+#line 680
                 history_4 = u1_0;
 
-#line 625
+#line 680
                 openness_0 = u2_0;
 
-#line 625
+#line 680
             }
 
-#line 623
+#line 678
         }
 
-#line 639
+#line 694
         float density_2 = uniformShare_0 / 6.28318548202514648 + uniformShare_0 * history_4 / 3.14159274101257324;
 
-#line 639
+#line 694
         float density_3;
 
         if(guided_0 > 0.0)
         {
 
-#line 641
+#line 696
             density_3 = density_2 + guided_0 * ((*kernelContext_53->spWeights_0)[spGuideCell_0(history_4, openness_0)] / guideTotal_0) * 2.5464789867401123;
 
-#line 641
+#line 696
         }
         else
         {
 
-#line 641
+#line 696
             density_3 = density_2;
 
-#line 641
+#line 696
         }
 
 
@@ -53545,153 +54093,153 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
         float3 direction_9 = spHemisphereDirection_0(_S270.normal_4, history_4, openness_0);
         bool _S292 = density_3 > 0.0;
 
-#line 647
+#line 702
         if(_S292)
         {
             uint excluded_1 = kernelContext_53->giResolve_0->constants_2[2U].w;
 
             float4 standIn_1 = *kernelContext_53->spStandIn_0;
 
-#line 651
+#line 706
             GrSample_0 _S293 = spProbeRay_0(*kernelContext_53->spOrigin_0, giNormalisedOr_0(direction_9, float3(0.0, 0.0, -1.0)), (as_type<float4>((kernelContext_53->giResolve_0->constants_2[2U]))).x, kernelContext_53);
 
 
             GrSample_0 _S294 = grSample_0(standIn_1.xyz, standIn_1.w, 3U);
 
-#line 654
+#line 709
             thread GrSample_0 _S295 = _S293;
 
-#line 654
+#line 709
             thread GrSample_0 _S296 = _S294;
 
-#line 654
+#line 709
             GrSample_0 _S297 = grGatherSample_0(&_S295, &_S296, excluded_1);
             if((_S297.source_0) != 0U)
             {
 
-#line 655
+#line 710
                 value_4 = _S297.radiance_0;
 
-#line 655
+#line 710
                 k_6 = 1U;
 
-#line 655
+#line 710
             }
             else
             {
 
-#line 655
+#line 710
                 value_4 = _S291;
 
-#line 655
+#line 710
                 k_6 = 0U;
 
-#line 655
+#line 710
             }
 
-#line 647
+#line 702
         }
         else
         {
 
-#line 647
+#line 702
             value_4 = _S291;
 
-#line 647
+#line 702
             k_6 = 0U;
 
-#line 647
+#line 702
         }
 
-#line 660
+#line 715
         (*kernelContext_53->spRayValue_0)[lane_0] = value_4;
         (*kernelContext_53->spRayDirection_0)[lane_0] = direction_9;
         if(_S292)
         {
 
-#line 662
+#line 717
             guideTotal_0 = 1.0 / (density_3 * float(_S288));
 
-#line 662
+#line 717
         }
         else
         {
 
-#line 662
+#line 717
             guideTotal_0 = 0.0;
 
-#line 662
+#line 717
         }
 
-#line 662
+#line 717
         (*kernelContext_53->spRayWeight_0)[lane_0] = guideTotal_0;
         (*kernelContext_53->spRayValid_0)[lane_0] = k_6;
 
-#line 616
+#line 671
     }
 
-#line 665
+#line 720
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if(lane_0 != 0U)
     {
 
-#line 667
+#line 722
         return;
     }
 
     thread array<float3, int(9)> sum_2;
 
-#line 670
+#line 725
     k_6 = 0U;
     for(;;)
     {
 
-#line 671
+#line 726
         if(k_6 < 9U)
         {
         }
         else
         {
 
-#line 671
+#line 726
             break;
         }
 
-#line 672
+#line 727
         sum_2[k_6] = float3(0.0, 0.0, 0.0);
 
-#line 671
+#line 726
         k_6 = k_6 + 1U;
 
-#line 671
+#line 726
     }
 
-#line 671
+#line 726
     uint ray_2 = 0U;
 
 
     for(;;)
     {
 
-#line 674
+#line 729
         if(ray_2 < _S288)
         {
         }
         else
         {
 
-#line 674
+#line 729
             break;
         }
 
-#line 675
+#line 730
         if(((*kernelContext_53->spRayValid_0)[ray_2]) == 0U)
         {
 
-#line 676
+#line 731
             ray_2 = ray_2 + 1U;
 
-#line 674
+#line 729
             continue;
         }
 
@@ -53700,175 +54248,175 @@ void spTrace_0(uint record_10, uint lane_0, KernelContext_0 thread* kernelContex
         spBasis_0((*kernelContext_53->spRayDirection_0)[ray_2], &basis_2);
         float _S298 = (*kernelContext_53->spRayWeight_0)[ray_2];
 
-#line 680
+#line 735
         k_6 = 0U;
         for(;;)
         {
 
-#line 681
+#line 736
             if(k_6 < 9U)
             {
             }
             else
             {
 
-#line 681
+#line 736
                 break;
             }
 
-#line 682
+#line 737
             sum_2[k_6] = sum_2[k_6] + (*kernelContext_53->spRayValue_0)[ray_2] * float3((basis_2[k_6] * _S298)) ;
 
-#line 681
+#line 736
             k_6 = k_6 + 1U;
 
-#line 681
+#line 736
         }
 
-#line 674
+#line 729
         ray_2 = ray_2 + 1U;
 
-#line 674
+#line 729
     }
 
-#line 686
+#line 741
     float frames_0 = float(max(shape_1.y, 1U));
     thread array<float3, int(9)> blended_0;
 
     if((*kernelContext_53->spReprojected_0) != 0U)
     {
 
-#line 690
+#line 745
         float _S299 = max(1.0 / (*kernelContext_53->spHistoryCount_0 + 1.0), 1.0 / frames_0);
 
-#line 690
+#line 745
         k_6 = 0U;
         for(;;)
         {
 
-#line 691
+#line 746
             if(k_6 < 9U)
             {
             }
             else
             {
 
-#line 691
+#line 746
                 break;
             }
 
-#line 692
+#line 747
             blended_0[k_6] = (*kernelContext_53->spHistory_0)[k_6] + (sum_2[k_6] - (*kernelContext_53->spHistory_0)[k_6]) * float3(_S299) ;
 
-#line 691
+#line 746
             k_6 = k_6 + 1U;
 
-#line 691
+#line 746
         }
 
-#line 691
+#line 746
         history_4 = min(*kernelContext_53->spHistoryCount_0 + 1.0, frames_0);
 
-#line 689
+#line 744
     }
     else
     {
 
-#line 689
+#line 744
         k_6 = 0U;
 
-#line 696
+#line 751
         for(;;)
         {
 
-#line 696
+#line 751
             if(k_6 < 9U)
             {
             }
             else
             {
 
-#line 696
+#line 751
                 break;
             }
 
-#line 697
+#line 752
             blended_0[k_6] = sum_2[k_6];
 
-#line 696
+#line 751
             k_6 = k_6 + 1U;
 
-#line 696
+#line 751
         }
 
-#line 696
+#line 751
         history_4 = 1.0;
 
-#line 689
+#line 744
     }
 
-#line 689
+#line 744
     thread array<float3, int(9)> _S300 = blended_0;
 
-#line 689
+#line 744
     spStoreCoefficients_0(_S265, record_10, &_S300, history_4, kernelContext_53);
 
-#line 689
+#line 744
     thread array<float3, int(9)> _S301 = blended_0;
 
-#line 689
+#line 744
     spStoreFiltered_0(_S265, record_10, &_S301, kernelContext_53);
 
-#line 689
+#line 744
     float _S302 = grFarFieldWeight_0(length(_S270.position_2 - (as_type<float3>((kernelContext_53->giResolve_0->constants_2[1U].xyz)))), kernelContext_53);
 
-#line 706
+#line 761
     uint skyRays_0 = kernelContext_53->giResolve_0->constants_2[2U].z;
     if(_S302 > 0.0)
     {
 
-#line 707
+#line 762
         allowed_0 = skyRays_0 > 0U;
 
-#line 707
+#line 762
     }
     else
     {
 
-#line 707
+#line 762
         allowed_0 = false;
 
-#line 707
+#line 762
     }
 
-#line 707
+#line 762
     if(allowed_0)
     {
 
-#line 708
+#line 763
         uint _S303 = (frame_4 + _S270.id_0) % skyRays_0;
 
-#line 708
+#line 763
         float _S304 = grSkyVisibilityRay_0(_S270.position_2, _S270.normal_4, _S303, skyRays_0, kernelContext_53);
 
-#line 708
+#line 763
         openness_0 = _S304;
 
-#line 707
+#line 762
     }
     else
     {
 
-#line 707
+#line 762
         openness_0 = 1.0;
 
-#line 707
+#line 762
     }
 
-#line 707
+#line 762
     uint _S305 = spRecordBase_0(_S265, record_10, kernelContext_53);
 
-#line 712
+#line 767
     *(kernelContext_53->giResolve_0->probes_1+(_S305 + 9U)) = *kernelContext_53->spStandIn_0;
     *(kernelContext_53->giResolve_0->probes_1+(_S305 + 10U)) = float4(openness_0, 0.0, 0.0, 0.0);
     return;
