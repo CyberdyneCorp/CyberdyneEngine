@@ -55,6 +55,7 @@ cy_add_module(
         src/locomotion.cpp
         src/lower_behaviour.cpp
         src/lower_camera.cpp
+        src/blend_triangulation.cpp
         src/lower_pose.cpp
         src/lower_script.cpp
         src/lower_script_native.cpp
