@@ -40,6 +40,7 @@
 #include <cy/core/memory/array.h>
 
 #include "character.h"
+#include "course.h"
 
 namespace cy::sample::character {
 
@@ -94,6 +95,11 @@ public:
     /// Once, not per frame.
     [[nodiscard]] Status stage_character(const Character& character) noexcept;
 
+    /// The course `--course` walks: boxes drawn beside the ground. Before `stage_character`.
+    [[nodiscard]] Status set_course(Span<const CourseBox> boxes) noexcept;
+    /// Where the character stands in the world: its instance and its culling bounds move with it.
+    [[nodiscard]] Status place_character(const Transform& placement) noexcept;
+
     /// Skin the character from `poses` and draw the frame, writing it to `png_path` when that is
     /// not null.
     ///
@@ -112,6 +118,7 @@ public:
 private:
     [[nodiscard]] Status create_frame() noexcept;
     [[nodiscard]] Status create_scene(const Character& character) noexcept;
+    [[nodiscard]] Status stage_course() noexcept;
     [[nodiscard]] Status write_png(const char* path) noexcept;
 
     Allocator* allocator_ = nullptr;

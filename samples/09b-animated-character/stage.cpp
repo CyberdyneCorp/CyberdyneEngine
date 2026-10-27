@@ -39,6 +39,8 @@ constexpr f32 kTileThickness = 0.05F;
 /// The character's GPU scene slot: after every tile.
 constexpr u32 kCharacterSlot = kTiles;
 constexpr u32 kInstances = kTiles + 1U;
+/// The course's boxes, after the character: `--course`'s stairs, landing and ramp. Issue #92.
+constexpr u32 kMaxCourseBoxes = 16;
 constexpr u32 kCubeVertices = 24;
 constexpr u32 kCubeIndices = 36;
 constexpr u32 kMaterials = 3;
@@ -145,7 +147,8 @@ struct Stage::Device {
           instances(allocator),
           centres(allocator),
           lights(allocator),
-          frame_lights(allocator) {}
+          frame_lights(allocator),
+          course(allocator) {}
 
     Expected<rhi::Device*, Error> handle = fail(ErrorCode::Unavailable, "not created");
     rhi::BackendSelection selection{};
@@ -187,6 +190,13 @@ struct Stage::Device {
 
     Vec3 eye{0.0F, 0.0F, 0.0F};
     Vec3 shadow_centre{0.0F, 0.0F, 0.0F};
+
+    /// The course's boxes, drawn after the character; empty without `--course`.
+    Array<CourseBox> course;
+    /// The character's slot in the spatial index and its bounds about its own origin, so it can
+    /// be moved along the course.
+    u32 character_entry = 0;
+    Aabb character_bounds;
 };
 
 namespace {
@@ -217,6 +227,9 @@ Span<const DrawSurface> stage_surfaces(const VisibleInstance& instance, void* us
     surface.blend = render::BlendMode::Opaque;
     if (instance.gpu_slot == kCharacterSlot) {
         surface.material = device.material_slots[2];
+    } else if (instance.gpu_slot >= kInstances) {
+        surface.material =
+            device.material_slots[device.course[instance.gpu_slot - kInstances].material & 1U];
     } else {
         const auto tile = static_cast<i32>(instance.gpu_slot);
         const i32 x = tile % (kGroundHalfTiles * 2);
@@ -224,6 +237,17 @@ Span<const DrawSurface> stage_surfaces(const VisibleInstance& instance, void* us
         surface.material = device.material_slots[(x + z) & 1];
     }
     return {&surface, 1};
+}
+
+/// An instance's rotation and scale, as the frame's rows hold them. The translation is the
+/// camera-relative one `shoot` writes each frame.
+void write_rows(InstanceTransform& row, const Transform& placement) noexcept {
+    const Mat4 matrix = placement.to_matrix();
+    for (u32 column = 0; column < 3; ++column) {
+        row.row0[column] = matrix.columns[column].x;
+        row.row1[column] = matrix.columns[column].y;
+        row.row2[column] = matrix.columns[column].z;
+    }
 }
 
 struct Readback {
@@ -299,8 +323,8 @@ Status Stage::create_frame() noexcept {
     description.far_plane = 200.0F;
     description.clusters = ClusterGridConfig{32, 18, 32};
     description.material_capacity = kMaterials + 1U;
-    description.max_draws = kInstances + 16U;
-    description.max_instances = kInstances + 16U;
+    description.max_draws = kInstances + kMaxCourseBoxes + 16U;
+    description.max_instances = kInstances + kMaxCourseBoxes + 16U;
     description.gpu_culling = false;
     description.post.temporal_antialiasing = true;
     if (Status made = device_->assembly.initialize(description); !made) {
@@ -532,10 +556,11 @@ Status Stage::create_scene(const Character& character) noexcept {
 
     // THE SPATIAL INDEX: the tiles, and the character bounded by its bind pose and a metre and a
     // half every way, which holds every pose of the four clips — the death's 0.9 m fall included.
-    if (Status sized = device_->instances.resize(kInstances); !sized) {
+    const auto boxes = static_cast<u32>(device_->course.size());
+    if (Status sized = device_->instances.resize(kInstances + boxes); !sized) {
         return sized;
     }
-    if (Status sized = device_->centres.resize(kInstances); !sized) {
+    if (Status sized = device_->centres.resize(kInstances + boxes); !sized) {
         return sized;
     }
     for (u32 tile = 0; tile < kTiles; ++tile) {
@@ -575,8 +600,59 @@ Status Stage::create_scene(const Character& character) noexcept {
     if (!slot.has_value()) {
         return make_unexpected(slot.error());
     }
+    device_->character_entry = *slot;
+    device_->character_bounds = entry.bounds;
     device_->centres[kCharacterSlot] = Vec4{0.0F, 0.0F, 0.0F, 1.0F};
+    return stage_course();
+}
+
+Status Stage::set_course(Span<const CourseBox> boxes) noexcept {
+    if (boxes.size() > kMaxCourseBoxes) {
+        return fail(ErrorCode::OutOfRange, "the course has more boxes than the stage draws");
+    }
+    device_->course.clear();
+    return device_->course.append(boxes);
+}
+
+Status Stage::stage_course() noexcept {
+    for (u32 index = 0; index < device_->course.size(); ++index) {
+        const Transform& placement = device_->course[index].placement;
+        const u32 slot = kInstances + index;
+        // The cube's eight corners through the placement bound the box, however it is turned.
+        Aabb bounds = Aabb::empty();
+        for (u32 corner = 0; corner < 8; ++corner) {
+            const Vec3 local{(corner & 1U) != 0 ? 0.5F : -0.5F, (corner & 2U) != 0 ? 0.5F : -0.5F,
+                             (corner & 4U) != 0 ? 0.5F : -0.5F};
+            bounds.grow(placement.transform_point(local));
+        }
+        SpatialEntry entry;
+        entry.bounds = bounds;
+        entry.stable_id = 5000U + index;
+        entry.gpu_slot = slot;
+        entry.radius = length(bounds.max - bounds.min) * 0.5F;
+        if (Expected<u32, Error> inserted = device_->index.insert(entry); !inserted.has_value()) {
+            return make_unexpected(inserted.error());
+        }
+        const Vec3& t = placement.translation;
+        device_->centres[slot] = Vec4{t.x, t.y, t.z, 1.0F};
+        write_rows(device_->instances[slot], placement);
+    }
     return ok();
+}
+
+Status Stage::place_character(const Transform& placement) noexcept {
+    if (!available_) {
+        return fail(ErrorCode::Unavailable, "no graphics device answered");
+    }
+    Device& state = *device_;
+    const Vec3& t = placement.translation;
+    state.centres[kCharacterSlot] = Vec4{t.x, t.y, t.z, 1.0F};
+    Transform turned = placement;
+    turned.scale = Vec3{1.0F, 1.0F, 1.0F};
+    write_rows(state.instances[kCharacterSlot], turned);
+    const Aabb& home = state.character_bounds;
+    return state.index.update(state.character_entry,
+                              Aabb::from_min_max(home.min + t, home.max + t));
 }
 
 Status Stage::stage_character(const Character& character) noexcept {
@@ -618,7 +694,7 @@ Status Stage::shoot(animation::PoseWorld& poses, animation::PoseHandle handle, c
         look_at(Vec3{0.0F, 0.0F, 0.0F}, shot.target - shot.eye, Vec3{0.0F, 1.0F, 0.0F});
     const Mat4 projection = perspective_reversed_z(
         shot.fov_y_radians, static_cast<f32>(width_) / static_cast<f32>(height_), 0.05F, 200.0F);
-    for (u32 slot = 0; slot < kInstances; ++slot) {
+    for (u32 slot = 0; slot < state.instances.size(); ++slot) {
         InstanceTransform& row = state.instances[slot];
         row.row0[3] = state.centres[slot].x - shot.eye.x;
         row.row1[3] = state.centres[slot].y - shot.eye.y;

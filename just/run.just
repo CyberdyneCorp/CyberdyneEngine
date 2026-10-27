@@ -687,6 +687,39 @@ capture-animated-character *args:
     python3 tools/docs/collect_animated_character.py "${work}/frames" \
         --still "${work}/still.png" --fps "${fps}"
 
+# Issue #92's artefact: the course — stairs, a landing and a ramp — walked twice by the same
+# character, foot placement off and on, joined side by side into docs/design/videos/foot-placement.mp4
+# with two close stills of the feet. Needs a Vulkan device and the Mixamo files 09b reads.
+# Walk the course with foot placement off and on, and encode the comparison. Usage: just capture-foot-placement [--profile <p>] [--sources <dir>] [--width <n>] [--height <n>] [--fps <n>]
+capture-foot-placement *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/09b-animated-character/cy_sample_animated-character"
+    if [ ! -x "${sample}" ]; then
+        echo "capture-foot-placement: ${sample} was not built (CY_ANIMATION=OFF removes it)." >&2
+        exit 1
+    fi
+
+    work="${build_dir}/foot-placement"
+    rm -rf "${work}"
+    mkdir -p "${work}/off" "${work}/on"
+    trap 'rm -rf "${work}/off" "${work}/on"' EXIT
+
+    for feet in off on; do
+        echo "==> capture     foot placement ${feet}"
+        "${sample}" --course --feet "${feet}" --frames "${work}/${feet}" ${rest}
+    done
+
+    echo "==> encode      foot-placement"
+    python3 tools/docs/collect_foot_placement.py "${work}/off" "${work}/on"
+
 # M10's ARTEFACT: docs/design/images/m10-world.png, docs/design/images/m10-world-budget.png and
 # docs/design/videos/m10-world.mp4, regenerated from nothing but a seed.
 #

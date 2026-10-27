@@ -80,6 +80,30 @@ shader are gone. The committed video predates that: it was drawn with flat shadi
 screen-space derivatives, because the frame could not then bind the skinned normal stream; the still
 `docs/design/images/animated-character-frame.png` is frame 165 through the frame.
 
+## `--course`: stairs and a slope, feet placed or not (issue #92)
+
+![foot placement off and on, on the ramp](../../docs/design/images/foot-placement-slope.png)
+
+```
+just capture-foot-placement --sources <directory holding the four .fbx files>
+```
+
+walks the character over a course — six 16 cm steps, a landing, a 12° ramp down — twice, with
+`--feet off` and `--feet on`, and joins the two takes side by side into
+`docs/design/videos/foot-placement.mp4` with two close stills of the feet
+(`docs/design/images/foot-placement-stairs.png`, `-slope.png`). The program is cooked in place of
+the locomotion machine and loaded the same way: the walk through a `pose.foot_ik` node naming the
+character's legs through its humanoid profile, its weight the parameter `feet`. The character is a
+scene node, so the animation system hands each solve its world placement; the ground is
+`course.cpp`'s `CourseGround`, answered from the numbers the boxes are drawn with.
+
+What is staged, and said here: the ground is analytic rather than a physics world (the game's probe
+is `PhysicsGroundProbe`, tested in `integration.animation_ground`), and the root is carried along the
+course at the walk's stance-foot speed — measured from the clip, 1.61 m/s — at the height a
+character controller's capsule rides at (the ground averaged over half a metre), because the walk is
+an in-place take. The program prints, per take, the standing foot's distance from the ground over
+the stairs, landing and ramp: 12.9 mm mean with the feet placed, 40.1 mm without.
+
 ## The sources
 
 Four Mixamo exports, 1 to 17 MB each, **not in this repository** and not redistributable:

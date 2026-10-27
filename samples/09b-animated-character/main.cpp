@@ -62,8 +62,11 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/graph/locomotion.h>
 #include <cy/runtime/simulation.h>
+#include <cy/scene/node.h>
+#include <cy/scene/tree.h>
 
 #include "character.h"
+#include "course.h"
 #include "stage.h"
 
 #include <cmath>
@@ -107,6 +110,10 @@ struct Options {
     /// its rest pose, and therefore the one frame that carries the most of the claim on its own.
     u32 still_frame = 180;
     std::string still;
+    /// Issue #92: walk the course — stairs, a landing and a ramp — instead of the locomotion take,
+    /// with foot placement on (`--feet on`, the default) or off.
+    bool course = false;
+    bool feet = true;
 };
 
 /// `strtol` and `strtod` rather than `atoi` and `atof`, which report no conversion error at all: a
@@ -164,6 +171,27 @@ public:
         return true;
     }
 
+    /// `name on` or `name off`.
+    [[nodiscard]] bool toggle(std::string_view name, bool& out) noexcept {
+        const char* value = value_for(name);
+        if (value == nullptr) {
+            return matched_;
+        }
+        const std::string_view text(value);
+        failed_ = failed_ || (text != "on" && text != "off");
+        out = text == "on";
+        return true;
+    }
+
+    /// A flag with no value.
+    [[nodiscard]] bool flag(std::string_view name, bool& out) const noexcept {
+        if (current() != name) {
+            return false;
+        }
+        out = true;
+        return true;
+    }
+
     [[nodiscard]] bool number(std::string_view name, f32& out) noexcept {
         const char* value = value_for(name);
         if (value == nullptr) {
@@ -204,7 +232,8 @@ private:
             cursor.text("--sources", out.sources) || cursor.text("--frames", out.frames) ||
             cursor.text("--still", out.still) || cursor.number("--still-frame", out.still_frame) ||
             cursor.number("--width", out.width) || cursor.number("--height", out.height) ||
-            cursor.number("--fps", out.fps) || cursor.number("--seconds", out.seconds);
+            cursor.number("--fps", out.fps) || cursor.number("--seconds", out.seconds) ||
+            cursor.flag("--course", out.course) || cursor.toggle("--feet", out.feet);
         if (!recognised) {
             const std::string_view argument = cursor.current();
             std::fprintf(stderr, "unknown argument: %.*s\n", static_cast<int>(argument.size()),
@@ -480,7 +509,7 @@ struct World {
         return config;
     }
 
-    [[nodiscard]] Status open(const animation::AnimationRig& rig) noexcept {
+    [[nodiscard]] Status open(const animation::AnimationRig& rig, bool placed = false) noexcept {
         if (Status initialized = simulation.initialize(); !initialized) {
             return initialized;
         }
@@ -508,6 +537,22 @@ struct World {
         animation::Animator settings;
         settings.rig = 0;
         settings.tier = animation::LodTier::Full;
+        if (placed) {
+            // ON THE COURSE THE CHARACTER IS A SCENE NODE: it has a world placement, which is what
+            // the animation system hands foot placement to find the ground under each foot.
+            scene::SceneTree* tree = simulation.tree();
+            if (tree == nullptr) {
+                return fail(ErrorCode::Unavailable, "the simulation has no scene tree");
+            }
+            Expected<scene::Node, Error> created =
+                tree->create_node(Name::intern("character"), tree->root());
+            if (!created) {
+                return Status{make_unexpected(created.error())};
+            }
+            node = *created;
+            character = node.entity();
+            return simulation.world().add(character, animator, &settings);
+        }
         const ecs::ComponentTypeId components[] = {animator};
         Expected<ecs::Entity, Error> created =
             simulation.world().create(Span<const ecs::ComponentTypeId>(components, 1));
@@ -555,6 +600,7 @@ struct World {
     ecs::ComponentTypeId animator = ecs::kInvalidComponent;
     std::unique_ptr<animation::AnimationSystem> system;
     ecs::Entity character = ecs::kNoEntity;
+    scene::Node node;
 };
 
 /// One frame: the request, the simulation's tick and frame stages, and the shot.
@@ -732,6 +778,218 @@ void print_summary(const Options& options, const Summary& summary, u32& out_visi
     return status;
 }
 
+// --- The course (issue #92)
+// -----------------------------------------------------------------------
+
+/// How fast the character must travel for its feet not to slide: the speed the walk moves its
+/// planted foot backwards at, measured from the clip. The Mixamo walk is an in-place take, so this
+/// is the only honest source of a travel speed — the foot in stance is still in the world.
+[[nodiscard]] f32 stance_speed(const animation::AnimationRig& rig,
+                               const animation::SkeletonProfile& humanoid) noexcept {
+    const animation::Skeleton& skeleton = rig.skeleton();
+    const animation::Clip* walk = rig.clips().empty() ? nullptr : rig.clips()[0];
+    const u16 foot = humanoid.resolve(animation::HumanoidJoint::LeftFoot);
+    if (walk == nullptr || foot == animation::kInvalidJoint) {
+        return 1.2F;
+    }
+    constexpr u32 kSamples = 240;
+    Array<Transform> local(allocator());
+    animation::ClipCursor cursor(allocator());
+    if (!local.resize(skeleton.joint_count()) || !cursor.reset(walk->track_count())) {
+        return 1.2F;
+    }
+    f32 heights[kSamples] = {};
+    f32 depths[kSamples] = {};
+    f32 lowest = 1e9F;
+    for (u32 sample = 0; sample < kSamples; ++sample) {
+        const f32 time = walk->duration() * static_cast<f32>(sample) / static_cast<f32>(kSamples);
+        skeleton.reference_pose(local.span());
+        animation::SampleStats stats;
+        (void)walk->sample(time, skeleton.retained(0), cursor, local.span(), stats);
+        const Vec3 at = animation::joint_model(skeleton, foot, local.span()).translation;
+        heights[sample] = at.y;
+        depths[sample] = at.z;
+        lowest = math::min(lowest, at.y);
+    }
+    // THE STANCE: the samples within a centimetre of the foot's lowest, where it is on the floor.
+    f32 travelled = 0.0F;
+    f32 elapsed = 0.0F;
+    const f32 step = walk->duration() / static_cast<f32>(kSamples);
+    for (u32 sample = 0; sample + 1 < kSamples; ++sample) {
+        if (heights[sample] < lowest + 0.01F && heights[sample + 1] < lowest + 0.01F) {
+            travelled += depths[sample] - depths[sample + 1];
+            elapsed += step;
+        }
+    }
+    return elapsed > 0.0F ? std::fabs(travelled / elapsed) : 1.2F;
+}
+
+/// What the course measured: how far the soles were from the ground they stood on.
+struct CourseSummary {
+    u32 frames = 0;
+    /// Frames over the stairs, the landing or the ramp: the ones the soles are measured in.
+    u32 measured = 0;
+    /// Per frame, the distance from the standing foot's sole to the ground under it, above or
+    /// into it. Summed for the mean, and the worst.
+    f64 gap_sum = 0.0;
+    f32 worst_gap = 0.0F;
+    f32 lowest_pelvis = 0.0F;
+    u32 validation_errors = 0;
+    u32 frames_not_drawn = 0;
+};
+
+/// The side view the course is filmed from, a little behind the character.
+[[nodiscard]] Shot course_shot(Vec3 follow) noexcept {
+    Shot shot;
+    shot.target = Vec3{0.0F, follow.y + 0.7F, follow.z + 0.15F};
+    shot.eye = Vec3{4.4F, follow.y + 1.05F, follow.z - 0.45F};
+    shot.fov_y_radians = 0.62F;
+    return shot;
+}
+
+[[nodiscard]] Status play_course(const Options& options, const Character& character,
+                                 const animation::AnimationRig& rig, World& world, Stage& stage,
+                                 CourseSummary& out) noexcept {
+    const f32 dt = 1.0F / static_cast<f32>(options.fps);
+    const f32 speed = stance_speed(rig, character.humanoid);
+    const f32 seconds = (kCourseEnd - kCourseStart) / speed;
+    out.frames = static_cast<u32>(std::lround(seconds * static_cast<f32>(options.fps)));
+    std::printf(
+        "\n  course    walked at %.3f m/s, the walk's stance-foot speed; %u frames; feet %s\n",
+        static_cast<f64>(speed), out.frames, options.feet ? "PLACED" : "not placed");
+    const u16 feet[2] = {character.humanoid.resolve(animation::HumanoidJoint::LeftFoot),
+                         character.humanoid.resolve(animation::HumanoidJoint::RightFoot)};
+    const f32 ankle_height = character.skeleton.bind_model()[feet[0]].translation.y;
+    Vec3 follow{0.0F, 0.0F, kCourseStart};
+    FrameReport report;
+    for (u32 frame = 0; frame < out.frames; ++frame) {
+        const f32 z = kCourseStart + (speed * static_cast<f32>(frame) * dt);
+        const Transform placement =
+            Transform::from_translation(Vec3{0.0F, controller_height(z), z});
+        Status stepped = world.node.set_local_transform(placement);
+        if (stepped) {
+            stepped = world.frame();
+        }
+        if (stepped) {
+            stepped = stage.place_character(placement);
+        }
+        // THE SOLES. Each ankle's place from the published matrices, through the placement, and
+        // the course's height under it.
+        const Span<const Mat4> matrices =
+            world.system->poses().current(world.system->pose_of(world.character));
+        f32 gaps[2] = {0.0F, 0.0F};
+        f32 heights[2] = {0.0F, 0.0F};
+        for (u32 leg = 0; leg < 2 && stepped; ++leg) {
+            const Vec3 model =
+                (matrices[feet[leg]] * character.skeleton.bind_model()[feet[leg]].to_matrix())
+                    .translation();
+            const Vec3 ankle = placement.transform_point(model);
+            heights[leg] = ankle.y;
+            gaps[leg] = ankle.y - ankle_height - CourseGround::height(ankle.x, ankle.z);
+        }
+        // THE FOOT THAT IS STANDING is the one nearer its ground; measured where the ground is
+        // not the floor — on the stairs, the landing and the ramp — which is where placement is
+        // the difference.
+        (void)heights;
+        const f32 standing = math::min(std::fabs(gaps[0]), std::fabs(gaps[1]));
+        if (CourseGround::height(0.0F, z) > 0.0F) {
+            out.gap_sum += static_cast<f64>(standing);
+            out.worst_gap = math::max(out.worst_gap, standing);
+            ++out.measured;
+        }
+        Expected<animation::FootPlacementReport, Error> placed =
+            world.system->foot_placement(world.character);
+        if (placed.has_value()) {
+            out.lowest_pelvis = math::min(out.lowest_pelvis, placed->pelvis);
+        }
+        if (stepped) {
+            const Vec3 root = placement.translation;
+            follow = frame == 0 ? root : follow + ((root - follow) * 0.12F);
+            char path[512];
+            (void)std::snprintf(path, sizeof(path), "%s/frame_%04u.png", options.frames.c_str(),
+                                frame);
+            const char* target = options.frames.empty() ? nullptr : path;
+            stepped = stage.shoot(world.system->poses(), world.system->pose_of(world.character),
+                                  course_shot(follow), frame, target, report);
+            if (stepped && frame == options.still_frame && !options.still.empty()) {
+                FrameReport again;
+                stepped = stage.shoot(world.system->poses(), world.system->pose_of(world.character),
+                                      course_shot(follow), frame, options.still.c_str(), again);
+            }
+        }
+        if (!stepped) {
+            std::fprintf(stderr, "frame %u failed: %s\n", frame, stepped.error().message);
+            return stepped;
+        }
+        out.validation_errors = report.validation_errors;
+        out.frames_not_drawn += report.skinned_draws == 3U ? 0U : 1U;
+        if ((frame % 30U) == 0U) {
+            std::printf(
+                "    frame %3u  z=%5.2f  ground under the soles %+6.1f mm %+6.1f mm  pelvis "
+                "%+6.1f mm\n",
+                frame, static_cast<f64>(z), static_cast<f64>(gaps[0] * 1000.0F),
+                static_cast<f64>(gaps[1] * 1000.0F),
+                static_cast<f64>(placed.has_value() ? placed->pelvis * 1000.0F : 0.0F));
+        }
+    }
+    return ok();
+}
+
+int run_course(const Options& options, const Character& character,
+               const animation::AnimationRig& rig) noexcept {
+    World world(options.fps);
+    if (Status opened = world.open(rig, true); !opened) {
+        std::fprintf(stderr, "the simulation would not start: %s\n", opened.error().message);
+        return 1;
+    }
+    const CourseGround ground;
+    world.system->set_ground_probe(&ground);
+    if (Status synced = world.system->sync(); !synced) {
+        return 1;
+    }
+    if (Status set = world.system->set_parameter(world.character, Name::intern("feet"),
+                                                 options.feet ? 1.0F : 0.0F);
+        !set) {
+        std::fprintf(stderr, "the course program has no `feet` weight: %s\n", set.error().message);
+        return 1;
+    }
+    std::printf("  rig       foot placement joints unresolved: %u\n", rig.unresolved_joints());
+
+    Stage stage(allocator());
+    if (Status opened = stage.open(options.width, options.height); !opened) {
+        std::fprintf(stderr, "the stage would not open: %s\n", opened.error().message);
+        return 1;
+    }
+    if (!stage.available()) {
+        std::printf("\nno graphics device answered: %s\n", stage.absence());
+        return 2;
+    }
+    Array<CourseBox> boxes(allocator());
+    course_boxes(boxes);
+    if (Status set = stage.set_course(boxes.span()); !set) {
+        return 1;
+    }
+    if (Status staged = stage.stage_character(character); !staged) {
+        std::fprintf(stderr, "the character would not stage: %s\n", staged.error().message);
+        return 1;
+    }
+    CourseSummary summary;
+    const Status played = play_course(options, character, rig, world, stage, summary);
+    std::printf(
+        "\n  soles     the standing foot's sole from the ground under it: mean %.1f mm, "
+        "worst %.1f mm\n",
+        summary.measured != 0 ? summary.gap_sum * 1000.0 / summary.measured : 0.0,
+        static_cast<f64>(summary.worst_gap * 1000.0F));
+    std::printf("  pelvis    lowest %.1f mm\n", static_cast<f64>(summary.lowest_pelvis * 1000.0F));
+    std::printf("  validation errors: %u; frames not drawn: %u\n", summary.validation_errors,
+                summary.frames_not_drawn);
+    stage.close();
+    if (!played || summary.validation_errors != 0 || summary.frames_not_drawn != 0) {
+        return 1;
+    }
+    return 0;
+}
+
 /// Import the four files and report what came of each. Separated from `run()` because a missing
 /// source file is the ONE failure a person running this is likely to hit, and it deserves a message
 /// that says where the program looked.
@@ -766,6 +1024,16 @@ int run(const Options& options) noexcept {
     if (!load(memory, options, character)) {
         return 1;
     }
+    if (options.course) {
+        // THE COURSE'S PROGRAM: the walk through foot placement, cooked in place of the
+        // locomotion machine and loaded the same way, by asset id.
+        if (Status cooked = cook_course_program(character.skeleton, character.humanoid,
+                                                character.cooked.program);
+            !cooked) {
+            std::fprintf(stderr, "the course program would not cook: %s\n", cooked.error().message);
+            return 1;
+        }
+    }
     AssetHost host;
     if (Status opened = host.open(character); !opened) {
         std::fprintf(stderr, "the asset system would not start: %s\n", opened.error().message);
@@ -774,6 +1042,9 @@ int run(const Options& options) noexcept {
     Expected<const animation::AnimationRig*, Error> rig = bind_rig(host);
     if (!rig) {
         return 1;
+    }
+    if (options.course) {
+        return run_course(options, character, **rig);
     }
     World world(options.fps);
     if (Status opened = world.open(**rig); !opened) {
@@ -814,7 +1085,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr,
                      "usage: cy_sample_animated-character [--sources <dir>] [--frames <dir>] "
                      "[--still <path>] [--still-frame <n>] [--width <n>] [--height <n>] "
-                     "[--fps <n>] [--seconds <s>]\n");
+                     "[--fps <n>] [--seconds <s>] [--course [--feet on|off]]\n");
         return 2;
     }
     return run(options);

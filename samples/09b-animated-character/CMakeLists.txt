@@ -67,6 +67,7 @@ cy_add_module(
     SOURCES
         main.cpp
         character.cpp
+        course.cpp
         stage.cpp
         "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
     PRIVATE_DEPENDENCIES
