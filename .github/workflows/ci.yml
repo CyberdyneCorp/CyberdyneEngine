@@ -385,15 +385,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-${{ matrix.label }}
-      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
-      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
       - name: The download is the archive the build job packed
         id: build-tree
         run: just ci-build-tree-verify
-      - if: steps.build-tree.outputs.intact != 'true'
-        uses: actions/download-artifact@v5
-        with:
-          name: build-tree-${{ matrix.label }}
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-${{ matrix.label }}
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       - name: Unit, integration and smoke
@@ -592,15 +593,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
-      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
-      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
       - name: The download is the archive the build job packed
         id: build-tree
         run: just ci-build-tree-verify
-      - if: steps.build-tree.outputs.intact != 'true'
-        uses: actions/download-artifact@v5
-        with:
-          name: build-tree-linux-x86_64
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # A structural change attempted mid-iteration is refused and counted, in every profile — a
@@ -672,15 +674,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
-      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
-      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
       - name: The download is the archive the build job packed
         id: build-tree
         run: just ci-build-tree-verify
-      - if: steps.build-tree.outputs.intact != 'true'
-        uses: actions/download-artifact@v5
-        with:
-          name: build-tree-linux-x86_64
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # The milestone's whole point: a pass declares reads and writes, and the graph derives the
@@ -766,15 +769,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
-      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
-      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
       - name: The download is the archive the build job packed
         id: build-tree
         run: just ci-build-tree-verify
-      - if: steps.build-tree.outputs.intact != 'true'
-        uses: actions/download-artifact@v5
-        with:
-          name: build-tree-linux-x86_64
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # The compatibility obligation, and it needs no build: it is a comparison between the header
@@ -908,15 +912,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
-      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
-      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
       - name: The download is the archive the build job packed
         id: build-tree
         run: just ci-build-tree-verify
-      - if: steps.build-tree.outputs.intact != 'true'
-        uses: actions/download-artifact@v5
-        with:
-          name: build-tree-linux-x86_64
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # The importer's purity and the cache's honesty, neither of which a functional test notices
@@ -981,15 +986,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
-      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
-      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
       - name: The download is the archive the build job packed
         id: build-tree
         run: just ci-build-tree-verify
-      - if: steps.build-tree.outputs.intact != 'true'
-        uses: actions/download-artifact@v5
-        with:
-          name: build-tree-linux-x86_64
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # Cell identity, spatial binding, the ECS-native cook, layers, HLOD and the overlay that
@@ -1088,15 +1094,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
-      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
-      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
       - name: The download is the archive the build job packed
         id: build-tree
         run: just ci-build-tree-verify
-      - if: steps.build-tree.outputs.intact != 'true'
-        uses: actions/download-artifact@v5
-        with:
-          name: build-tree-linux-x86_64
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       - name: An agent composes, authors, is refused, and is told what it spent
@@ -1844,15 +1851,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
-      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
-      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
       - name: The download is the archive the build job packed
         id: build-tree
         run: just ci-build-tree-verify
-      - if: steps.build-tree.outputs.intact != 'true'
-        uses: actions/download-artifact@v5
-        with:
-          name: build-tree-linux-x86_64
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # m11d5: `milestone-m11d5` reached `state = "green"` in gates.toml in the same commit that moved
@@ -1937,15 +1945,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-${{ matrix.label }}
-      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
-      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
       - name: The download is the archive the build job packed
         id: build-tree
         run: just ci-build-tree-verify
-      - if: steps.build-tree.outputs.intact != 'true'
-        uses: actions/download-artifact@v5
-        with:
-          name: build-tree-${{ matrix.label }}
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-${{ matrix.label }}
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       - name: The exit criteria pinned to this system, evaluated once each

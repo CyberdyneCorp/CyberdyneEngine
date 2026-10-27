@@ -616,6 +616,8 @@ UNPACK = "just ci-build-tree-unpack"
 #: 40266516833 lost ten jobs to it), so a job checks what arrived and downloads it again when it is
 #: not what the build job packed, before it unpacks.
 VERIFY = "just ci-build-tree-verify"
+#: And fetches it again by another transport: a second `actions/download-artifact` ended short too.
+FETCH = "just ci-build-tree-fetch"
 TREE_ARTEFACT = "build-tree-"
 STEP_START = re.compile(r"^      - ")
 NEEDS_KEY = re.compile(r"^    needs:\s*(?P<inline>.*?)\s*$")
@@ -702,11 +704,10 @@ def build_tree_handoff(root: pathlib.Path, workflows: list[pathlib.Path]) -> lis
                                 f"downloading a `{TREE_ARTEFACT}` artefact")
             verified = _first(steps, lambda step: VERIFY in step)
             again = [index for index, step in enumerate(steps)
-                     if verified < index < unpacked and "actions/download-artifact" in step
-                     and TREE_ARTEFACT in step]
+                     if verified < index < unpacked and FETCH in step]
             if not (downloaded < verified < unpacked and again):
                 problems.append(f"{path.name}:{line} job '{job}' unpacks the tree without "
-                                f"`{VERIFY}` after its download and a second download after that, "
+                                f"`{VERIFY}` after its download and `{FETCH}` after that, "
                                 "so a download that ended short fails the job instead of being "
                                 "fetched again")
             late = [index for index, step in enumerate(steps)
@@ -1314,8 +1315,7 @@ def selftest(root: pathlib.Path) -> int:
         unpack = "      - run: just ci-build-tree-unpack\n"
         verify = ("      - id: build-tree\n        run: just ci-build-tree-verify\n"
                   "      - if: steps.build-tree.outputs.intact != 'true'\n"
-                  "        uses: actions/download-artifact@v5\n        with:\n"
-                  "          name: build-tree-x\n")
+                  "        run: just ci-build-tree-fetch build-tree-x\n")
         cache = "      - uses: actions/cache@v5\n        with:\n          path: build/dev\n"
         editor = "      - run: just build-editor\n"
 
@@ -1340,7 +1340,7 @@ def selftest(root: pathlib.Path) -> int:
             (pack, download + unpack, "a download that ended short",
              "an unpack of a download nobody verified"),
             (pack, download + verify.split("      - if:")[0] + unpack, "a download that ended short",
-             "a verified download with no second download to fall back on"),
+             "a verified download with no fetch to fall back on"),
             (pack, download + verify + unpack + editor, "after `just ci-build-tree-unpack`",
              "an editor build after the sources were dated back"),
             (pack, download + verify + unpack + cache.replace("build/dev", "build/editor"),

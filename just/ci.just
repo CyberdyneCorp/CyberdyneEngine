@@ -117,8 +117,9 @@ ci-free-disk:
 # nightly runs of one commit (40059896233, 40159825948, 40266516833) lost ten jobs between them to
 # "build-tree.tar.zst : Read error (39) : premature end": `actions/download-artifact` stopped partway
 # through the six-gigabyte archive without its "download completed" line and without failing the
-# step. `<archive>.digest` is written here; `ci-build-tree-verify` lets a job download again when
-# what arrived is not what was packed, and `ci-build-tree-unpack` refuses it outright.
+# step. `<archive>.digest` is written here; `ci-build-tree-verify` lets a job fetch it again
+# (`ci-build-tree-fetch`) when what arrived is not what was packed, and `ci-build-tree-unpack`
+# refuses it outright.
 #
 # Pack the build tree for the jobs of this run that test it. Usage: just ci-build-tree-pack [archive]
 ci-build-tree-pack *args:
@@ -162,12 +163,43 @@ ci-build-tree-verify *args:
         intact=true
     else
         intact=false
-        echo "ci-build-tree-verify: ${archive} is not the archive the build job packed; download it again" >&2
+        echo "ci-build-tree-verify: ${archive} is not the archive the build job packed; fetch it again" >&2
     fi
     echo "==> verify      ${archive}: intact=${intact}"
     if [ -n "${GITHUB_OUTPUT:-}" ]; then
         echo "intact=${intact}" >> "${GITHUB_OUTPUT}"
     fi
+
+# Fetch the build tree's artefact again through the REST API, until what arrives is what was packed.
+#
+# A SECOND `actions/download-artifact` IS NOT ENOUGH. On this branch's own PR run (40505846704) the
+# `first light` job's two downloads both ended short, before the zip even reached the digest. So the
+# fallback changes transport: `gh run download` fetches the whole zip and unpacks it from its central
+# directory, which a short download fails loudly, and this repeats it up to three times. Needs
+# GH_TOKEN and GITHUB_RUN_ID, which a workflow step provides. Usage: just ci-build-tree-fetch <artefact>
+ci-build-tree-fetch artefact:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    archive="build-tree.tar.zst"
+    staging=".build-tree-fetch"
+    for attempt in 1 2 3; do
+        rm -rf "${staging}"
+        echo "==> fetch       {{artefact}} through the REST API (attempt ${attempt})"
+        if gh run download "${GITHUB_RUN_ID:?ci-build-tree-fetch runs inside a workflow}" \
+                --name "{{artefact}}" --dir "${staging}"; then
+            mv -f "${staging}/${archive}" "${staging}/${archive}.digest" . 2>/dev/null || true
+            if just _ci-build-tree-intact "${archive}"; then
+                rm -rf "${staging}"
+                echo "==> fetched     ${archive}, intact"
+                exit 0
+            fi
+        fi
+        echo "ci-build-tree-fetch: attempt ${attempt} did not deliver the packed archive" >&2
+    done
+    rm -rf "${staging}"
+    echo "ci-build-tree-fetch: {{artefact}} did not arrive intact in three attempts" >&2
+    exit 1
 
 # `<sha256> <bytes>` of a file, on every host the legs run on.
 [private]
