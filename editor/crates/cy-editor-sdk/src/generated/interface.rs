@@ -4754,4 +4754,133 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// The effect the host registered under a name.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn effect_find(
+        &self,
+        engine: ffi::CyEngine,
+        name: *const ::std::ffi::c_char,
+        into: *mut ffi::CyEffect,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .effect_find
+            .ok_or(CallError::Missing("effect_find"))?;
+        let raw = unsafe { entry(engine, name, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Play an effect once, fire-and-forget: a muzzle burst, sparks.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn effect_play(
+        &self,
+        engine: ffi::CyEngine,
+        effect: ffi::CyEffect,
+        play: *const ffi::CyEffectPlay,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .effect_play
+            .ok_or(CallError::Missing("effect_play"))?;
+        let raw = unsafe { entry(engine, effect, play) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The decal material the host registered under a name.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn decal_find_material(
+        &self,
+        engine: ffi::CyEngine,
+        name: *const ::std::ffi::c_char,
+        into: *mut ffi::CyDecalMaterial,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .decal_find_material
+            .ok_or(CallError::Missing("decal_find_material"))?;
+        let raw = unsafe { entry(engine, name, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A decal projected onto the world: an impact's mark.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn decal_spawn(
+        &self,
+        engine: ffi::CyEngine,
+        desc: *const ffi::CyDecalDesc,
+        into: *mut ffi::CyDecal,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .decal_spawn
+            .ok_or(CallError::Missing("decal_spawn"))?;
+        let raw = unsafe { entry(engine, desc, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The decal budget: live, capacity, spawned, evicted.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn decal_status(
+        &self,
+        engine: ffi::CyEngine,
+        into: *mut ffi::CyDecalStatus,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .decal_status
+            .ok_or(CallError::Missing("decal_status"))?;
+        let raw = unsafe { entry(engine, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

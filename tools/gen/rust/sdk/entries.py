@@ -432,6 +432,17 @@ ENTRIES: dict[str, Entry] = {
                               doc="Point a character's aim at a place in the world."),
     "animation_foot_placement": Entry(("engine", "entity", "index", "into"), result="fallible",
                                       doc="What a character's foot placement stood on."),
+    # 1.15: effects and decals
+    "effect_find": Entry(("engine", "name", "into"), result="fallible",
+                         doc="The effect the host registered under a name."),
+    "effect_play": Entry(("engine", "effect", "play"), result="fallible",
+                         doc="Play an effect once, fire-and-forget: a muzzle burst, sparks."),
+    "decal_find_material": Entry(("engine", "name", "into"), result="fallible",
+                                 doc="The decal material the host registered under a name."),
+    "decal_spawn": Entry(("engine", "desc", "into"), result="fallible",
+                         doc="A decal projected onto the world: an impact's mark."),
+    "decal_status": Entry(("engine", "into"), result="fallible",
+                          doc="The decal budget: live, capacity, spawned, evicted."),
 }
 
 RESULT_KINDS = frozenset({"value", "fallible"})

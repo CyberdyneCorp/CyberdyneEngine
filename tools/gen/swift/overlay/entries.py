@@ -275,6 +275,12 @@ ENTRIES: dict[str, Entry] = {
     # 1.14: foot placement and aim
     "animation_aim_at": Entry(("engine", "entity", "target", "point"), result="throwing"),
     "animation_foot_placement": Entry(("engine", "entity", "index", "into"), result="throwing"),
+    # 1.15: effects and decals
+    "effect_find": Entry(("engine", "name", "into"), result="throwing"),
+    "effect_play": Entry(("engine", "effect", "play"), result="throwing"),
+    "decal_find_material": Entry(("engine", "name", "into"), result="throwing"),
+    "decal_spawn": Entry(("engine", "desc", "into"), result="throwing"),
+    "decal_status": Entry(("engine", "into"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

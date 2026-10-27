@@ -70,6 +70,14 @@ add_subdirectory(lights)
 # see first_person/CMakeLists.txt.
 add_subdirectory(first_person)
 
+# ABI 1.15's effects and decals adapters, modules of their own because one links cy::vfx — which
+# `-D CY_VFX=OFF` removes, and the effects adapter with it — and the other cy::rendering-lighting;
+# see effects/CMakeLists.txt and decals/CMakeLists.txt.
+if(CY_VFX)
+    add_subdirectory(effects)
+endif()
+add_subdirectory(decals)
+
 # #29: `step_towards` is the one statement of a graph unit's arithmetic, and its Swift twin must agree
 # with it float for float. Swift does not contract; GCC (aarch64) and clang (macOS) fuse
 # `x += dx / distance * step` into a multiply-add, which moved the graph unit off its twin by an ULP

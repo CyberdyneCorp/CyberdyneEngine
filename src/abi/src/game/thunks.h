@@ -227,4 +227,11 @@ CyResult animation_aim_at(CyEngine engine, CyEntity entity, const char* target,
 CyResult animation_foot_placement(CyEngine engine, CyEntity entity, uint32_t index,
                                   CyFootPlacement* out_placement);
 
+// --- 1.15: effects and decals
+CyResult effect_find(CyEngine engine, const char* name, CyEffect* out_effect);
+CyResult effect_play(CyEngine engine, CyEffect effect, const CyEffectPlay* play);
+CyResult decal_find_material(CyEngine engine, const char* name, CyDecalMaterial* out_material);
+CyResult decal_spawn(CyEngine engine, const CyDecalDesc* desc, CyDecal* out_decal);
+CyResult decal_status(CyEngine engine, CyDecalStatus* out_status);
+
 }  // namespace cy::abi::game

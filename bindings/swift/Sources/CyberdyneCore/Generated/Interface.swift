@@ -1003,4 +1003,29 @@ public struct Interface: @unchecked Sendable {
     public func animationFootPlacement(engine: CyEngine, entity: CyEntity, index: UInt32, into: UnsafeMutablePointer<CyFootPlacement>?) throws {
         try check(table.pointee.animation_foot_placement(engine, entity, index, into))
     }
+
+    @inlinable
+    public func effectFind(engine: CyEngine, name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyEffect>?) throws {
+        try check(table.pointee.effect_find(engine, name, into))
+    }
+
+    @inlinable
+    public func effectPlay(engine: CyEngine, effect: CyEffect, play: UnsafePointer<CyEffectPlay>?) throws {
+        try check(table.pointee.effect_play(engine, effect, play))
+    }
+
+    @inlinable
+    public func decalFindMaterial(engine: CyEngine, name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyDecalMaterial>?) throws {
+        try check(table.pointee.decal_find_material(engine, name, into))
+    }
+
+    @inlinable
+    public func decalSpawn(engine: CyEngine, desc: UnsafePointer<CyDecalDesc>?, into: UnsafeMutablePointer<CyDecal>?) throws {
+        try check(table.pointee.decal_spawn(engine, desc, into))
+    }
+
+    @inlinable
+    public func decalStatus(engine: CyEngine, into: UnsafeMutablePointer<CyDecalStatus>?) throws {
+        try check(table.pointee.decal_status(engine, into))
+    }
 }

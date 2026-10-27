@@ -2433,6 +2433,125 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
+    size_of::<ffi::CyEffectPlay>() == 64,
+    "CyEffectPlay is not 64 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyEffectPlay>() == 4,
+    "CyEffectPlay is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyEffectPlay, struct_size) == 0,
+    "CyEffectPlay::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyEffectPlay, parameter_count) == 4,
+    "CyEffectPlay::parameter_count is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyEffectPlay, position) == 8,
+    "CyEffectPlay::position is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyEffectPlay, scale) == 20,
+    "CyEffectPlay::scale is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyEffectPlay, parameters) == 24,
+    "CyEffectPlay::parameters is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyEffectPlay, reserved) == 56,
+    "CyEffectPlay::reserved is not at byte 56"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyDecalDesc>() == 88,
+    "CyDecalDesc is not 88 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyDecalDesc>() == 8,
+    "CyDecalDesc is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalDesc, struct_size) == 0,
+    "CyDecalDesc::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalDesc, reserved0) == 4,
+    "CyDecalDesc::reserved0 is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalDesc, material) == 8,
+    "CyDecalDesc::material is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalDesc, pose) == 16,
+    "CyDecalDesc::pose is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalDesc, half_extent) == 44,
+    "CyDecalDesc::half_extent is not at byte 44"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalDesc, importance) == 56,
+    "CyDecalDesc::importance is not at byte 56"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalDesc, sort_order) == 60,
+    "CyDecalDesc::sort_order is not at byte 60"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalDesc, fade_angle) == 64,
+    "CyDecalDesc::fade_angle is not at byte 64"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalDesc, fade_start) == 68,
+    "CyDecalDesc::fade_start is not at byte 68"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalDesc, fade_end) == 72,
+    "CyDecalDesc::fade_end is not at byte 72"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalDesc, reserved) == 76,
+    "CyDecalDesc::reserved is not at byte 76"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyDecalStatus>() == 32,
+    "CyDecalStatus is not 32 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyDecalStatus>() == 8,
+    "CyDecalStatus is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalStatus, struct_size) == 0,
+    "CyDecalStatus::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalStatus, live) == 4,
+    "CyDecalStatus::live is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalStatus, capacity) == 8,
+    "CyDecalStatus::capacity is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalStatus, reserved) == 12,
+    "CyDecalStatus::reserved is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalStatus, spawned) == 16,
+    "CyDecalStatus::spawned is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyDecalStatus, evicted) == 24,
+    "CyDecalStatus::evicted is not at byte 24"
+);
+
+const _: () = assert!(
     size_of::<ffi::CyInterfaceHeader>() == 16,
     "CyInterfaceHeader is not 16 bytes; the ABI description and rustc disagree"
 );
@@ -2458,8 +2577,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 1528,
-    "CyInterface is not 1528 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 1568,
+    "CyInterface is not 1568 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -3225,6 +3344,26 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, animation_foot_placement) == 1520,
     "CyInterface::animation_foot_placement is not at byte 1520"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, effect_find) == 1528,
+    "CyInterface::effect_find is not at byte 1528"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, effect_play) == 1536,
+    "CyInterface::effect_play is not at byte 1536"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, decal_find_material) == 1544,
+    "CyInterface::decal_find_material is not at byte 1544"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, decal_spawn) == 1552,
+    "CyInterface::decal_spawn is not at byte 1552"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, decal_status) == 1560,
+    "CyInterface::decal_status is not at byte 1560"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -3271,7 +3410,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        189,
+        194,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }

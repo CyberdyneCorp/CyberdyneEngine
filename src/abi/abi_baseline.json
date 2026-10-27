@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 14,
+    "minor": 15,
     "patch": 0
   },
   "functions": [
@@ -972,10 +972,35 @@
         "index": 189,
         "name": "animation_foot_placement",
         "type": "CyResult(*)(CyEngine, CyEntity, uint32_t, CyFootPlacement*)"
+      },
+      {
+        "index": 190,
+        "name": "effect_find",
+        "type": "CyResult(*)(CyEngine, const char*, CyEffect*)"
+      },
+      {
+        "index": 191,
+        "name": "effect_play",
+        "type": "CyResult(*)(CyEngine, CyEffect, const CyEffectPlay*)"
+      },
+      {
+        "index": 192,
+        "name": "decal_find_material",
+        "type": "CyResult(*)(CyEngine, const char*, CyDecalMaterial*)"
+      },
+      {
+        "index": 193,
+        "name": "decal_spawn",
+        "type": "CyResult(*)(CyEngine, const CyDecalDesc*, CyDecal*)"
+      },
+      {
+        "index": 194,
+        "name": "decal_status",
+        "type": "CyResult(*)(CyEngine, CyDecalStatus*)"
       }
     ],
     "name": "CyInterface",
-    "size": 1528
+    "size": 1568
   },
   "types": [
     {
@@ -5943,6 +5968,206 @@
       "size": 68
     },
     {
+      "kind": "alias",
+      "name": "CyEffect",
+      "underlying": "uint64_t"
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "parameter_count",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "position",
+          "offset": 8,
+          "size": 12,
+          "type": "float[3]"
+        },
+        {
+          "alignment": 4,
+          "name": "scale",
+          "offset": 20,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "parameters",
+          "offset": 24,
+          "size": 32,
+          "type": "float[8]"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 56,
+          "size": 8,
+          "type": "uint32_t[2]"
+        }
+      ],
+      "name": "CyEffectPlay",
+      "size": 64
+    },
+    {
+      "kind": "alias",
+      "name": "CyDecalMaterial",
+      "underlying": "uint64_t"
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved0",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "material",
+          "offset": 8,
+          "size": 8,
+          "type": "CyDecalMaterial"
+        },
+        {
+          "alignment": 4,
+          "name": "pose",
+          "offset": 16,
+          "size": 28,
+          "type": "CyPose"
+        },
+        {
+          "alignment": 4,
+          "name": "half_extent",
+          "offset": 44,
+          "size": 12,
+          "type": "float[3]"
+        },
+        {
+          "alignment": 4,
+          "name": "importance",
+          "offset": 56,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "sort_order",
+          "offset": 60,
+          "size": 4,
+          "type": "int32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "fade_angle",
+          "offset": 64,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "fade_start",
+          "offset": 68,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "fade_end",
+          "offset": 72,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 76,
+          "size": 8,
+          "type": "uint32_t[2]"
+        }
+      ],
+      "name": "CyDecalDesc",
+      "size": 88
+    },
+    {
+      "kind": "alias",
+      "name": "CyDecal",
+      "underlying": "uint64_t"
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "live",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "capacity",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "spawned",
+          "offset": 16,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 8,
+          "name": "evicted",
+          "offset": 24,
+          "size": 8,
+          "type": "uint64_t"
+        }
+      ],
+      "name": "CyDecalStatus",
+      "size": 32
+    },
+    {
       "alignment": 4,
       "kind": "struct",
       "members": [
@@ -7311,10 +7536,45 @@
           "offset": 1520,
           "size": 8,
           "type": "CyResult(*)(CyEngine, CyEntity, uint32_t, CyFootPlacement*)"
+        },
+        {
+          "alignment": 8,
+          "name": "effect_find",
+          "offset": 1528,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const char*, CyEffect*)"
+        },
+        {
+          "alignment": 8,
+          "name": "effect_play",
+          "offset": 1536,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEffect, const CyEffectPlay*)"
+        },
+        {
+          "alignment": 8,
+          "name": "decal_find_material",
+          "offset": 1544,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const char*, CyDecalMaterial*)"
+        },
+        {
+          "alignment": 8,
+          "name": "decal_spawn",
+          "offset": 1552,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const CyDecalDesc*, CyDecal*)"
+        },
+        {
+          "alignment": 8,
+          "name": "decal_status",
+          "offset": 1560,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyDecalStatus*)"
         }
       ],
       "name": "CyInterface",
-      "size": 1528
+      "size": 1568
     },
     {
       "kind": "enum",

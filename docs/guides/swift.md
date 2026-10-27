@@ -1140,6 +1140,31 @@ let state = try eye.state()
 
 A camera with no behaviours throws `.notFound`; a setting out of range `.invalidArgument`.
 
+### Effects and decals (ABI 1.15)
+
+`Effects.swift` plays what a shot leaves behind (see [the first-person demo
+guide](first-person-demo.md)): a VFX system the host registered by name, fire-and-forget, and a
+decal into the frame's budget. Both are presentation: playing and spawning are accepted from
+`onUpdate` and refused from `onFixedUpdate`; resolving a name is accepted anywhere, so a fixed step
+may keep the handle its frame plays.
+
+```swift
+let sparks = try Effect.named("impact.sparks")        // onCreate
+let scorch = try DecalMaterial.named("impact.scorch")
+// onUpdate, for a hit the last fixed step queued:
+try sparks.play(at: hit.point, parameters: [n.x, n.y, n.z, 0, -hit.point.y, 0, 0, 0])
+try Decal.spawn(.mark(scorch, at: hit.point, normal: hit.normal, radius: 0.14))
+```
+
+| | What |
+|---|---|
+| `Effect.named(_:)`, `play(at:scale:parameters:)` | an effect, played once where and how large you say; up to eight floats override its declared parameters, four a parameter, in declaration order |
+| `DecalMaterial.named(_:)` | a decal material the host described |
+| `Decal.spawn(_:)`, `Decal.Description.mark(_:at:normal:radius:)` | a decal: a box whose +Z is the surface's normal, projected along −Z; nil when the full budget evicted the new mark |
+| `Decal.status` | live, capacity, spawned, evicted |
+
+A name the host has not registered throws `.notFound`, a full simulation world `.outOfRange`.
+
 ### Fog of war (ABI 1.10)
 
 `FogOfWar.swift` gives entities sight and asks what a team sees (see [the fog of war

@@ -78,7 +78,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 14u
+#define CY_ABI_MINOR 15u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -1808,6 +1808,78 @@ typedef struct CyFootPlacement {
     float normal[6]; /* its normal, unit, in the world */
 } CyFootPlacement;
 
+/* --- 1.15: effects and decals --------------------------------------------------------------------
+ *
+ * What a shot leaves behind: a burst of particles where it left the muzzle and where it struck, and
+ * a mark on what it struck. Effects are the engine's VFX systems — `cy::vfx::SimulationWorld`,
+ * reached through `cy::abi::game::EffectsBackend` (cy/abi/game/effects.h) and implemented by
+ * `cy::game_backend::EffectsAdapter` (src/game_backend/effects/). Decals are the frame's projected
+ * decals — `cy::rendering::DecalBudget`, reached through `cy::abi::game::DecalsBackend`
+ * (cy/abi/game/decals.h) and implemented by `cy::game_backend::DecalsAdapter`
+ * (src/game_backend/decals/). The host registers what a game may play by NAME — an effect it
+ * cooked, a decal material it described — the way it registers an audio cue; a game resolves the
+ * name once and plays it by its handle. A host that draws nothing binds neither, and every 1.15
+ * entry answers UNAVAILABLE.
+ *
+ * BOTH ARE PRESENTATION. Playing an effect and spawning a decal are [N U]: a fixed step is refused,
+ * because a resimulated tick would play its burst and leave its mark again, and nothing either does
+ * feeds back into the simulation. Resolving a name is [N F U], so a fixed step may hold the handle
+ * it hands a frame update. An effect plays fire-and-forget and releases itself when its last
+ * particle dies; a full simulation world refuses with OUT_OF_RANGE. A decal joins the budget the
+ * host sized, and when the budget is full the least worth keeping — by age, importance and screen
+ * coverage, deterministically — is evicted, possibly the new one, which is not an error: its
+ * `CyDecal` is then CY_DECAL_NULL. */
+
+/* A registered effect: what `effect_find` hands out. */
+typedef uint64_t CyEffect;
+#define CY_EFFECT_NULL ((CyEffect)0)
+
+/* How an effect plays. The parameters override the effect's declared parameters in declaration
+ * order, four floats a parameter (a `float` parameter takes the first of its four); the rest keep
+ * their authored values. A direction an effect sprays along is such a parameter. */
+typedef struct CyEffectPlay {
+    uint32_t struct_size;
+    uint32_t parameter_count; /* floats of `parameters` read, 0 to 8 */
+    float position[3];        /* world metres */
+    float scale;              /* > 0 */
+    float parameters[8];
+    uint32_t reserved[2]; /* zero */
+} CyEffectPlay;
+
+/* A registered decal material: what `decal_find_material` hands out. */
+typedef uint64_t CyDecalMaterial;
+#define CY_DECAL_MATERIAL_NULL ((CyDecalMaterial)0)
+
+/* A decal a game spawns: a box projected along its local -Z onto whatever the box contains, so an
+ * impact's decal has its local +Z along the struck surface's normal. */
+typedef struct CyDecalDesc {
+    uint32_t struct_size;
+    uint32_t reserved0;       /* zero */
+    CyDecalMaterial material; /* from `decal_find_material` */
+    CyPose pose;              /* world; an all-zero rotation is the identity */
+    float half_extent[3];     /* metres, > 0: the mark's half width and height, the box's half depth */
+    float importance;         /* 0 to 1: what eviction keeps longest */
+    int32_t sort_order;       /* a higher order covers a lower; equal orders, the later spawn */
+    float fade_angle;         /* radians, 0 to pi/2: past it the mark fades; zero is 60 degrees */
+    float fade_start;         /* metres from the eye the mark starts fading; zero is 20 */
+    float fade_end;           /* metres it is gone by; zero is 40; above fade_start */
+    uint32_t reserved[2];     /* zero */
+} CyDecalDesc;
+
+/* A decal a game spawned: the budget's id, or CY_DECAL_NULL when it was the one evicted. */
+typedef uint64_t CyDecal;
+#define CY_DECAL_NULL ((CyDecal)0)
+
+/* What the decal budget holds and has done. */
+typedef struct CyDecalStatus {
+    uint32_t struct_size;
+    uint32_t live;     /* decals in the budget now */
+    uint32_t capacity; /* the most it holds */
+    uint32_t reserved; /* zero */
+    uint64_t spawned;  /* since the budget was bound */
+    uint64_t evicted;  /* by a full budget, the spawned one included */
+} CyDecalStatus;
+
 /* --- The interface table -----------------------------------------------------------------------
  *
  * `table_size` is what makes growth additive: a module reads only the prefix it was compiled
@@ -2544,6 +2616,26 @@ typedef struct CyInterface {
      * placement. Presentation, so not in F. */
     CyResult (*animation_foot_placement)(CyEngine engine, CyEntity entity, uint32_t index,
                                          CyFootPlacement* out_placement);
+    /* --- 1.15: effects and decals (see CyEffectPlay's section) --- */
+
+    /* [N F U] The effect the host registered under `name`. NOT_FOUND for a name it has not. */
+    CyResult (*effect_find)(CyEngine engine, const char* name, CyEffect* out_effect);
+    /* [N U] Play `effect` once, fire-and-forget. INVALID_ARGUMENT for a parameter count past
+     * eight, a scale that is not positive, a number that is not finite or a nonzero reserved word,
+     * having played nothing; NOT_FOUND for an effect the host did not hand out; OUT_OF_RANGE when
+     * the simulation world has no room for another instance. */
+    CyResult (*effect_play)(CyEngine engine, CyEffect effect, const CyEffectPlay* play);
+    /* [N F U] The decal material the host registered under `name`. NOT_FOUND for one it has not. */
+    CyResult (*decal_find_material)(CyEngine engine, const char* name,
+                                    CyDecalMaterial* out_material);
+    /* [N U] A decal, from this frame. INVALID_ARGUMENT for a half extent that is not positive, an
+     * importance outside 0 to 1, a fade angle outside 0 to pi/2, a fade end not past its start, a
+     * number that is not finite or a nonzero reserved word, having spawned nothing; NOT_FOUND for
+     * a material the host did not hand out. A full budget evicts the least worth keeping:
+     * `*out_decal` is CY_DECAL_NULL when that was the new one. */
+    CyResult (*decal_spawn)(CyEngine engine, const CyDecalDesc* desc, CyDecal* out_decal);
+    /* [N U] The decal budget. */
+    CyResult (*decal_status)(CyEngine engine, CyDecalStatus* out_status);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -2692,6 +2784,10 @@ CY_ABI_STATIC_ASSERT(sizeof(CyFirstPersonState) == 96, "CyFirstPersonState is 96
 CY_ABI_STATIC_ASSERT(sizeof(CyViewmodelDesc) == 32, "CyViewmodelDesc is 32 bytes");
 /* 1.14 */
 CY_ABI_STATIC_ASSERT(sizeof(CyFootPlacement) == 68, "CyFootPlacement is 68 bytes");
+/* 1.15 */
+CY_ABI_STATIC_ASSERT(sizeof(CyEffectPlay) == 64, "CyEffectPlay is 64 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyDecalDesc) == 88, "CyDecalDesc is 88 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyDecalStatus) == 32, "CyDecalStatus is 32 bytes");
 
 #ifdef __cplusplus
 }

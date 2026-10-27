@@ -546,3 +546,26 @@ CY_TEST_CASE("the 1.14 structs have the offsets the description generator comput
     CY_CHECK_EQ(offsetof(CyFootPlacement, ground), 20U);
     CY_CHECK_EQ(offsetof(CyFootPlacement, normal), 44U);
 }
+
+CY_TEST_CASE("the 1.15 structs have the offsets the description generator computes") {
+    CY_CHECK_EQ(sizeof(CyEffectPlay), 64U);
+    CY_CHECK_EQ(offsetof(CyEffectPlay, parameter_count), 4U);
+    CY_CHECK_EQ(offsetof(CyEffectPlay, position), 8U);
+    CY_CHECK_EQ(offsetof(CyEffectPlay, scale), 20U);
+    CY_CHECK_EQ(offsetof(CyEffectPlay, parameters), 24U);
+    CY_CHECK_EQ(offsetof(CyEffectPlay, reserved), 56U);
+    CY_CHECK_EQ(sizeof(CyDecalDesc), 88U);
+    CY_CHECK_EQ(offsetof(CyDecalDesc, material), 8U);
+    CY_CHECK_EQ(offsetof(CyDecalDesc, pose), 16U);
+    CY_CHECK_EQ(offsetof(CyDecalDesc, half_extent), 44U);
+    CY_CHECK_EQ(offsetof(CyDecalDesc, importance), 56U);
+    CY_CHECK_EQ(offsetof(CyDecalDesc, sort_order), 60U);
+    CY_CHECK_EQ(offsetof(CyDecalDesc, fade_angle), 64U);
+    CY_CHECK_EQ(offsetof(CyDecalDesc, fade_start), 68U);
+    CY_CHECK_EQ(offsetof(CyDecalDesc, fade_end), 72U);
+    CY_CHECK_EQ(offsetof(CyDecalDesc, reserved), 76U);
+    CY_CHECK_EQ(sizeof(CyDecalStatus), 32U);
+    CY_CHECK_EQ(offsetof(CyDecalStatus, capacity), 8U);
+    CY_CHECK_EQ(offsetof(CyDecalStatus, spawned), 16U);
+    CY_CHECK_EQ(offsetof(CyDecalStatus, evicted), 24U);
+}
