@@ -427,6 +427,7 @@ struct Renderer::State {
             return made;
         }
         std::vector<const map::TextureData*> sources;
+        sources.reserve(content.textures.size() + 1U);
         for (const map::TextureData& texture : content.textures) {
             sources.push_back(&texture);
         }
@@ -641,7 +642,6 @@ struct Renderer::State {
             streams.indices.insert(streams.indices.end(),
                                    {centre, centre + 1U + ((rim + 1U) % kRim), centre + 1U + rim});
         }
-        local += kRim;
         dome.parts.push_back(DrawPart{first, static_cast<u32>(streams.indices.size()) - first,
                                       first_sky_material + kSkyBands, false});
         meshes.push_back(std::move(dome));
@@ -725,10 +725,10 @@ struct Renderer::State {
         const map::MeshLibrary& library = content.props;
         const auto squares = static_cast<u32>(std::ceil(content.layout.size / kBatchMetres));
         for (u32 square = 0; square < squares * squares; ++square) {
-            const f32 min_x =
-                content.layout.origin_x + (static_cast<f32>(square % squares) * kBatchMetres);
-            const f32 min_z =
-                content.layout.origin_z + (static_cast<f32>(square / squares) * kBatchMetres);
+            const u32 column = square % squares;
+            const u32 row = square / squares;
+            const f32 min_x = content.layout.origin_x + (static_cast<f32>(column) * kBatchMetres);
+            const f32 min_z = content.layout.origin_z + (static_cast<f32>(row) * kBatchMetres);
             const Vec3 origin{min_x + (kBatchMetres * 0.5F), 0.0F, min_z + (kBatchMetres * 0.5F)};
             for (u32 species = 0; species < foliage.species.size(); ++species) {
                 const map::MeshRange& range = library.meshes[foliage.species[species].mesh];
@@ -823,9 +823,9 @@ struct Renderer::State {
                 Vec3 normal;
                 Vec3 u;
                 Vec3 v;
-                f32 hu;
-                f32 hv;
-                f32 hn;
+                f32 hu{};
+                f32 hv{};
+                f32 hn{};
             } faces[] = {
                 {Vec3{1, 0, 0}, Vec3{0, 0, -1}, Vec3{0, 1, 0}, h.z, h.y, h.x},
                 {Vec3{-1, 0, 0}, Vec3{0, 0, 1}, Vec3{0, 1, 0}, h.z, h.y, h.x},

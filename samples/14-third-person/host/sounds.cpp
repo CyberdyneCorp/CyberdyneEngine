@@ -4,6 +4,7 @@
 #include "sounds.h"
 
 #include <cmath>
+#include <numbers>
 
 namespace sample::tps {
 namespace {
@@ -79,7 +80,7 @@ private:
     LowPass air(0.85F);
     for (std::size_t i = 0; i < out.size(); ++i) {
         const f32 t = static_cast<f32>(i) / static_cast<f32>(rate);
-        const f32 envelope = std::sin(3.14159265F * std::fmin(t / 0.3F, 1.0F));
+        const f32 envelope = std::sin(std::numbers::pi_v<f32> * std::fmin(t / 0.3F, 1.0F));
         out[i] = 1.4F * air(noise.next()) * envelope * envelope;
     }
     return out;
@@ -130,7 +131,7 @@ private:
         const bool chirping = within < 0.1F && t < 0.48F;
         const f32 frequency = 2800.0F + (14000.0F * within);
         phase += kTau * frequency / static_cast<f32>(rate);
-        const f32 envelope = chirping ? std::sin(3.14159265F * within / 0.1F) : 0.0F;
+        const f32 envelope = chirping ? std::sin(std::numbers::pi_v<f32> * within / 0.1F) : 0.0F;
         out[i] = 0.3F * std::sin(phase) * envelope;
     }
     return out;

@@ -4,6 +4,7 @@
 #include "hero_mesh.h"
 
 #include <cmath>
+#include <numbers>
 
 #include "hero_rig.h"
 
@@ -16,7 +17,7 @@ using cy::u8;
 using cy::Vec2;
 using cy::Vec3;
 
-constexpr f32 kPi = 3.14159265F;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 /// Builds the mesh a part at a time: each part's triangles in one material, each vertex on one
 /// joint.

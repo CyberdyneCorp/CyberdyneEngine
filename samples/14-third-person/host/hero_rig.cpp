@@ -14,6 +14,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <numbers>
 #include <string_view>
 #include <utility>
 
@@ -83,7 +84,7 @@ using PoseFn = void (*)(f32 phase, ClipPose& out);
         return 0.0F;
     }
     const f32 t = distance / width;
-    return 0.5F * (1.0F + std::cos(t * 3.14159265F));
+    return 0.5F * (1.0F + std::cos(t * std::numbers::pi_v<f32>));
 }
 
 [[nodiscard]] f32 wrap01(f32 phase) noexcept {
@@ -470,7 +471,7 @@ private:
             author.feet(clip + 1U, clip);
             pose = clip + 1U;
         }
-        author.state(static_cast<graph::NodeKey>(10U + (index * 10U)), row.state, pose);
+        author.state(10U + (static_cast<graph::NodeKey>(index) * 10U), row.state, pose);
     }
     if (!author.status()) {
         return cy::make_unexpected(author.status().error());
@@ -493,8 +494,7 @@ const HeroJointRow* hero_skeleton() noexcept {
 
 Vec3 hero_bind_position(u16 joint) noexcept {
     Vec3 position{0.0F, 0.0F, 0.0F};
-    for (u16 at = joint; at != animation::kInvalidJoint && at < kHeroJoints;
-         at = kSkeleton[at].parent) {
+    for (u16 at = joint; at < kHeroJoints; at = kSkeleton[at].parent) {
         position = position + kSkeleton[at].offset;
     }
     return position;

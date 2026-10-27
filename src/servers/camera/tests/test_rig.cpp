@@ -491,7 +491,7 @@ CY_TEST_CASE("a wall that appears snaps the camera to it, and one that clears le
     // It goes. One frame of a 0.25 s half-life covers under 5 % of the 3.75 m back.
     const f32 first = frame_with(1.0F);
     CY_CHECK_GT(first, 2.25F);
-    CY_CHECK_LT(first, 2.25F + 0.05F * 3.75F);
+    CY_CHECK_LT(first, 2.25F + (0.05F * 3.75F));
     f32 previous = first;
     bool monotone = true;
     for (int step = 0; step < 240; ++step) {

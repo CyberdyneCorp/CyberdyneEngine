@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <numbers>
@@ -781,7 +782,7 @@ void ThirdPersonHost::update_audio() noexcept {
     const u32 mixed = audio_device_.advance(mix_scratch_.data(), kFramesPerTick);
     if (options_.mix != nullptr) {
         options_.mix->insert(options_.mix->end(), mix_scratch_.begin(),
-                             mix_scratch_.begin() + (static_cast<cy::usize>(mixed) * 2U));
+                             mix_scratch_.begin() + (static_cast<std::ptrdiff_t>(mixed) * 2));
     }
     peak_voices_ = std::max(peak_voices_, audio_.statistics().active_voices);
 }
