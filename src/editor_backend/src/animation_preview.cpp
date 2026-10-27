@@ -301,14 +301,41 @@ Status AnimationPreview::step_machine(f32 step, f32 report_after) noexcept {
     return ok();
 }
 
+namespace {
+
+/// The preview's ground, for a graph with foot placement: a plane through the character's feet,
+/// rising towards its +x by the `preview.ground_slope` the panel sets, in degrees.
+[[nodiscard]] animation::PlaneGround preview_ground(
+    Span<const AnimationParameter> parameters) noexcept {
+    f32 degrees = 0.0F;
+    for (const AnimationParameter& parameter : parameters) {
+        if (parameter.name == Name::intern(kAnimationPreviewGroundSlope)) {
+            degrees = parameter.value;
+        }
+    }
+    const f32 slope = std::fmax(std::fmin(degrees, 60.0F), -60.0F) * 0.0174532925F;
+    return animation::PlaneGround(Vec3{0.0F, 0.0F, 0.0F},
+                                  Vec3{-std::sin(slope), std::cos(slope), 0.0F});
+}
+
+}  // namespace
+
 Status AnimationPreview::evaluate_machine() noexcept {
     character_->skeleton().reference_pose(local_.span());
+    // FOOT PLACEMENT IS PREVIEWED ON A PLANE, there being no world: flat by default, sloped by the
+    // panel. Each evaluation snaps to it, so a scrub shows the planted pose at that time rather
+    // than one still following the ground from wherever the previous evaluation left it.
+    const animation::PlaneGround ground = preview_ground(parameters_.span());
+    animation::FootPlacementContext context;
+    context.elapsed = 1.0e3F;
+    instance_->set_ground(&ground, context);
     animation::EvaluationStats stats;
     if (Status evaluated =
             animation::evaluate(*rig_, *instance_, 0, *scratch_, local_.span(), stats);
         !evaluated) {
         return evaluated;
     }
+    instance_->set_ground(nullptr, animation::FootPlacementContext{});
     const pose::PoseInstance& machine = instance_->machine();
     const Span<const pose::PoseState> states = program_.states();
     state_.state = machine.state;

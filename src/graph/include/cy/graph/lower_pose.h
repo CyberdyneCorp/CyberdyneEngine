@@ -83,6 +83,14 @@ enum class PoseOp : u16 {
     Layer,
     /// Two-bone inverse kinematics over the chain `chain`.
     IK,
+    /// A BLEND SPACE: the poses of `blend_spaces()[clip]`'s samples, weighted by where the
+    /// space's parameters put the character among them. One dimension or two. Appended, so the
+    /// operations above keep the numbers a cooked program stores.
+    BlendSpace,
+    /// Foot placement over the pose `a`: `foot_placements()[chain]`, faded by `weight_param`.
+    FootPlacement,
+    /// An aim chain over the pose `a`: `aims()[chain]`, faded by `weight_param`.
+    Aim,
     Count,
 };
 
@@ -162,6 +170,111 @@ struct ClipRef {
     u32 marker_count = 0;
 };
 
+// --- Blend spaces ------------------------------------------------------------------------------
+//
+// `animation-and-skinning`'s node table: "Blend1D / Blend2D | Blend spaces driven by parameters
+// (speed, direction)". A blend space is a set of SAMPLES — a pose each, at a position in a one- or
+// two-dimensional parameter space — and the weights of a point are the linear interpolation
+// between the two samples around it (1D) or the barycentric coordinates of the triangle it lies in
+// (2D). The triangulation is the compiler's: a Delaunay triangulation of the sample positions,
+// computed once at cook time and stored, so the runtime finds a triangle and never builds one. A
+// point outside the samples is clamped to the nearest point of the space — the hull's edge — rather
+// than extrapolated, which would hand a pose a negative weight.
+//
+// SYNC. A synchronised space plays its clip samples on ONE clock: a phase shared by every sample,
+// expressed in MARKER SPACE — the integer part is which stride segment (from one sync marker to the
+// next) the character is in and the fraction is how far through it. Each clip maps that phase onto
+// its own timeline segment by segment, so a walk and a run of different lengths put a foot down at
+// the same moment however they are weighted. The phase advances through a segment at the weighted
+// mean of the samples' segment lengths, which is what makes the blended stride's cadence the blend
+// of the cadences. Clips whose marker sequences do not correspond fall back to normalised time, one
+// segment the length of the clip. The phase is a program parameter (`phase_param`), so it is
+// per-instance state like any clock.
+
+/// The most samples one blend space holds: a 3x5 locomotion grid with room to spare.
+inline constexpr u32 kMaxBlendSamples = 16;
+
+/// One sample of a blend space: a pose, and where in the space it is the whole pose.
+struct BlendSample {
+    /// The position in the space. `y` is zero in one dimension.
+    f32 x = 0.0F;
+    f32 y = 0.0F;
+    /// The pose at that position.
+    PoseValue value = kNoPoseValue;
+};
+
+/// One triangle of a two-dimensional space's cook-time triangulation, as sample indices.
+struct BlendTriangle {
+    u16 sample[3] = {0, 0, 0};
+};
+
+/// A blend space as the program carries it: its parameters, its samples and its triangles.
+struct BlendSpace {
+    /// One or two.
+    u8 dimensions = 1;
+    /// The samples' clips share one marker-space clock.
+    bool sync = false;
+    u16 x_param = 0;
+    /// Read only in two dimensions.
+    u16 y_param = 0;
+    /// The shared phase of a synchronised space; unused otherwise.
+    u16 phase_param = 0;
+    /// In ascending `x` in one dimension.
+    u32 first_sample = 0;
+    u32 sample_count = 0;
+    /// Two dimensions only.
+    u32 first_triangle = 0;
+    u32 triangle_count = 0;
+    NodeKey origin = kInvalidNodeKey;
+};
+
+// --- Foot placement and aim --------------------------------------------------------------------
+//
+// The program names joints by NAME here, not by index, because a compiled program is shared by
+// every skeleton it is bound to and joint numbering is the skeleton's. `AnimationRig::bind`
+// resolves the names once; the runtime never compares a string in a frame.
+
+/// A `pose.foot_ik` node as the program carries it: the legs by joint name and the limits.
+struct FootPlacementRef {
+    /// The joint the hips are lowered through.
+    Name pelvis;
+    /// Per leg: hip, knee, ankle. Two legs.
+    Name leg[2][3];
+    /// The ankle joint's height above the sole in the bind pose, in metres.
+    f32 ankle_height = 0.08F;
+    /// How far above the animated ankle the ground is searched from, and how far below.
+    f32 probe_above = 0.5F;
+    f32 probe_below = 0.6F;
+    /// The most the hips may drop so the lower foot reaches, and the most a foot may be raised.
+    f32 max_pelvis_drop = 0.35F;
+    f32 max_foot_raise = 0.45F;
+    /// The time constant the offsets and the foot tilt follow the ground with, in seconds. Zero
+    /// snaps.
+    f32 smoothing = 0.08F;
+    /// The steepest ground a foot is turned to, in radians.
+    f32 max_tilt = 0.6F;
+    /// The direction the knees bend towards, in model space.
+    f32 pole[3] = {0.0F, 0.0F, 1.0F};
+    NodeKey origin = kInvalidNodeKey;
+};
+
+/// The most joints one aim chain distributes its rotation over.
+inline constexpr u32 kMaxAimJoints = 4;
+
+/// A `pose.aim` node as the program carries it: the chain by joint name, the axis, the target.
+struct AimRef {
+    /// Root of the chain first; the last joint is the one that points.
+    Name joints[kMaxAimJoints];
+    u8 joint_count = 0;
+    /// The pointing joint's forward axis, in its own space.
+    f32 axis[3] = {0.0F, 0.0F, 1.0F};
+    /// The most the chain turns, in radians.
+    f32 max_angle = 1.4F;
+    /// The parameters carrying the target point in model space.
+    u16 target_param[3] = {0, 0, 0};
+    NodeKey origin = kInvalidNodeKey;
+};
+
 /// A compiled animation program. IMMUTABLE AND SHARED; there is no graph in it.
 class PoseProgram {
 public:
@@ -183,6 +296,19 @@ public:
     [[nodiscard]] Span<const Name> parameters() const noexcept { return parameters_.span(); }
     [[nodiscard]] Span<const SyncGroup> sync_groups() const noexcept { return sync_.span(); }
     [[nodiscard]] Span<const SyncMarker> markers() const noexcept { return markers_.span(); }
+    [[nodiscard]] Span<const BlendSpace> blend_spaces() const noexcept {
+        return blend_spaces_.span();
+    }
+    [[nodiscard]] Span<const BlendSample> blend_samples() const noexcept {
+        return blend_samples_.span();
+    }
+    [[nodiscard]] Span<const BlendTriangle> blend_triangles() const noexcept {
+        return blend_triangles_.span();
+    }
+    [[nodiscard]] Span<const FootPlacementRef> foot_placements() const noexcept {
+        return foot_placements_.span();
+    }
+    [[nodiscard]] Span<const AimRef> aims() const noexcept { return aims_.span(); }
     [[nodiscard]] u16 entry_state() const noexcept { return entry_state_; }
     [[nodiscard]] u32 joint_count() const noexcept { return joints_; }
     [[nodiscard]] u64 digest() const noexcept { return digest_; }
@@ -201,11 +327,31 @@ private:
     Array<Name> parameters_;
     Array<SyncGroup> sync_;
     Array<SyncMarker> markers_;
+    Array<BlendSpace> blend_spaces_;
+    Array<BlendSample> blend_samples_;
+    Array<BlendTriangle> blend_triangles_;
+    Array<FootPlacementRef> foot_placements_;
+    Array<AimRef> aims_;
     DebugMap debug_;
     u16 entry_state_ = 0;
     u32 joints_ = 0;
     u64 digest_ = 0;
 };
+
+/// The weight of each of `space`'s samples at the point its parameters name, into `out` (one entry
+/// per sample, in sample order). The weights are non-negative and sum to one; at most two are
+/// non-zero in one dimension and at most three in two. Deterministic: a point on an edge two
+/// triangles share is weighted by the first of them, and the same parameters always give the same
+/// weights. False when `out` is smaller than the space or the space is out of range.
+[[nodiscard]] bool blend_space_weights(const PoseProgram& program, u32 space,
+                                       Span<const f32> parameters, Span<f32> out) noexcept;
+
+/// The weights of the point (`x`, `y`) over explicit samples and triangles: what
+/// `blend_space_weights` runs once it has read the parameters, exposed so a tool can draw a space
+/// it has not compiled.
+[[nodiscard]] bool blend_weights_at(u8 dimensions, Span<const BlendSample> samples,
+                                    Span<const BlendTriangle> triangles, f32 x, f32 y,
+                                    Span<f32> out) noexcept;
 
 /// `PoseInstance::transition` while a blend a HOST requested is in flight — `request_state` —
 /// rather than one of the program's own transitions. Its duration is `requested_duration`.
@@ -307,6 +453,12 @@ struct PoseProgramParts {
     u16 entry_state = 0;
     u32 joint_count = 0;
     u64 digest = 0;
+    /// Appended: a program cooked before blend spaces and modifiers existed leaves them empty.
+    Span<const BlendSpace> blend_spaces;
+    Span<const BlendSample> blend_samples;
+    Span<const BlendTriangle> blend_triangles;
+    Span<const FootPlacementRef> foot_placements;
+    Span<const AimRef> aims;
 };
 
 /// Rebuild a program a cook compiled. RUNTIME, AND NOT A COMPILER: it lowers nothing and analyses

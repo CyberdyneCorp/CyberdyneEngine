@@ -36,6 +36,21 @@ public:
     [[nodiscard]] static Array<SyncMarker>& markers(PoseProgram& program) noexcept {
         return program.markers_;
     }
+    [[nodiscard]] static Array<BlendSpace>& blend_spaces(PoseProgram& program) noexcept {
+        return program.blend_spaces_;
+    }
+    [[nodiscard]] static Array<BlendSample>& blend_samples(PoseProgram& program) noexcept {
+        return program.blend_samples_;
+    }
+    [[nodiscard]] static Array<BlendTriangle>& blend_triangles(PoseProgram& program) noexcept {
+        return program.blend_triangles_;
+    }
+    [[nodiscard]] static Array<FootPlacementRef>& foot_placements(PoseProgram& program) noexcept {
+        return program.foot_placements_;
+    }
+    [[nodiscard]] static Array<AimRef>& aims(PoseProgram& program) noexcept {
+        return program.aims_;
+    }
     [[nodiscard]] static DebugMap& debug(PoseProgram& program) noexcept { return program.debug_; }
     static void set_name(PoseProgram& program, Name name) noexcept { program.name_ = name; }
     static void set_entry(PoseProgram& program, u16 state) noexcept {

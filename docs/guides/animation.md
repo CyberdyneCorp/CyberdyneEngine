@@ -272,7 +272,7 @@ From the command line, `cy_import_cli --list-importers` prints every importer an
 
 ### The node vocabulary
 
-`register_pose_nodes` registers nine node types, and `compile_pose` lowers them to seven ops
+`register_pose_nodes` registers thirteen node types, and `compile_pose` lowers them to ten ops
 (`PoseOp`):
 
 | Node | Op | Inputs | Properties it reads |
@@ -284,6 +284,10 @@ From the command line, `cy_import_cli --list-importers` prints every importer an
 | `pose.additive` | `Additive` | `a`, `b` | `mask_first`, `mask_count`, `weight_parameter` |
 | `pose.layer` | `Layer` | `a`, `b` | `mask_first`, `mask_count`, `weight_parameter` |
 | `pose.ik` | `IK` | `a` | `chain` |
+| `pose.blend1d` | `BlendSpace` | `s0` … `s15` | `x_parameter`, `sync`, and each wired sample's position as the property named like its pin (`s0` = 1.5) |
+| `pose.blend2d` | `BlendSpace` | `s0` … `s15` | `x_parameter`, `y_parameter`, `sync`, each sample's position as a `vec2` (`s0` = 0, 1) |
+| `pose.foot_ik` | `FootPlacement` | `a` | `pelvis`, `hip_l`, `knee_l`, `ankle_l`, `hip_r`, `knee_r`, `ankle_r` (joint names), `weight_parameter`, `ankle_height`, `probe_above`, `probe_below`, `max_pelvis_drop`, `max_foot_raise`, `smoothing`, `max_tilt`, `pole` |
+| `pose.aim` | `Aim` | `a` | `chain` (joint names, root first, comma-separated), `target_parameter`, `weight_parameter`, `axis`, `max_angle` |
 | `pose.state` | a `PoseState` | `pose` | `name` |
 | `pose.transition` | a `Transition` | `from`, `to` | `condition`, `duration`, `priority`, `interruption` (`none`, `higher_priority`, `any`) |
 
@@ -389,6 +393,15 @@ inputs whatever pin they leave. A clip node that names no `time_parameter` gets 
 `clock.<node key>`. A clip's **events** are its node's `events` property, `name@seconds` items
 separated by `; `, placed and dragged on the timeline.
 
+The palette offers the blend spaces, foot placement and aim (issue #92) with their properties from
+the engine's catalogue: a 2D sample's position and a pole are vectors (`0.5, -1`), a 1D position a
+number. The Parameters rows run from −10 to 10, so a blend space's speed and direction can be
+dragged through the space and the preview follows. A graph with a `pose.foot_ik` node gets a
+**Preview ground** slope: the engine's preview stands the character on a plane rising to its right
+by that many degrees (the preview parameter `preview.ground_slope`), and snaps to it at every
+evaluation, so a scrub shows the planted pose at that time. Its weight parameter is an ordinary
+parameter row: set it to 1 to see the feet placed.
+
 The engine compiles each change (`animation.compile`: `compile_pose` after `graph::validate`, plus
 authoring checks) and refuses an authored transition whose blend is not positive, on that transition,
 as `build_locomotion_graph` does. It previews on a twelve-joint mannequin
@@ -441,14 +454,65 @@ this way and checks that `footstep@0.26` arrives on tick 16 of a 60 Hz Play and 
 `integration.editor_window_play_animation` checks the same through the ABI backend where Swift is not
 built.
 
-### Layers, additive, masks, sync groups, curves
+### Blend spaces and sync groups (issue #92)
 
-- **Layers and masks**: `pose.layer` and `pose.blend_mask`, as above.
+A blend space is a set of **samples** — each a pose wired to `s0`, `s1`, … — placed in a one- or
+two-dimensional parameter space, and the character's parameters weight them:
+
+- **1D** (`pose.blend1d`): the samples are sorted along `x` at cook time, and the two around the
+  parameter are interpolated linearly. Beyond the ends the end sample has all the weight.
+- **2D** (`pose.blend2d`): the compiler triangulates the positions (Delaunay, cook time) and stores
+  the triangles; the weights of a point are its barycentric coordinates in the first triangle that
+  contains it, and outside the samples those of the nearest point of the hull's edge. No weight is
+  ever negative, and the same parameters always give the same weights.
+  `graph::pose::blend_space_weights(program, space, parameters, out)` is that one weighting, and
+  `blend_weights_at` the same over explicit samples for a tool that draws a space.
+
+Only the two (1D) or three (2D) samples with weight are evaluated (`EvaluationStats::
+blend_samples_skipped` counts the rest); root motion blends by the same weights; and a space's
+**events come from its heaviest sample**, so a walk and a run blended half and half are heard as one
+set of footsteps.
+
+A locomotion space driven by forward and lateral speed:
+
+```cpp
+    graph.add_node(100, Name::intern("pose.blend2d"));
+    graph.set_property(100, Name::intern("x_parameter"), text("lateral"));
+    graph.set_property(100, Name::intern("y_parameter"), text("forward"));
+    graph.set_property(100, Name::intern("sync"), flag(true));
+    // idle at the centre, a walk ahead, strafes to either side, a back-pedal
+    graph.connect(1, Name::intern("pose"), 100, Name::intern("s0"));
+    graph.set_property(100, Name::intern("s0"), at(0.0F, 0.0F));
+    graph.connect(2, Name::intern("pose"), 100, Name::intern("s1"));
+    graph.set_property(100, Name::intern("s1"), at(0.0F, 1.4F));
+    …
+```
+
+A graph is refused, with a diagnostic naming the pin, for a wired sample without a position
+(`pose.blend_space.position`), two samples at one position (`.duplicate`), and a 2D space whose
+samples are all on one line (`.degenerate`).
+
+**Sync groups.** `sync` puts the space's clip samples on one clock, a phase in **marker space**: its
+integer part is the stride segment — from one sync marker (`Clip::add_marker`) to the next — and its
+fraction how far through it. `AnimationRig::bind` matches the clips' markers by name in cyclic order
+(a run that starts on the other foot still corresponds, one segment along) and each clip maps the
+phase onto its own segment, so **foot-downs coincide** across clips of different length however
+they are weighted. The phase advances through a segment at the weighted mean of the clips' lengths
+of it, which makes a half-walk, half-run stride last the mean of the two. Clips whose markers do not
+correspond are synchronised by normalised time; a held clip, a nested blend, or a sample on a clock
+another sample already plays keeps its own clock. The phase is a program parameter (`phase.<node
+key>`), so it is per-instance state, restarted aligned when the state is entered. A synchronised
+space played in reverse holds its phase.
+
+From Swift a behaviour drives the axes (`Animator.setLocomotion(speed:direction:)`, with
+`Animator.locomotion(velocity:facing:)` to derive them from a velocity); see section 5.
+
+### Layers, additive, masks, curves
+
+- **Layers and masks**: `pose.layer` and `pose.blend_mask`, as above; a partial weight per joint
+  with `AnimationRig::set_mask_weight` (`animation: a mask with half weight on the spine blends that
+  joint proportionally`).
 - **Additive**: `pose.additive` applies `b` over `a` at a weight.
-- **Sync groups and markers**: `Clip::add_marker`, `Clip::marker_time` and the `SyncGroup` and
-  `SyncMarker` tables in `PoseProgram` exist, but **`compile_pose` does not populate the sync
-  tables, and the evaluator does not align clips by marker**. A walk-to-run blend today uses each
-  clip's own clock.
 - **Curves**: a `TrackKind::Curve` track is read with `Clip::sample_curve(name, time, cursor, out)`.
 - **Property tracks** bind by `TypeId` and `FieldId`, not by a name path. Resolve them once with
   `resolve_properties`, which reports bindings it cannot resolve rather than failing, and write them
@@ -510,6 +574,12 @@ its current, small form:
   vector. An unreachable target straightens the chain toward it, and a weight of zero changes
   nothing.
 - `solve_look_at(skeleton, joint, target, weight, local)`.
+- `solve_aim(skeleton, AimChain{joints, count, axis, max_angle}, target, weight, local)` turns up to
+  four joints — a spine, a chest, a neck, a head — an equal share each so the last one's `axis` points
+  at the target, at most `max_angle` in all; two passes remove the parallax of the turning spine.
+  In a graph, `pose.aim` names the joints and reads the target from `<target_parameter>.x`, `.y`,
+  `.z` (model space); `animation_aim_at` and CyberdyneKit's `Animator.aim(_:at:)` write them from a
+  world point.
 - `ConstraintDecl` declares the `reads` and `writes` joint masks and an `order`.
   `detect_conflicts` reports two constraints that write one joint at the same order, and names both.
 - **In a graph**, `pose.ik` lowers to `PoseOp::IK` over chain `chain`. The chain comes from
@@ -517,9 +587,67 @@ its current, small form:
   parameters starting at `target_param`, in model space, and its weight is `weight_param`. An `IK`
   instruction whose chain was never set is skipped and counted, and IK runs only at `Full` tier.
 
-FABRIK, CCD, spline IK, full-body IK, spring bones and foot placement are **refused by name**:
+Since issue #92 `solve_two_bone` places the knee directly — on the circle the bone lengths allow
+around the root-to-target axis, towards the pole — and writes both rotations through their parents'
+model rotations, so a chain under a rotated parent (every exported rig's hips) reaches its target
+exactly. Before, it bent the knee about a model-space axis applied to its local rotation and missed
+by centimetres under a turned hip; `ik: a two-bone chain under a rotated parent reaches its target
+exactly` is the regression case.
+
+FABRIK, CCD, spline IK, full-body IK and spring bones are **refused by name**:
 `solve_unimplemented(UnimplementedSolver::FullBodyIk)` returns `NotImplemented`, and
 `unit.animation` asserts that it does.
+
+### Foot placement (issue #92)
+
+![foot placement off and on, on the stairs](../design/images/foot-placement-stairs.png)
+
+*The same walk and the same frame, foot placement off (left) and on (right): off, the leading foot
+sinks into the step; on, it stands on it and the knee lifts. Video:
+[`docs/design/videos/foot-placement.mp4`](../design/videos/foot-placement.mp4) (stairs, a landing,
+a 12° ramp down; `just capture-foot-placement`).*
+
+[`cy/animation/foot_placement.h`](../../src/animation/include/cy/animation/foot_placement.h). The
+runtime names no physics and no terrain, so it **asks**: a `GroundProbe` answers a downward ray
+(`cast_down(GroundQuery{origin, length, owner})`). The host hands one to the frame system —
+`AnimationSystem::set_ground_probe(&probe)` — and the system calls it from every job worker of
+`Stage::Animation`, so a probe must be thread-safe. Three exist:
+
+| Probe | Module | Ground |
+|---|---|---|
+| `PhysicsGroundProbe(server, world, filter)` | `cy::animation-ground` | the first solid surface a physics raycast meets; the asking character's own bodies (`owner` against a hit's user data) and triggers are skipped |
+| `TerrainGroundProbe(terrain_query)` | `cy::animation-ground` | the first terrain surface at or below the ray's origin; a hole is not ground |
+| `PlaneGround(point, normal)` | `cy::animation` | a plane: tests and the editor's preview |
+
+`solve_foot_placement(skeleton, setup, context, probe, weight, state, local, report)`:
+
+1. each ankle is taken to the world through `context.model_to_world` and probed from `probe_above`
+   over it to `probe_below` under it;
+2. a foot's offset is the ground's height above the model's ground plane (y = 0) plus what the tilt
+   adds to the ankle (`ankle_height / normal.y − ankle_height`); the animated lift of a foot in its
+   swing is kept;
+3. the pelvis moves by the lower offset, within `max_pelvis_drop` and `max_foot_raise`;
+4. each leg is solved by `solve_two_bone` to its animated ankle plus its offset, towards `pole`;
+5. each foot keeps the orientation the animation gave it, turned from up to the ground's normal, at
+   most `max_tilt`.
+
+The offsets and normals follow their targets by `1 − e^(−elapsed/smoothing)` per solve, where
+`elapsed` is **simulation** time since the previous one (the frame system passes the ticks since
+the entity was last evaluated), so a frame rate does not change the motion; the first solve snaps.
+**Zero weight leaves the pose untouched, bit for bit**, and so do a tier that skips modifiers and
+no probe: the published matrices are the same bytes as a program without the node
+(`animation_system: foot placement off is the frame before, bit for bit`).
+
+In a graph, `pose.foot_ik` names the joints; `AnimationRig::bind` resolves them
+(`unresolved_joints()` counts names the skeleton lacks, whose instructions pass the pose through),
+and `set_foot_placement(index, setup)` replaces a setup. `AnimationSystem::foot_placement(entity)`
+returns the last solve's `FootPlacementReport` (hips, per-foot offset, ground, normal, reached), and
+ABI 1.14's `animation_foot_placement` returns it to a game.
+
+Measured on the course of `samples/09b-animated-character --course` (Mixamo walk, six 16 cm steps, a
+12° ramp): the standing foot's sole is 12.9 mm from the ground on average over the stairs, the
+landing and the ramp with foot placement on (57.5 mm at worst, at a toe-off), and 40.1 mm with it
+off (241.7 mm at worst, a foot inside a step).
 
 ### Retargeting
 
@@ -718,6 +846,29 @@ engine pointer escapes a game entry. The phases follow the rule the other game s
 character does is `N F`, the frame's events and a joint's pose are `N U`, everything else is read
 anywhere. `src/abi/README.md` has the per-entry table; `docs/guides/swift.md` the Swift side.
 
+**ABI 1.14 (issue #92)** adds the two entries a blend space, foot placement and an aim need beyond
+`animation_set_float`:
+
+```swift
+final class Hero: Behaviour {
+    override func onFixedUpdate(_ delta: Double) throws {
+        let hero = Animator(entity)
+        // A locomotion blend space's two axes, from where the character is going.
+        let axes = Animator.locomotion(velocity: velocity, facing: facing)
+        try hero.setLocomotion(speed: axes.speed, direction: axes.direction)
+        // A world point, taken into the character's own space by the engine.
+        try hero.aim("look", at: target)
+    }
+    override func onUpdate(_ delta: Double) throws {
+        let feet = try Animator(entity).footPlacement()   // what the feet stood on
+    }
+}
+```
+
+`direction` is degrees from the character's forward (−Z), positive to its right; `speed` ignores the
+vertical. `animation_aim_at` uses the entity's placement as the scene last propagated it, and is
+refused for a target the program has no `<target>.x/.y/.z` parameters for, having written none.
+
 `samples/13-rts-api` is the proof end to end: its host cooks a worker rig and loads it back through
 the asset system, and its Swift `Commander` plays walk while a unit moves, idle when it stands, a
 held cheer on arrival, and idle again on the cheer's own `cheer_done` event.
@@ -904,14 +1055,15 @@ Read the sample README before quoting the video:
 
 | Suite | What it covers |
 |---|---|
-| `unit.animation` | skeleton order and bone LOD, clip compression and cursors, tier selection and the pose cache, IK conflicts and the two-bone solver, retargeting and profile building |
-| `integration.animation_runtime` | compiling a graph, laziness, the state machine blend, root motion across tiers and rates, a batch of five hundred, events, the pose world handoff to a real `SkinningDescriptor`, and the export retargets |
-| `integration.animation_system` | the frame system over a real `runtime::Simulation`: an entity against the hand-driven path bit for bit, ticks not frames, transitions, level of detail, events, root motion modes, removal mid-run, 500 instances over three rigs on a job system, two runs that must agree; `play` to any state with its clips started at zero and a requested blend that runs to completion, a trigger read by exactly one tick, a joint's model matrix |
+| `unit.animation` | skeleton order and bone LOD, clip compression and cursors, tier selection and the pose cache, IK conflicts and the two-bone solver (under a rotated parent too), the aim chain, foot placement on a slope and a stair, its zero weight and its smoothing, retargeting and profile building |
+| `integration.animation_runtime` | compiling a graph, laziness, the state machine blend, root motion across tiers and rates, a batch of five hundred, events, the pose world handoff to a real `SkinningDescriptor`, the export retargets; blend spaces' barycentric poses, sync groups keeping feet in phase, the blended cadence, root motion and events by weight, determinism, and a partial mask weight |
+| `integration.animation_system` | the frame system over a real `runtime::Simulation`: an entity against the hand-driven path bit for bit, ticks not frames, transitions, level of detail, events, root motion modes, removal mid-run, 500 instances over three rigs on a job system, two runs that must agree; `play` to any state with its clips started at zero and a requested blend that runs to completion, a trigger read by exactly one tick, a joint's model matrix; foot placement on a slope through the entity's placement, off byte-identical to a program without it, and the same bytes from job workers |
 | `integration.animation_assets` | the cooked skeleton, clip and program records round-trip byte for byte; `AnimationLibrary` over a real asset system binds by name, refuses a missing clip, a foreign clip and a missing asset, and swaps a reloaded clip under a live instance |
 | `unit.animation_runtime_only` | a LINK-time test: it defines `compile_pose` itself and loads and plays a cooked program, so it links only while the runtime pulls in no compiler |
 | `integration.animation_cook`, `integration.build_animation` | the importer's records read back in the runtime byte for byte, `cook_locomotion_set`, and the `animation` build-graph producer |
+| `integration.animation_ground` | `PhysicsGroundProbe` over a reference physics world (the owner's body and triggers skipped), `TerrainGroundProbe` over a terrain query (holes refused), and legs placed on a physics step |
 | `integration.animation_teardown` | 64 rounds of building and tearing down rigs, batches and pose worlds under load |
-| `integration.graph_compiler` | the pose lowering and `locomotion.h`'s machine |
+| `integration.graph_compiler` | the pose lowering and `locomotion.h`'s machine; blend-space weights in 1D and 2D, the triangulation of a grid, the refusals, the sync phase and the digest, the reference evaluator over a space, the foot placement and aim tables, and a corrupt cooked space refused |
 | `integration.import_fbx_skeleton`, `integration.import_fbx_clip`, `integration.asset_import_gltf` | FBX skeleton, skin and clip import, and glTF skins and animations |
 | `unit.render_geometry` | `cpu_reference_skin` against values worked out on paper, the descriptor rules, dual quaternions |
 | `render.skinning`, `render.skinning_metal`, `render.skinned_draw` | the dispatch against the reference on Vulkan and on Metal, and a draw of its output |
@@ -997,12 +1149,12 @@ From `src/animation/README.md`'s own table, and from the tree:
 - **Motion matching and pose search**, **animation warping** (motion, stride, orientation, distance
   matching), **clip streaming**, **control rig** assets, **facial animation** (visemes and the ML
   path; blend shapes exist on the renderer side), **tweens**.
-- **Graph nodes the specification lists but the compiler does not have**: `Blend1D`, `Blend2D` and
-  `Custom`. Transitions have a condition, a duration, a priority and an interruption rule, and no
-  exit-time or automatic transitions. Sync groups exist in the data structures and are not compiled
-  or honoured (section 3).
+- **The `Custom` graph node.** Transitions have a condition, a duration, a priority and an
+  interruption rule, and no exit-time or automatic transitions. A synchronised blend space played
+  in reverse holds its phase (section 3).
 - **Cubic interpolation** is accepted and stored as linear (no tangents).
-- **Full-body IK, FABRIK, CCD, spline IK, spring bones, foot placement**: refused by name.
+- **Full-body IK, FABRIK, CCD, spline IK, spring bones**: refused by name. Foot placement is built
+  (section 4) and solves two legs, not a full body.
 - **Animation state in a rollback capture.** `AnimationSystem` keeps instance state outside the
   world, so it is not in the state hash or a checkpoint; a restore re-simulates from the animation
   state the system has. Capturing it is a `StateProvider`.

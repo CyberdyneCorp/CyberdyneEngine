@@ -42,7 +42,8 @@ Nothing under `src/animation/` parses or lowers a graph.
 | `clip.h` | The clip asset and its codec: tracks, quantised keys with per-track ranges, curve fitting to a tolerance **in millimetres and degrees**, constant collapsing, a per-track cursor, markers, events and the root motion track. Property tracks bind by `TypeId`/`FieldId`, so a rename does not break a clip |
 | `evaluate.h` | The runtime: `AnimationRig` (skeleton + program + clips), `AnimationInstance` (the small state block), `PoseScratch` (caller-owned pose buffers), `advance()`, `evaluate()`, `request_state()` (a host's crossfade to any state, its entered clips started at zero) and `AnimationBatch` |
 | `lod.h` | Animation LOD tiers, the policy that chooses one **from simulation state alone**, hysteresis, and the pose cache pose sharing runs through |
-| `ik.h` | The constraint framework: declared reads and writes, conflict detection at setup, two-bone IK and look-at, each weighted |
+| `ik.h` | The constraint framework: declared reads and writes, conflict detection at setup, two-bone IK, look-at and aim chains, each weighted |
+| `foot_placement.h` | Foot placement (issue #92): the `GroundProbe` a host answers, `solve_foot_placement` — legs to the ground, hips lowered, feet turned to the surface, smoothed over simulation time — and `PlaneGround` |
 | `retarget.h` | Retargeting by semantic chains, at runtime and as an offline bake |
 | `retarget_build.h` | Where a profile's joint pairs come from: the chain each standard humanoid joint belongs to, a measurement of how much two rigs have in common, and the two correspondences — joint for joint over two exports of one rig, or the twenty-two standard joints between two rigs that share only a body plan |
 | `pose_world.h` | The **GPU pose world**: current and previous bone matrices per instance, add and remove without a rebuild, derived velocities, the upload range, and `staging` / `commit` — `publish` in two halves, so workers fill different instances concurrently |
@@ -54,6 +55,7 @@ runtime may not:
 |---|---|---|
 | `assets/` → `cy::animation-assets` | `cooked.h` | The cooked records the runtime loads: the importer's skeleton and clip records read and written byte for byte without the importer, and the cooked pose program, rebuilt by `graph::pose::assemble_pose_program` with no compiler linked. Issue #76 |
 | | `library.h` | `AnimationLibrary`: skeletons, clips and programs loaded by asset id through `cy::core-assets`, rigs bound by name with refusals that name what is missing, and in-place hot reload of clips |
+| `ground/` → `cy::animation-ground` | `ground_probes.h` | The two grounds a host hands foot placement: `PhysicsGroundProbe` (a physics world's raycasts, the character's own bodies and triggers skipped) and `TerrainGroundProbe` (a terrain query). Issue #92 |
 | `system/` → `cy::animation-system` | `animation_system.h` | The `Animator` component and `AnimationSystem`: one batch per rig, the deterministic half once per simulation tick in `Stage::PostSimulation`, the pose half in `Stage::Animation` across job workers, level of detail and root-motion routing applied per instance; and the requests a game makes — `play`, `stop`, one-tick triggers, `status` and a joint's model matrix (issue #76 stage 4). It names the ECS and the scene, which is why it is not in the runtime |
 
 Who reads the pose world on the device is the renderer's: `cy::rendering::skinning::SkinnedScene`
@@ -63,7 +65,7 @@ from a game is the ABI's: ABI 1.7's `animation_*` entries reach `AnimationSystem
 `cy::game_backend::AnimationAdapter` (`src/game_backend/animation/`, stage 4), and CyberdyneKit's
 `Animator` is their Swift face.
 
-## Five decisions worth knowing before changing anything here
+## Six decisions worth knowing before changing anything here
 
 ### 1. Root motion is computed in `advance()`, and that is the determinism contract
 
@@ -135,6 +137,17 @@ the character stands in its bind pose through every frame of every clip with no 
 saying so. `build_retarget_profile()` therefore refuses to return one, and
 `test_retarget_build.cpp` asserts the refusal.
 
+### 6. A blend space syncs in marker space, and foot placement asks for the ground
+
+Issue #92. A synchronised blend space has no leader clip: its phase is a stride segment (from one
+sync marker to the next) and a fraction, and every clip maps it onto its own timeline, so a leader
+change can never jump the followers. `AnimationRig::bind` resolves the correspondence once
+(`sync_spaces()`), and `advance()` moves the clocks from the phase before root motion and events read
+the interval. Foot placement cannot raycast — the runtime names no physics — so the HOST answers a
+`GroundProbe`, and the frame system hands each solve the entity's placement and the simulation time
+since its last evaluation. Off (zero weight, a tier without modifiers, or no ground) is the pose the
+node was given, byte for byte.
+
 ## What is NOT here, and is not pretended to be
 
 The M8.b row of `docs/ROADMAP.md` scopes this capability to *"Skeletons and bone LOD, clips and
@@ -150,7 +163,8 @@ approximated:
 | **Motion matching and pose search** | Absent. A pose database, its feature extraction and a deterministic index are their own body of work |
 | **Animation warping** | Absent. Motion, stride and orientation warping and distance matching |
 | **Control rig** | Absent as an asset. The constraint framework it would compile against is here; the rig graph and its compiler are not |
-| **Full-body IK, FABRIK, CCD, spline IK, spring bones, foot placement** | Refused **by name**: `solve_unimplemented()` returns `NotImplemented` for each, and `test_ik.cpp` asserts it. A chain solver answering to `FullBodyIk` would be worse than no answer |
+| **Full-body IK, FABRIK, CCD, spline IK, spring bones** | Refused **by name**: `solve_unimplemented()` returns `NotImplemented` for each, and `test_ik.cpp` asserts it. A chain solver answering to `FullBodyIk` would be worse than no answer. **Foot placement** is built (issue #92, `foot_placement.h`): it asks the host for the ground, so its entry in that enum still refuses, naming the function that solves it |
+| **The `Custom` pose node** | Absent. Blend spaces (`pose.blend1d`, `pose.blend2d`) with marker-space sync groups are built (issue #92): see `blend_space.cpp` and `docs/guides/animation.md` section 3 |
 | **Physics animation** (powered/partial/full ragdoll, hit reactions) | Implemented at the layer-4 join in `src/physics/ragdoll/`; animation itself remains backend-independent |
 | **Facial animation** (blendshapes, visemes, the ML path) | Absent. Blend shapes exist on the renderer's side in `cy::render::geometry::BlendShapeSet` |
 | **Tweens** | Absent. Property TRACKS are here; code-driven tweening with easing and sequencing is not |
@@ -180,4 +194,5 @@ does **not** gate `cy::graph`'s pose lowering, which is a compiler and belongs t
 | `integration.animation_system` | integration | The frame system over a real `runtime::Simulation`: bit-identical to the hand-driven path, ticks not frames, transitions, level of detail, events, root motion modes, removal mid-run, five hundred instances over three rigs on a job system, and two runs that must agree; `play` and `stop` with the entered clips started at zero and a requested blend run to completion, a trigger read by one tick, a joint's model matrix |
 | `integration.animation_assets` | integration | The cooked records round-trip byte for byte, and `AnimationLibrary` over a real asset system: binding by name, the three refusals, and a clip reloaded under a live instance |
 | `unit.animation_runtime_only` | unit | A link-time proof: it defines `compile_pose` itself and loads and plays a cooked program, so it links only while the runtime pulls in no compiler |
+| `integration.animation_ground` | integration | The physics and terrain grounds answering downward probes, the owner's body and triggers skipped, holes refused, and legs placed on a physics step |
 | `integration.animation_teardown` | integration | Sixty-four rounds of building and tearing down rigs, batches and pose worlds with four spinner threads holding the cores |

@@ -171,7 +171,7 @@ CASES = (
          "built on the ONE shared Surface::Timeline"),
     Case("the-engine-gains-a-node-type", "specialised-editors",
          "src/graph/src/lower_pose.cpp",
-         'register_node(registry, "pose.ik"', 'register_node(registry, "pose.mirror"', 1,
+         '"pose.ik", "pose.foot_ik", "pose.aim"}', '"pose.ik", "pose.foot_ik", "pose.aim", "pose.mirror"}', 1,
          "palette is the engine's own pose vocabulary"),
     Case("the-engine-respells-a-track-kind", "specialised-editors",
          play_contract.SEQUENCING_SOURCE, 'return "CameraCut";', 'return "Camera-Cut";', 1,

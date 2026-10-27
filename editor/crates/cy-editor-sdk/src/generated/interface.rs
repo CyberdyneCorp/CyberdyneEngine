@@ -4700,4 +4700,58 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// Point a character's aim at a place in the world.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_aim_at(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        target: *const ::std::ffi::c_char,
+        point: *const f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_aim_at
+            .ok_or(CallError::Missing("animation_aim_at"))?;
+        let raw = unsafe { entry(engine, entity, target, point) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// What a character's foot placement stood on.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_foot_placement(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        index: u32,
+        into: *mut ffi::CyFootPlacement,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_foot_placement
+            .ok_or(CallError::Missing("animation_foot_placement"))?;
+        let raw = unsafe { entry(engine, entity, index, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

@@ -215,6 +215,24 @@ impl Literal {
                 }),
                 _ => Err(refuse("it is true or false")),
             },
+            "vec2" | "vec3" | "vec4" => {
+                let width = usize::from(literal_type.as_bytes()[3] - b'0');
+                let mut lanes = [0.0_f32; 4];
+                for (count, component) in value.split(',').enumerate() {
+                    if count == width {
+                        return Err(refuse("it has more lanes than the vector"));
+                    }
+                    let number: f32 = component
+                        .trim()
+                        .parse()
+                        .map_err(|_| refuse("every lane is a number"))?;
+                    if !number.is_finite() {
+                        return Err(refuse("a graph's number is finite"));
+                    }
+                    lanes[count] = number;
+                }
+                Ok(Self::Number { lanes, mask: 0 })
+            }
             _ => Ok(Self::Text(value.to_owned())),
         }
     }
@@ -226,6 +244,14 @@ impl Literal {
             (Self::Number { lanes, .. }, "float") => format_float(lanes[0]),
             (Self::Number { mask, .. }, "int") => mask.to_string(),
             (Self::Number { mask, .. }, "bool") => (*mask != 0).to_string(),
+            (Self::Number { lanes, .. }, "vec2" | "vec3" | "vec4") => {
+                let width = usize::from(literal_type.as_bytes()[3] - b'0');
+                lanes[..width]
+                    .iter()
+                    .map(|lane| format_float(*lane))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
             (Self::Text(text), _) => text.clone(),
             // A name the engine wrote while empty reads back as the zero tuple.
             (Self::Number { .. }, _) => String::new(),
@@ -1138,6 +1164,29 @@ pub(crate) mod tests {
             Literal::parse("name", "unit.move_to").unwrap(),
             Literal::Text("unit.move_to".into())
         );
+    }
+
+    #[test]
+    fn a_vector_is_written_lane_by_lane_and_reads_back() {
+        // A blend space's sample position, and a foot placement's pole.
+        let position = Literal::parse("vec2", "0.5, -1").unwrap();
+        assert_eq!(
+            position,
+            Literal::Number {
+                lanes: [0.5, -1.0, 0.0, 0.0],
+                mask: 0
+            }
+        );
+        assert_eq!(position.display("vec2"), "0.5, -1");
+        assert_eq!(
+            Literal::parse("vec3", "0, 0, 1").unwrap().display("vec3"),
+            "0, 0, 1"
+        );
+        let mut written = String::new();
+        position.write(&mut written);
+        assert_eq!(written, "(0.5, -1, 0, 0, 0)");
+        assert!(Literal::parse("vec2", "1, 2, 3").is_err());
+        assert!(Literal::parse("vec3", "1, x").is_err());
     }
 
     #[test]

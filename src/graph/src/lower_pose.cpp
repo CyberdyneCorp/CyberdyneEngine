@@ -7,6 +7,7 @@
 
 #include <cy/graph/lower_pose.h>
 
+#include "blend_triangulation.h"
 #include "pose_program_access.h"
 
 #include <algorithm>
@@ -163,6 +164,329 @@ struct Compilation {
     return static_cast<u16>(masks.size() - 1);
 }
 
+// --- Blend spaces and modifiers -----------------------------------------------------------
+
+void report_error(Compilation& state, NodeKey node, const char* code, const char* message,
+                  Name detail = Name{}) noexcept {
+    Diagnostic diagnostic;
+    diagnostic.code = code;
+    diagnostic.node = node;
+    diagnostic.message = message;
+    diagnostic.detail = detail;
+    state.sink->report(diagnostic);
+}
+
+[[nodiscard]] f32 number_or(const Graph& graph, NodeKey node, const char* name,
+                            f32 fallback) noexcept {
+    const Literal* literal = graph.property(node, Name::intern(name));
+    return literal != nullptr ? literal->value.x : fallback;
+}
+
+[[nodiscard]] Name name_of(const Graph& graph, NodeKey node, const char* name) noexcept {
+    const Literal* literal = graph.property(node, Name::intern(name));
+    return literal != nullptr ? literal->text : Name{};
+}
+
+/// `prefix.x`, `prefix.y` or `prefix.z`.
+[[nodiscard]] Name component(Name prefix, char axis) noexcept {
+    char text[96] = {};
+    (void)std::snprintf(text, sizeof(text), "%.*s.%c", static_cast<int>(prefix.text().size()),
+                        prefix.text().data(), axis);
+    return Name::intern(text);
+}
+
+/// The sample pins a blend space reads, `s0` to `s15`.
+[[nodiscard]] const char* sample_pin(u32 index) noexcept {
+    static constexpr const char* kPins[kMaxBlendSamples] = {"s0",  "s1",  "s2",  "s3", "s4",  "s5",
+                                                            "s6",  "s7",  "s8",  "s9", "s10", "s11",
+                                                            "s12", "s13", "s14", "s15"};
+    return kPins[index];
+}
+
+/// The wired samples of a blend-space node, in pin order, each lowered and placed. False, with a
+/// diagnostic, when a wired sample has no position or two samples share one.
+[[nodiscard]] Expected<bool, Error> gather_samples(Compilation& state, NodeKey node, bool planar,
+                                                   Array<BlendSample>& samples) noexcept {
+    for (u32 index = 0; index < kMaxBlendSamples; ++index) {
+        if (source_of(*state.graph, node, sample_pin(index)) == kInvalidNodeKey) {
+            continue;
+        }
+        const Literal* position = state.graph->property(node, Name::intern(sample_pin(index)));
+        if (position == nullptr) {
+            report_error(state, node, "pose.blend_space.position",
+                         "a wired blend-space sample needs its position: the property named as "
+                         "its pin",
+                         Name::intern(sample_pin(index)));
+            return false;
+        }
+        auto value = lower_input(state, node, sample_pin(index));
+        if (!value) {
+            return make_unexpected(value.error());
+        }
+        if (value.value() == kNoPoseValue) {
+            return false;
+        }
+        BlendSample sample;
+        sample.x = position->value.x;
+        sample.y = planar ? position->value.y : 0.0F;
+        sample.value = value.value();
+        for (const BlendSample& other : samples) {
+            if (other.x == sample.x && other.y == sample.y) {
+                report_error(state, node, "pose.blend_space.duplicate",
+                             "two blend-space samples sit at one position, so neither could be "
+                             "weighted alone",
+                             Name::intern(sample_pin(index)));
+                return false;
+            }
+        }
+        if (Status pushed = samples.push_back(sample); !pushed) {
+            return make_unexpected(pushed.error());
+        }
+    }
+    if (samples.empty()) {
+        report_error(state, node, "pose.blend_space.empty",
+                     "a blend space needs at least one wired sample");
+        return false;
+    }
+    return true;
+}
+
+/// `pose.blend1d` and `pose.blend2d`. The samples are stored sorted along x in one dimension and
+/// triangulated in two, so the runtime finds its interval or its triangle and builds nothing.
+[[nodiscard]] Status lower_blend_space(Compilation& state, NodeKey node, bool planar,
+                                       PoseInstruction& instruction) noexcept {
+    PoseProgram& program = *state.program;
+    Array<BlendSample> samples(state.graph->allocator());
+    Expected<bool, Error> gathered = gather_samples(state, node, planar, samples);
+    if (!gathered) {
+        return Status{make_unexpected(gathered.error())};
+    }
+    if (!gathered.value()) {
+        instruction.op = PoseOp::RefPose;
+        return ok();
+    }
+    if (!planar) {
+        std::ranges::sort(
+            samples, [](const BlendSample& a, const BlendSample& b) noexcept { return a.x < b.x; });
+    }
+
+    BlendSpace space;
+    space.dimensions = planar ? 2 : 1;
+    space.origin = node;
+    const Literal* sync = state.graph->property(node, Name::intern("sync"));
+    space.sync = sync != nullptr && sync->value.mask != 0;
+    space.x_param = intern_parameter(program, name_of(*state.graph, node, "x_parameter"));
+    space.y_param = planar ? intern_parameter(program, name_of(*state.graph, node, "y_parameter"))
+                           : space.x_param;
+    space.phase_param = space.x_param;
+    if (space.sync) {
+        char phase[40] = {};
+        (void)std::snprintf(phase, sizeof(phase), "phase.%llu",
+                            static_cast<unsigned long long>(node));
+        space.phase_param = intern_parameter(program, Name::intern(phase));
+    }
+
+    Array<BlendSample>& stored = PoseProgramAccess::blend_samples(program);
+    Array<BlendTriangle>& triangles = PoseProgramAccess::blend_triangles(program);
+    space.first_sample = static_cast<u32>(stored.size());
+    space.sample_count = static_cast<u32>(samples.size());
+    space.first_triangle = static_cast<u32>(triangles.size());
+    if (planar && samples.size() > 1) {
+        if (Status triangulated = triangulate_blend_space(samples.span(), triangles);
+            !triangulated) {
+            report_error(state, node, "pose.blend_space.degenerate",
+                         "a two-dimensional blend space needs three samples that are not all on "
+                         "one line");
+            instruction.op = PoseOp::RefPose;
+            return ok();
+        }
+    }
+    space.triangle_count = static_cast<u32>(triangles.size()) - space.first_triangle;
+    if (Status appended = stored.append(samples.span()); !appended) {
+        return appended;
+    }
+    Array<BlendSpace>& spaces = PoseProgramAccess::blend_spaces(program);
+    instruction.clip = static_cast<u16>(spaces.size());
+    return spaces.push_back(space);
+}
+
+/// `pose.foot_ik`: the legs named on the node, resolved against a skeleton when a rig is bound.
+[[nodiscard]] Status lower_foot_placement(Compilation& state, NodeKey node,
+                                          PoseInstruction& instruction) noexcept {
+    const Graph& graph = *state.graph;
+    FootPlacementRef foot;
+    foot.origin = node;
+    foot.pelvis = name_of(graph, node, "pelvis");
+    static constexpr const char* kLegs[2][3] = {{"hip_l", "knee_l", "ankle_l"},
+                                                {"hip_r", "knee_r", "ankle_r"}};
+    bool named = !foot.pelvis.is_empty();
+    for (u32 leg = 0; leg < 2; ++leg) {
+        for (u32 joint = 0; joint < 3; ++joint) {
+            foot.leg[leg][joint] = name_of(graph, node, kLegs[leg][joint]);
+            named = named && !foot.leg[leg][joint].is_empty();
+        }
+    }
+    if (!named) {
+        report_error(state, node, "pose.foot_ik.joints",
+                     "foot placement names its pelvis and both legs' hip, knee and ankle");
+        instruction.op = PoseOp::RefPose;
+        return ok();
+    }
+    foot.ankle_height = number_or(graph, node, "ankle_height", foot.ankle_height);
+    foot.probe_above = number_or(graph, node, "probe_above", foot.probe_above);
+    foot.probe_below = number_or(graph, node, "probe_below", foot.probe_below);
+    foot.max_pelvis_drop = number_or(graph, node, "max_pelvis_drop", foot.max_pelvis_drop);
+    foot.max_foot_raise = number_or(graph, node, "max_foot_raise", foot.max_foot_raise);
+    foot.smoothing = number_or(graph, node, "smoothing", foot.smoothing);
+    foot.max_tilt = number_or(graph, node, "max_tilt", foot.max_tilt);
+    if (const Literal* pole = graph.property(node, Name::intern("pole")); pole != nullptr) {
+        foot.pole[0] = pole->value.x;
+        foot.pole[1] = pole->value.y;
+        foot.pole[2] = pole->value.z;
+    }
+    Array<FootPlacementRef>& table = PoseProgramAccess::foot_placements(*state.program);
+    instruction.op = PoseOp::FootPlacement;
+    instruction.chain = static_cast<u16>(table.size());
+    return table.push_back(foot);
+}
+
+/// `pose.aim`: `chain` is the joints from the chain's root to the one that points, separated by
+/// commas; `target_parameter` names the point, read as `<name>.x`, `.y` and `.z`.
+[[nodiscard]] Status lower_aim(Compilation& state, NodeKey node,
+                               PoseInstruction& instruction) noexcept {
+    const Graph& graph = *state.graph;
+    AimRef aim;
+    aim.origin = node;
+    const std::string_view chain = name_of(graph, node, "chain").text();
+    usize begin = 0;
+    while (begin < chain.size()) {
+        usize end = chain.find(',', begin);
+        end = end == std::string_view::npos ? chain.size() : end;
+        std::string_view joint = chain.substr(begin, end - begin);
+        while (!joint.empty() && joint.front() == ' ') {
+            joint.remove_prefix(1);
+        }
+        while (!joint.empty() && joint.back() == ' ') {
+            joint.remove_suffix(1);
+        }
+        if (!joint.empty()) {
+            if (aim.joint_count == kMaxAimJoints) {
+                report_error(state, node, "pose.aim.chain",
+                             "an aim chain turns at most four joints");
+                instruction.op = PoseOp::RefPose;
+                return ok();
+            }
+            aim.joints[aim.joint_count++] = Name::intern(joint);
+        }
+        begin = end + 1;
+    }
+    const Name target = name_of(graph, node, "target_parameter");
+    if (aim.joint_count == 0 || target.is_empty()) {
+        report_error(state, node, "pose.aim.setup",
+                     "an aim names the joints of its chain and the parameter its target is in");
+        instruction.op = PoseOp::RefPose;
+        return ok();
+    }
+    if (const Literal* axis = graph.property(node, Name::intern("axis")); axis != nullptr) {
+        aim.axis[0] = axis->value.x;
+        aim.axis[1] = axis->value.y;
+        aim.axis[2] = axis->value.z;
+    }
+    aim.max_angle = number_or(graph, node, "max_angle", aim.max_angle);
+    aim.target_param[0] = intern_parameter(*state.program, component(target, 'x'));
+    aim.target_param[1] = intern_parameter(*state.program, component(target, 'y'));
+    aim.target_param[2] = intern_parameter(*state.program, component(target, 'z'));
+    Array<AimRef>& table = PoseProgramAccess::aims(*state.program);
+    instruction.op = PoseOp::Aim;
+    instruction.chain = static_cast<u16>(table.size());
+    return table.push_back(aim);
+}
+
+/// `pose.blend`, `pose.blend_mask`, `pose.additive` and `pose.layer`: two operands, a mask and a
+/// weight.
+[[nodiscard]] Status lower_binary(Compilation& state, NodeKey node, std::string_view type,
+                                  PoseInstruction& instruction) noexcept {
+    PoseProgram& program = *state.program;
+    instruction.op = PoseOp::Layer;
+    if (type == "pose.blend") {
+        instruction.op = PoseOp::Blend;
+    } else if (type == "pose.blend_mask") {
+        instruction.op = PoseOp::BlendMask;
+    } else if (type == "pose.additive") {
+        instruction.op = PoseOp::Additive;
+    }
+    auto a = lower_input(state, node, "a");
+    if (!a) {
+        return Status{make_unexpected(a.error())};
+    }
+    auto b = lower_input(state, node, "b");
+    if (!b) {
+        return Status{make_unexpected(b.error())};
+    }
+    instruction.a = a.value();
+    instruction.b = b.value();
+    instruction.mask = mask_index(program, *state.graph, node);
+    instruction.weight_param =
+        intern_parameter(program, name_of(*state.graph, node, "weight_parameter"));
+    return ok();
+}
+
+/// `pose.ik`, `pose.foot_ik` and `pose.aim`: one operand modified. A foot placement or an aim that
+/// was refused leaves the instruction a `RefPose`, which `lower_value` emits nothing for.
+[[nodiscard]] Status lower_modifier(Compilation& state, NodeKey node, std::string_view type,
+                                    PoseInstruction& instruction) noexcept {
+    auto a = lower_input(state, node, "a");
+    if (!a) {
+        return Status{make_unexpected(a.error())};
+    }
+    instruction.a = a.value();
+    if (type == "pose.ik") {
+        instruction.op = PoseOp::IK;
+        const Literal* chain = state.graph->property(node, Name::intern("chain"));
+        instruction.chain = chain != nullptr ? static_cast<u16>(chain->value.mask) : 0;
+        return ok();
+    }
+    instruction.weight_param =
+        intern_parameter(*state.program, name_of(*state.graph, node, "weight_parameter"));
+    return type == "pose.foot_ik" ? lower_foot_placement(state, node, instruction)
+                                  : lower_aim(state, node, instruction);
+}
+
+[[nodiscard]] bool is_binary(std::string_view type) noexcept {
+    return type == "pose.blend" || type == "pose.blend_mask" || type == "pose.additive" ||
+           type == "pose.layer";
+}
+
+[[nodiscard]] bool is_modifier(std::string_view type) noexcept {
+    return type == "pose.ik" || type == "pose.foot_ik" || type == "pose.aim";
+}
+
+/// Fill `instruction` for the node of type `type`. The op stays `RefPose` for a node that produces
+/// nothing — a refused blend space, foot placement or aim — and `Count` for one that is not an
+/// animation node at all.
+[[nodiscard]] Status lower_instruction(Compilation& state, NodeKey node, std::string_view type,
+                                       PoseInstruction& instruction) noexcept {
+    if (type == "pose.ref") {
+        instruction.op = PoseOp::RefPose;
+        return ok();
+    }
+    if (type == "pose.clip") {
+        return lower_clip(state, node, instruction);
+    }
+    if (is_binary(type)) {
+        return lower_binary(state, node, type, instruction);
+    }
+    if (type == "pose.blend1d" || type == "pose.blend2d") {
+        instruction.op = PoseOp::BlendSpace;
+        return lower_blend_space(state, node, type == "pose.blend2d", instruction);
+    }
+    if (is_modifier(type)) {
+        return lower_modifier(state, node, type, instruction);
+    }
+    instruction.op = PoseOp::Count;
+    return ok();
+}
+
 Expected<PoseValue, Error> lower_value(Compilation& state, NodeKey node) noexcept {
     const GraphNode* authored = state.graph->find_node(node);
     if (authored == nullptr) {
@@ -171,53 +495,20 @@ Expected<PoseValue, Error> lower_value(Compilation& state, NodeKey node) noexcep
     PoseProgram& program = *state.program;
     PoseInstruction instruction;
     instruction.origin = node;
-    const std::string_view type = authored->type.text();
-
-    if (type == "pose.ref") {
-        instruction.op = PoseOp::RefPose;
-    } else if (type == "pose.clip") {
-        if (Status lowered = lower_clip(state, node, instruction); !lowered) {
-            return make_unexpected(lowered.error());
-        }
-    } else if (type == "pose.blend" || type == "pose.blend_mask" || type == "pose.additive" ||
-               type == "pose.layer") {
-        instruction.op = PoseOp::Layer;
-        if (type == "pose.blend") {
-            instruction.op = PoseOp::Blend;
-        } else if (type == "pose.blend_mask") {
-            instruction.op = PoseOp::BlendMask;
-        } else if (type == "pose.additive") {
-            instruction.op = PoseOp::Additive;
-        }
-        auto a = lower_input(state, node, "a");
-        if (!a) {
-            return a;
-        }
-        auto b = lower_input(state, node, "b");
-        if (!b) {
-            return b;
-        }
-        instruction.a = a.value();
-        instruction.b = b.value();
-        instruction.mask = mask_index(program, *state.graph, node);
-        const Literal* weight = state.graph->property(node, Name::intern("weight_parameter"));
-        instruction.weight_param =
-            intern_parameter(program, weight != nullptr ? weight->text : Name{});
-    } else if (type == "pose.ik") {
-        instruction.op = PoseOp::IK;
-        auto a = lower_input(state, node, "a");
-        if (!a) {
-            return a;
-        }
-        instruction.a = a.value();
-        const Literal* chain = state.graph->property(node, Name::intern("chain"));
-        instruction.chain = chain != nullptr ? static_cast<u16>(chain->value.mask) : 0;
-    } else {
+    if (Status lowered = lower_instruction(state, node, authored->type.text(), instruction);
+        !lowered) {
+        return make_unexpected(lowered.error());
+    }
+    if (instruction.op == PoseOp::Count) {
         Diagnostic diagnostic;
         diagnostic.node = node;
         diagnostic.detail = authored->type;
         diagnostic.message = "this node is not an animation node and cannot produce a pose";
         state.sink->report(diagnostic);
+        return kNoPoseValue;
+    }
+    if (instruction.op == PoseOp::RefPose && authored->type != Name::intern("pose.ref")) {
+        // A blend space, foot placement or aim that was refused, its diagnostic reported.
         return kNoPoseValue;
     }
 
@@ -230,6 +521,18 @@ Expected<PoseValue, Error> lower_value(Compilation& state, NodeKey node) noexcep
         return make_unexpected(recorded.error());
     }
     return value;
+}
+
+/// Every sample may carry weight, so every sample of a blend space is read wherever it is.
+void require_samples(PoseProgram& program, const PoseInstruction& instruction) noexcept {
+    Array<PoseInstruction>& code = PoseProgramAccess::code(program);
+    const BlendSpace& space = program.blend_spaces()[instruction.clip];
+    for (u32 sample = 0; sample < space.sample_count; ++sample) {
+        const PoseValue value = program.blend_samples()[space.first_sample + sample].value;
+        if (value < code.size()) {
+            code[value].required = code[value].required.merged(instruction.required);
+        }
+    }
 }
 
 /// POSE DEPENDENCY ANALYSIS. Push each state root's mask down through the tree; an instruction
@@ -253,6 +556,11 @@ void analyse_dependencies(PoseProgram& program) noexcept {
         if (instruction.required.empty()) {
             continue;
         }
+        if (instruction.op == PoseOp::BlendSpace &&
+            instruction.clip < program.blend_spaces().size()) {
+            require_samples(program, instruction);
+            continue;
+        }
         const JointMask layer_mask = instruction.mask < program.masks().size()
                                          ? program.masks()[instruction.mask]
                                          : everything;
@@ -268,6 +576,55 @@ void analyse_dependencies(PoseProgram& program) noexcept {
             masked ? instruction.required.intersected(layer_mask) : instruction.required;
         code[instruction.b].required = code[instruction.b].required.merged(contributed);
     }
+}
+
+/// The blend spaces, foot placements and aims. A program with none hashes exactly as it did before
+/// they existed, so a cook keyed on the digest of an older program still matches.
+[[nodiscard]] u64 hash_modifiers(u64 digest, const PoseProgram& program) noexcept {
+    for (const BlendSpace& space : program.blend_spaces()) {
+        digest = hash_u64(digest, (static_cast<u64>(space.dimensions) << 8U) |
+                                      static_cast<u64>(space.sync ? 1U : 0U));
+        digest = hash_u64(digest, (static_cast<u64>(space.x_param) << 32U) |
+                                      (static_cast<u64>(space.y_param) << 16U) | space.phase_param);
+        digest =
+            hash_u64(digest, (static_cast<u64>(space.first_sample) << 32U) | space.sample_count);
+        digest = hash_u64(digest,
+                          (static_cast<u64>(space.first_triangle) << 32U) | space.triangle_count);
+    }
+    for (const BlendSample& sample : program.blend_samples()) {
+        digest = hash_bytes(digest, &sample.x, sizeof(sample.x));
+        digest = hash_bytes(digest, &sample.y, sizeof(sample.y));
+        digest = hash_u64(digest, sample.value);
+    }
+    for (const BlendTriangle& triangle : program.blend_triangles()) {
+        digest = hash_u64(digest, (static_cast<u64>(triangle.sample[0]) << 32U) |
+                                      (static_cast<u64>(triangle.sample[1]) << 16U) |
+                                      triangle.sample[2]);
+    }
+    for (const FootPlacementRef& foot : program.foot_placements()) {
+        digest = hash_text(digest, foot.pelvis.text());
+        for (const auto& leg : foot.leg) {
+            for (const Name& joint : leg) {
+                digest = hash_text(digest, joint.text());
+            }
+        }
+        const f32 settings[] = {foot.ankle_height,    foot.probe_above,    foot.probe_below,
+                                foot.max_pelvis_drop, foot.max_foot_raise, foot.smoothing,
+                                foot.max_tilt,        foot.pole[0],        foot.pole[1],
+                                foot.pole[2]};
+        digest = hash_bytes(digest, settings, sizeof(settings));
+    }
+    for (const AimRef& aim : program.aims()) {
+        for (u32 joint = 0; joint < aim.joint_count; ++joint) {
+            digest = hash_text(digest, aim.joints[joint].text());
+        }
+        const f32 settings[] = {aim.axis[0], aim.axis[1], aim.axis[2], aim.max_angle};
+        digest = hash_bytes(digest, settings, sizeof(settings));
+        digest = hash_u64(digest, (static_cast<u64>(aim.target_param[0]) << 32U) |
+                                      (static_cast<u64>(aim.target_param[1]) << 16U) |
+                                      aim.target_param[2]);
+    }
+    return digest;
 }
 
 void finish_digest(PoseProgram& program) noexcept {
@@ -307,6 +664,7 @@ void finish_digest(PoseProgram& program) noexcept {
     for (const Name& parameter : program.parameters()) {
         digest = hash_text(digest, parameter.text());
     }
+    digest = hash_modifiers(digest, program);
     PoseProgramAccess::set_digest(program, digest);
 }
 
@@ -329,8 +687,24 @@ Status register_pose_nodes(NodeRegistry& registry) noexcept {
     }
     const PinDesc unary[] = {pin("a", "pose", PinDirection::Input),
                              pin("pose", "pose", PinDirection::Output)};
-    if (Status added = register_node(registry, "pose.ik", Span<const PinDesc>(unary, 2)); !added) {
-        return added;
+    for (const char* type : {"pose.ik", "pose.foot_ik", "pose.aim"}) {
+        if (Status added = register_node(registry, type, Span<const PinDesc>(unary, 2)); !added) {
+            return added;
+        }
+    }
+    // A blend space: a pose input per sample, `s0` to `s15`, each placed by the property of the
+    // same name. Unwired pins are not samples.
+    PinDesc space[kMaxBlendSamples + 1];
+    for (u32 index = 0; index < kMaxBlendSamples; ++index) {
+        space[index] = pin(sample_pin(index), "pose", PinDirection::Input);
+    }
+    space[kMaxBlendSamples] = pin("pose", "pose", PinDirection::Output);
+    for (const char* type : {"pose.blend1d", "pose.blend2d"}) {
+        if (Status added =
+                register_node(registry, type, Span<const PinDesc>(space, kMaxBlendSamples + 1));
+            !added) {
+            return added;
+        }
     }
     // A state's `state` output is what a transition's `from` and `to` are wired to: the state's
     // identity, not a pose. Declared so a graph that draws its transitions validates — an editor's

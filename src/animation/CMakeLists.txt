@@ -47,7 +47,9 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/clip.cpp
+        src/blend_space.cpp
         src/evaluate.cpp
+        src/foot_placement.cpp
         src/ik.cpp
         src/lod.cpp
         src/pose_world.cpp
@@ -60,6 +62,7 @@ cy_add_module(
 
 add_subdirectory(assets)
 add_subdirectory(system)
+add_subdirectory(ground)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

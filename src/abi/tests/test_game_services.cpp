@@ -279,7 +279,20 @@ CY_TEST_CASE("the 1.13 table appends the first-person camera after every 1.12 en
     for (const bool set : entries) {
         CY_CHECK(set);
     }
-    CY_CHECK_EQ(offsetof(CyInterface, viewmodel_get) + sizeof(void*), sizeof(CyInterface));
+    CY_CHECK_EQ(offsetof(CyInterface, viewmodel_get) + sizeof(void*),
+                offsetof(CyInterface, animation_aim_at));
+}
+
+CY_TEST_CASE("the 1.14 table appends foot placement and aim after every 1.13 entry") {
+    const CyInterface& iface = table();
+    CY_CHECK_GE(iface.header.abi_minor, 14U);
+    CY_CHECK_EQ(iface.header.table_size, sizeof(CyInterface));
+    CY_CHECK(iface.animation_aim_at != nullptr);
+    CY_CHECK(iface.animation_foot_placement != nullptr);
+    CY_CHECK_EQ(offsetof(CyInterface, animation_aim_at) + sizeof(void*),
+                offsetof(CyInterface, animation_foot_placement));
+    CY_CHECK_EQ(offsetof(CyInterface, animation_foot_placement) + sizeof(void*),
+                sizeof(CyInterface));
 }
 
 CY_TEST_CASE("each scheduler stage runs in the phase cy_abi.h states") {

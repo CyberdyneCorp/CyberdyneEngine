@@ -69,7 +69,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 13u
+#define CY_ABI_MINOR 14u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -1772,6 +1772,33 @@ typedef struct CyViewmodelDesc {
     uint32_t reserved;    /* zero */
 } CyViewmodelDesc;
 
+/* --- 1.14: foot placement and aim -------------------------------------------------------------
+ *
+ * Issue #92. A character's program places its feet with a `pose.foot_ik` node and aims with a
+ * `pose.aim` node; both are authored in its animation graph and solved by the engine every frame
+ * on the ground the host handed the animation system (a physics world or a terrain). What crosses
+ * here is what a game drives and reads: where an aim points, and what the feet stood on.
+ *
+ * Driving a blend space needs nothing new: its axes are program parameters, set through
+ * `animation_set_float` from a behaviour (a speed, a direction). */
+
+/* CyFootPlacement::flags */
+#define CY_FOOT_PLACEMENT_SOLVED 0x1u       /* the last evaluation placed the feet */
+#define CY_FOOT_PLACEMENT_LEFT_GROUND 0x2u  /* ground was found under the left foot */
+#define CY_FOOT_PLACEMENT_RIGHT_GROUND 0x4u /* and under the right */
+#define CY_FOOT_PLACEMENT_LEFT_REACHED 0x8u /* the left leg could reach its target */
+#define CY_FOOT_PLACEMENT_RIGHT_REACHED 0x10u
+
+/* What one foot placement did when the character's pose was last evaluated. Left first. */
+typedef struct CyFootPlacement {
+    uint32_t struct_size;
+    uint32_t flags;  /* CY_FOOT_PLACEMENT_* */
+    float pelvis;    /* metres the hips moved along the character's up; negative is down */
+    float offset[2]; /* metres each foot moved along the character's up */
+    float ground[6]; /* the ground under each foot, in the world: x y z, x y z */
+    float normal[6]; /* its normal, unit, in the world */
+} CyFootPlacement;
+
 /* --- The interface table -----------------------------------------------------------------------
  *
  * `table_size` is what makes growth additive: a module reads only the prefix it was compiled
@@ -2493,6 +2520,21 @@ typedef struct CyInterface {
     CyResult (*viewmodel_configure)(CyEngine engine, CyCamera camera, const CyViewmodelDesc* desc);
     /* [N U] `camera`'s weapon view as it was set, `fov` the one it draws with now. */
     CyResult (*viewmodel_get)(CyEngine engine, CyCamera camera, CyViewmodelDesc* out_desc);
+    /* --- 1.14: foot placement and aim (see CyFootPlacement's section) --- */
+
+    /* [N F] Point the program's aim at a place in the WORLD: `target` names the aim node's
+     * `target_parameter`, and the point is taken into the character's model space through the
+     * entity's placement as the scene last propagated it, and written to `<target>.x`, `.y` and
+     * `.z`. NOT_FOUND for an entity with no animator or a program without those parameters;
+     * INVALID_ARGUMENT for a non-finite point. The aim's weight is its own parameter, set with
+     * `animation_set_float`. */
+    CyResult (*animation_aim_at)(CyEngine engine, CyEntity entity, const char* target,
+                                 const float* point_xyz);
+    /* [N U] What the program's foot placement `index` (in graph order, from 0) did when the pose
+     * was last evaluated. NOT_FOUND for an entity with no animator or a program with no such foot
+     * placement. Presentation, so not in F. */
+    CyResult (*animation_foot_placement)(CyEngine engine, CyEntity entity, uint32_t index,
+                                         CyFootPlacement* out_placement);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -2639,6 +2681,8 @@ CY_ABI_STATIC_ASSERT(sizeof(CyFirstPersonDesc) == 96, "CyFirstPersonDesc is 96 b
 CY_ABI_STATIC_ASSERT(sizeof(CyFirstPersonInput) == 24, "CyFirstPersonInput is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyFirstPersonState) == 96, "CyFirstPersonState is 96 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyViewmodelDesc) == 32, "CyViewmodelDesc is 32 bytes");
+/* 1.14 */
+CY_ABI_STATIC_ASSERT(sizeof(CyFootPlacement) == 68, "CyFootPlacement is 68 bytes");
 
 #ifdef __cplusplus
 }

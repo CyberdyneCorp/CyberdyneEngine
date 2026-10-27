@@ -811,6 +811,9 @@ game only asks.
 | `setRootMotion(_:)` | N F | `.ignore`, `.transform` (composed onto the node), `.accumulate`, `.extract`, or `.character`: fed to the entity's character controller every tick |
 | `Animation.events()`, `Animation.events(for:)` | N U | the events of the ticks since the previous frame, each delivered in exactly one frame |
 | `jointPose(_:)` | N U | a joint's world placement from the evaluated pose |
+| `Animator.locomotion(velocity:facing:)`, `setLocomotion(speed:direction:)` | (pure), N F | a locomotion blend space's two axes from a velocity — speed over the ground, direction in degrees from forward, positive to the right — and both set at once from a behaviour (ABI 1.14) |
+| `aim(_:at:)` | N F | point the program's `pose.aim` at a world position; the engine takes it into the character's space |
+| `footPlacement(_:)` | N U | what the program's foot placement stood on: the hips' drop, and per foot the ground, its normal, the offset and whether the leg reached |
 
 Names cross the boundary as `AnimationName`: `CY_NAME_HASH`, the 64-bit FNV-1a hash of the text,
 because no engine pointer escapes a game entry. It compares against a string literal directly

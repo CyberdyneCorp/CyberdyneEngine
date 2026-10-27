@@ -35,8 +35,8 @@ use cy_editor_interface::specialised::graph::{GraphCanvas, Layout, NodeKey};
 use cy_editor_interface::specialised::script;
 use cy_editor_interface::specialised::timeline::{TimelineSurface, TrackKind};
 use cy_editor_services::animation_graph::{
-    BakeReport, CLIP_NODE, CompileReport, NO_STATE, PlayedCharacter, PreviewState, RIG_DIRECTORY,
-    rig_name, validate_reference,
+    BakeReport, CLIP_NODE, CompileReport, FOOT_PLACEMENT_NODE, GROUND_SLOPE, NO_STATE,
+    PlayedCharacter, PreviewState, RIG_DIRECTORY, rig_name, validate_reference,
 };
 use cy_editor_services::script_graph::{CompileDiagnostic, ScriptGraph, Severity};
 use cy_editor_services::{AssetCatalogueService, MaterialCatalogueState};
@@ -271,6 +271,7 @@ impl SpecialisedTool for AnimationTool {
         timeline_area(frame, ui, canvas, surface, &target);
         egui::ScrollArea::vertical().show(ui, |ui| {
             parameter_rows(frame, ui, &target);
+            ground_row(frame, ui, &target, canvas);
             event_rows(frame, ui, &target);
             compile_rows(frame, ui, canvas, &target);
         });
@@ -1096,7 +1097,9 @@ fn parameter_rows(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target)
                 .entry(name.clone())
                 .or_insert(0.0);
             ui.label(&name);
-            let response = ui.add(egui::DragValue::new(value).speed(0.05).range(0.0..=1.0));
+            // A condition reads 0 or 1; a blend space's axis reads a speed or a direction, which
+            // runs past one and below zero.
+            let response = ui.add(egui::DragValue::new(value).speed(0.05).range(-10.0..=10.0));
             let open = value.abs() > 0.0;
             let toggled = ui
                 .small_button(if open { "Close" } else { "Open" })
@@ -1127,6 +1130,47 @@ fn parameter_rows(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target)
             format!("State {}{target_line}", state.state_name),
         ));
     }
+}
+
+/// The preview's ground, for a graph that places its feet: the slope of the plane the engine's
+/// preview stands the character on, which the engine reads as `preview.ground_slope`.
+fn ground_row(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target, canvas: &GraphCanvas) {
+    if target.report.is_none()
+        || !canvas
+            .nodes()
+            .any(|node| node.type_name == FOOT_PLACEMENT_NODE)
+    {
+        return;
+    }
+    heading(ui, frame.shell, "Preview ground");
+    ui.horizontal(|ui| {
+        let value = frame
+            .inputs
+            .animation
+            .parameters
+            .entry(GROUND_SLOPE.to_owned())
+            .or_insert(0.0);
+        ui.label("Slope");
+        let response = ui.add(
+            egui::DragValue::new(value)
+                .speed(0.5)
+                .range(-45.0..=45.0)
+                .suffix("°"),
+        );
+        if response.drag_stopped() || response.lost_focus() {
+            let arguments = Arguments::new()
+                .with("name", Value::Text(GROUND_SLOPE.to_owned()))
+                .with("value", Value::Float(*value));
+            frame.intents.push(Intent::Invoke(
+                "animation.preview.parameter".into(),
+                arguments,
+            ));
+        }
+    })
+    .response
+    .on_hover_text(
+        "The plane foot placement stands the preview on, rising to the character's right",
+    );
 }
 
 /// Every engine diagnostic as a row that selects its node.

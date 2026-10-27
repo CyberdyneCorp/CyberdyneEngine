@@ -292,7 +292,8 @@ CY_TEST_CASE("editor animation: without a character the vocabulary is the pose g
     CY_REQUIRE_EQ(catalogue.u32v(), 3U);
     (void)catalogue.u32v();
     const u32 count = catalogue.u32v();
-    CY_CHECK_EQ(count, 9U);
+    // Issue #92 added the two blend spaces, foot placement and aim.
+    CY_CHECK_EQ(count, 13U);
     // Compiling needs no character: the program is checked against nothing it would play.
     CY_REQUIRE_FALSE(
         ask(nullptr, "animation.compile", compile_request(read_file(kGraph)), reply).refused());

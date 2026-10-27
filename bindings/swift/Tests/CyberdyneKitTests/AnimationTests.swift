@@ -22,6 +22,7 @@ private enum Seen {
     nonisolated(unsafe) static var mode: UInt32 = 99
     nonisolated(unsafe) static var detached: CyEntity = 0
     nonisolated(unsafe) static var events: [CyAnimationEvent] = []
+    nonisolated(unsafe) static var aimed: (String, [Float]) = ("", [])
 }
 
 private let kHero: CyEntity = 0x1_0000_0007
@@ -127,6 +128,28 @@ final class AnimationTests: XCTestCase {
             }
             table.animation_set_root_motion = { _, _, mode in
                 Seen.mode = mode
+                return CY_RESULT_OK
+            }
+            table.animation_aim_at = { _, _, target, point in
+                guard let target, let point else {
+                    return FakeEngine.fail(CY_RESULT_INVALID_ARGUMENT, "no target")
+                }
+                Seen.aimed = (String(cString: target), [point[0], point[1], point[2]])
+                return CY_RESULT_OK
+            }
+            table.animation_foot_placement = { _, _, index, out in
+                guard index == 0, let out,
+                    out.pointee.struct_size == UInt32(MemoryLayout<CyFootPlacement>.size)
+                else {
+                    return FakeEngine.fail(CY_RESULT_NOT_FOUND, "no such foot placement")
+                }
+                out.pointee.flags =
+                    CY_FOOT_PLACEMENT_SOLVED | CY_FOOT_PLACEMENT_LEFT_GROUND
+                    | CY_FOOT_PLACEMENT_RIGHT_GROUND | CY_FOOT_PLACEMENT_RIGHT_REACHED
+                out.pointee.pelvis = -0.09
+                out.pointee.offset = (-0.09, 0.08)
+                out.pointee.ground = (-0.1, 0.0, 0.0, 0.1, 0.17, 0.0)
+                out.pointee.normal = (0, 1, 0, 0, 1, 0)
                 return CY_RESULT_OK
             }
             table.animation_joint_pose = { _, _, joint, out in
@@ -238,6 +261,63 @@ final class AnimationTests: XCTestCase {
         let pose = try Animator(Entity(bits: kHero)).jointPose("hand")
         XCTAssertEqual(pose.position, Vec3(x: 1, y: 2, z: 3))
         XCTAssertThrowsError(try Animator(Entity(bits: kHero)).jointPose("tail"))
+    }
+
+    /// A behaviour drives a locomotion blend space the way a game does: from its velocity, every
+    /// fixed update.
+    private final class Strider: Behaviour {
+        var velocity = Vec3.zero
+        var facing = Quat(x: 0, y: 0, z: 0, w: 1)
+        override func onFixedUpdate(_ delta: Double) throws {
+            let axes = Animator.locomotion(velocity: velocity, facing: facing)
+            try Animator(entity).setLocomotion(speed: axes.speed, direction: axes.direction)
+        }
+    }
+
+    func testABehaviourSetsSpeedAndDirectionFromItsVelocity() throws {
+        let strider = Strider(entity: Entity(bits: kHero))
+        // Straight ahead at 3 m/s.
+        strider.velocity = Vec3(x: 0, y: 0, z: -3)
+        try strider.onFixedUpdate(1.0 / 60.0)
+        XCTAssertEqual(Seen.floats["speed"] ?? -1, 3, accuracy: 1e-5)
+        XCTAssertEqual(Seen.floats["direction"] ?? -1, 0, accuracy: 1e-4)
+        // Strafing right, then backing away; the vertical is not speed.
+        strider.velocity = Vec3(x: 2, y: 5, z: 0)
+        try strider.onFixedUpdate(1.0 / 60.0)
+        XCTAssertEqual(Seen.floats["speed"] ?? -1, 2, accuracy: 1e-5)
+        XCTAssertEqual(Seen.floats["direction"] ?? -1, 90, accuracy: 1e-3)
+        strider.velocity = Vec3(x: 0, y: 0, z: 1.5)
+        try strider.onFixedUpdate(1.0 / 60.0)
+        XCTAssertEqual(abs(Seen.floats["direction"] ?? 0), 180, accuracy: 1e-3)
+        // Facing turned 90 degrees to the left (about +Y), moving along world -X is straight ahead.
+        let half = Float(0.707_106_77)
+        strider.facing = Quat(x: 0, y: half, z: 0, w: half)
+        strider.velocity = Vec3(x: -4, y: 0, z: 0)
+        try strider.onFixedUpdate(1.0 / 60.0)
+        XCTAssertEqual(Seen.floats["speed"] ?? -1, 4, accuracy: 1e-4)
+        XCTAssertEqual(Seen.floats["direction"] ?? -1, 0, accuracy: 1e-3)
+        // Diagonal: 45 degrees to the right.
+        strider.facing = Quat(x: 0, y: 0, z: 0, w: 1)
+        strider.velocity = Vec3(x: 1, y: 0, z: -1)
+        try strider.onFixedUpdate(1.0 / 60.0)
+        XCTAssertEqual(Seen.floats["direction"] ?? -1, 45, accuracy: 1e-3)
+    }
+
+    func testAnAimIsAWorldPointAndFeetReportWhatTheyStoodOn() throws {
+        let hero = Animator(Entity(bits: kHero))
+        try hero.aim("look", at: Vec3(x: 1, y: 1.7, z: -6))
+        XCTAssertEqual(Seen.aimed.0, "look")
+        XCTAssertEqual(Seen.aimed.1, [1, 1.7, -6])
+        let feet = try hero.footPlacement()
+        XCTAssertTrue(feet.solved)
+        XCTAssertEqual(feet.pelvis, -0.09)
+        XCTAssertTrue(feet.left.onGround)
+        XCTAssertFalse(feet.left.reached)
+        XCTAssertTrue(feet.right.reached)
+        XCTAssertEqual(feet.right.offset, 0.08)
+        XCTAssertEqual(feet.right.ground, Vec3(x: 0.1, y: 0.17, z: 0))
+        XCTAssertEqual(feet.left.normal, Vec3(x: 0, y: 1, z: 0))
+        XCTAssertThrowsError(try hero.footPlacement(3))
     }
 
     func testWithNoEngineEveryCallThrowsUnavailable() {

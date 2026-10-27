@@ -537,3 +537,12 @@ CY_TEST_CASE("the 1.13 structs have the offsets the description generator comput
     CY_CHECK_EQ(offsetof(CyViewmodelDesc, depth_fraction), 20U);
     CY_CHECK_EQ(offsetof(CyViewmodelDesc, flags), 24U);
 }
+
+CY_TEST_CASE("the 1.14 structs have the offsets the description generator computes") {
+    CY_CHECK_EQ(sizeof(CyFootPlacement), 68U);
+    CY_CHECK_EQ(offsetof(CyFootPlacement, flags), 4U);
+    CY_CHECK_EQ(offsetof(CyFootPlacement, pelvis), 8U);
+    CY_CHECK_EQ(offsetof(CyFootPlacement, offset), 12U);
+    CY_CHECK_EQ(offsetof(CyFootPlacement, ground), 20U);
+    CY_CHECK_EQ(offsetof(CyFootPlacement, normal), 44U);
+}

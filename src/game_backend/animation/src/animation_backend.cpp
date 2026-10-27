@@ -13,6 +13,8 @@
 #include <cy/scene/tree.h>
 
 #include <algorithm>
+#include <cstdio>
+#include <string_view>
 
 namespace cy::game_backend {
 namespace {
@@ -402,6 +404,68 @@ Status AnimationAdapter::update(f32 tick_seconds) noexcept {
 
 void bind_animation(cy::abi::Host& host, AnimationAdapter* adapter) noexcept {
     host.game.animation = adapter;
+}
+
+// --- 1.14: aim and foot placement -------------------------------------------------------------
+
+CyResult AnimationAdapter::aim_at(CyEntity entity, const char* target,
+                                  const f32 (&point)[3]) noexcept {
+    if (animator_of(entity) == nullptr) {
+        return missing();
+    }
+    // The aim's target is in MODEL space, as the program reads it: the world point through the
+    // inverse of where the entity stands.
+    const Vec3 model =
+        inverse(placement_of(entity)).transform_point(Vec3{point[0], point[1], point[2]});
+    const f32 components[3] = {model.x, model.y, model.z};
+    Name names[3];
+    const std::string_view prefix(target);
+    for (u32 axis = 0; axis < 3; ++axis) {
+        char name[128] = {};
+        (void)std::snprintf(name, sizeof(name), "%.*s.%c", static_cast<int>(prefix.size()),
+                            prefix.data(), "xyz"[axis]);
+        names[axis] = Name::intern(name);
+        // All three are checked before any is written, so a refusal leaves the aim as it was.
+        if (!system_->parameter(from_abi(entity), names[axis]).has_value()) {
+            return abi::report(CY_RESULT_NOT_FOUND,
+                               "the entity's program has no aim target of that name");
+        }
+    }
+    for (u32 axis = 0; axis < 3; ++axis) {
+        if (const CyResult result =
+                answer(system_->set_parameter(from_abi(entity), names[axis], components[axis]));
+            result != CY_RESULT_OK) {
+            return result;
+        }
+    }
+    return CY_RESULT_OK;
+}
+
+CyResult AnimationAdapter::foot_placement(CyEntity entity, u32 index,
+                                          CyFootPlacement& out) const noexcept {
+    if (animator_of(entity) == nullptr) {
+        return missing();
+    }
+    if (index > 0xFFFFU) {
+        return abi::report(CY_RESULT_NOT_FOUND, "the entity's program has no such foot placement");
+    }
+    Expected<animation::FootPlacementReport, Error> report =
+        system_->foot_placement(from_abi(entity), static_cast<u16>(index));
+    if (!report.has_value()) {
+        return abi::report(report.error());
+    }
+    out.flags = (report->solved ? CY_FOOT_PLACEMENT_SOLVED : 0U) |
+                (report->hit[0] ? CY_FOOT_PLACEMENT_LEFT_GROUND : 0U) |
+                (report->hit[1] ? CY_FOOT_PLACEMENT_RIGHT_GROUND : 0U) |
+                (report->reached[0] ? CY_FOOT_PLACEMENT_LEFT_REACHED : 0U) |
+                (report->reached[1] ? CY_FOOT_PLACEMENT_RIGHT_REACHED : 0U);
+    out.pelvis = report->pelvis;
+    for (u32 leg = 0; leg < 2; ++leg) {
+        out.offset[leg] = report->offset[leg];
+        write3(&out.ground[static_cast<usize>(leg) * 3U], report->ground[leg]);
+        write3(&out.normal[static_cast<usize>(leg) * 3U], report->normal[leg]);
+    }
+    return CY_RESULT_OK;
 }
 
 }  // namespace cy::game_backend

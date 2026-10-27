@@ -267,6 +267,23 @@ public:
 
     [[nodiscard]] PoseHandle pose_of(ecs::Entity entity) const noexcept;
 
+    // --- The ground ------------------------------------------------------------------------------
+
+    /// The ground every instance's foot placement stands on: a physics world, a terrain, a plane.
+    /// Called from job workers during `evaluate`, several at once, so it must be thread-safe (see
+    /// `GroundProbe`); it is borrowed and must outlive the system. Null — the default — leaves
+    /// every `FootPlacement` instruction passing its pose through, exactly as a program without
+    /// one.
+    ///
+    /// Each solve is told where the entity is (its `WorldTransform`, with a scene tree; the
+    /// identity without one) and how much SIMULATION time has passed since the entity's pose was
+    /// last evaluated, which is what the solve's smoothing follows.
+    void set_ground_probe(const GroundProbe* probe) noexcept { ground_ = probe; }
+    [[nodiscard]] const GroundProbe* ground_probe() const noexcept { return ground_; }
+    /// What the entity's foot placement `index` did when its pose was last evaluated.
+    [[nodiscard]] Expected<FootPlacementReport, Error> foot_placement(ecs::Entity entity,
+                                                                      u16 index = 0) const noexcept;
+
     /// The events the last `advance()` emitted, in tick then batch then instance order, and the
     /// entity each came from.
     [[nodiscard]] const EventBuffer& events() const noexcept { return events_; }
@@ -294,6 +311,8 @@ private:
         bool live = false;
         /// Set by `advance` for every instance that has to be evaluated this frame.
         bool due = false;
+        /// Simulation time since the pose was last evaluated, which foot placement smooths over.
+        f32 ground_elapsed = 0.0F;
     };
 
     struct Batch {
@@ -333,6 +352,7 @@ private:
     [[nodiscard]] Status publish_reference(Slot& slot) noexcept;
     [[nodiscard]] Status evaluate_slice(const Slice& slice, Span<Transform> scratch) noexcept;
     void refuse(const char* reason) noexcept;
+    [[nodiscard]] Transform placement_of(ecs::Entity entity) const noexcept;
 
     Allocator* allocator_;
     ecs::World* world_;
@@ -351,6 +371,7 @@ private:
     AnimationSystemStats stats_;
     Status last_error_ = ok();
     const determinism::SimulationClock* clock_ = nullptr;
+    const GroundProbe* ground_ = nullptr;
     ecs::SystemId tick_system_ = ecs::kInvalidSystem;
     /// Set by a scheduled evaluation: the frame has read its events, and the next tick starts a
     /// new set.

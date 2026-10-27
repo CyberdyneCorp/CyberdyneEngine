@@ -46,6 +46,7 @@
 #include <cy/graph/lower_pose.h>
 
 #include <cy/animation/clip.h>
+#include <cy/animation/foot_placement.h>
 #include <cy/animation/ik.h>
 #include <cy/animation/lod.h>
 #include <cy/animation/skeleton.h>
@@ -110,14 +111,61 @@ public:
     [[nodiscard]] Status set_ik_chain(u16 index, const IkChain& chain) noexcept;
     [[nodiscard]] const IkChain* ik_chain(u16 index) const noexcept;
 
+    /// The setup a `FootPlacement` instruction solves, resolved by `bind` from the joint names the
+    /// program carries (`PoseProgram::foot_placements`). A host may replace it — a test, or a rig
+    /// whose joints the graph could not name. Null when the names did not resolve.
+    [[nodiscard]] Status set_foot_placement(u16 index, const FootPlacementSetup& setup) noexcept;
+    [[nodiscard]] const FootPlacementSetup* foot_placement(u16 index) const noexcept;
+    /// The chain an `Aim` instruction turns, resolved by `bind` from `PoseProgram::aims`.
+    [[nodiscard]] Status set_aim(u16 index, const AimChain& chain) noexcept;
+    [[nodiscard]] const AimChain* aim(u16 index) const noexcept;
+    /// Joint names the program's foot placements and aims carry that this skeleton does not have.
+    /// Their instructions pass the pose through, and this is how a host finds out why.
+    [[nodiscard]] u32 unresolved_joints() const noexcept { return unresolved_; }
+
+    /// A synchronised blend space's shared clock, as `bind` resolved it against the clips. Each
+    /// clip sample has `segments` segment start times, rotated so segment `j` of every sample
+    /// begins at the same sync marker, in ascending order from the first.
+    struct SyncSpace {
+        u16 space = 0;
+        /// Stride segments: the sync markers every clip carries in corresponding order, or one —
+        /// normalised time — when the clips' markers do not correspond.
+        u16 segments = 1;
+        u32 first_sample = 0;
+        u32 sample_count = 0;
+    };
+    struct SyncSample {
+        /// The sample's index within its space.
+        u16 sample = 0;
+        u16 time_param = 0;
+        /// Its entry in `time_parameters()`, which `previous_times()` is parallel to.
+        u16 time_slot = 0;
+        f32 duration = 1.0F;
+        u32 first_time = 0;
+    };
+    [[nodiscard]] Span<const SyncSpace> sync_spaces() const noexcept { return sync_spaces_.span(); }
+    [[nodiscard]] Span<const SyncSample> sync_samples() const noexcept {
+        return sync_samples_.span();
+    }
+    [[nodiscard]] Span<const f32> sync_times() const noexcept { return sync_times_.span(); }
+
 private:
+    [[nodiscard]] Status bind_modifiers() noexcept;
+    [[nodiscard]] Status bind_sync() noexcept;
+
     const Skeleton* skeleton_ = nullptr;
     const PoseProgram* program_ = nullptr;
     Array<const Clip*> clips_;
     Array<TimeParameter> times_;
     Array<f32> mask_weights_;
     Array<IkChain> chains_;
+    Array<FootPlacementSetup> feet_;
+    Array<AimChain> aims_;
+    Array<SyncSpace> sync_spaces_;
+    Array<SyncSample> sync_samples_;
+    Array<f32> sync_times_;
     u32 joints_ = 0;
+    u32 unresolved_ = 0;
 };
 
 /// The per-instance state block: where the state machine is, what the parameters are, and where
@@ -168,11 +216,32 @@ public:
     [[nodiscard]] u32 identifier() const noexcept { return identifier_; }
     void set_identifier(u32 value) noexcept { identifier_ = value; }
 
+    /// The ground this instance's foot placements stand on, and where the character is, for the
+    /// next `evaluate`. Set by the host before each evaluation: the system does it from the
+    /// entity's world placement and the simulation time since the last one. With no probe a
+    /// `FootPlacement` instruction passes the pose through.
+    void set_ground(const GroundProbe* probe, const FootPlacementContext& context) noexcept {
+        ground_ = probe;
+        ground_context_ = context;
+    }
+    [[nodiscard]] const GroundProbe* ground() const noexcept { return ground_; }
+    [[nodiscard]] const FootPlacementContext& ground_context() const noexcept {
+        return ground_context_;
+    }
+    /// What each of the program's foot placements followed, and what its last solve did.
+    [[nodiscard]] FootPlacementState* foot_state(u16 index) noexcept;
+    [[nodiscard]] const FootPlacementReport* foot_report(u16 index) const noexcept;
+    [[nodiscard]] FootPlacementReport* foot_report(u16 index) noexcept;
+
 private:
     graph::pose::PoseInstance machine_;
     Array<f32> parameters_;
     Array<ClipCursor> cursors_;
     Array<f32> previous_;
+    Array<FootPlacementState> feet_;
+    Array<FootPlacementReport> foot_reports_;
+    const GroundProbe* ground_ = nullptr;
+    FootPlacementContext ground_context_;
     RootDelta root_;
     Vec3 travelled_{0.0F, 0.0F, 0.0F};
     f32 play_rate_ = 1.0F;
@@ -223,6 +292,11 @@ struct EvaluationStats {
     u32 joints_written = 0;
     u32 tracks_skipped = 0;
     u32 ik_solved = 0;
+    /// Blend-space samples at zero weight, which were not evaluated.
+    u32 blend_samples_skipped = 0;
+    /// Foot placements and aims solved.
+    u32 feet_placed = 0;
+    u32 aims_solved = 0;
 };
 
 /// Advance the state machine, the clip times, root motion and events by `dt`.

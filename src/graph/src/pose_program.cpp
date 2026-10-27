@@ -111,6 +111,12 @@ const char* pose_op_name(PoseOp op) noexcept {
             return "layer";
         case PoseOp::IK:
             return "ik";
+        case PoseOp::BlendSpace:
+            return "blend_space";
+        case PoseOp::FootPlacement:
+            return "foot_placement";
+        case PoseOp::Aim:
+            return "aim";
         case PoseOp::Count:
             break;
     }
@@ -126,7 +132,182 @@ PoseProgram::PoseProgram(Allocator& allocator) noexcept
       parameters_(allocator),
       sync_(allocator),
       markers_(allocator),
+      blend_spaces_(allocator),
+      blend_samples_(allocator),
+      blend_triangles_(allocator),
+      foot_placements_(allocator),
+      aims_(allocator),
       debug_(allocator) {}
+
+// --- Blend-space weights --------------------------------------------------------------------
+
+namespace {
+
+struct Barycentric {
+    f32 u = 1.0F;
+    f32 v = 0.0F;
+    f32 w = 0.0F;
+};
+
+[[nodiscard]] f32 dot2(f32 ax, f32 ay, f32 bx, f32 by) noexcept {
+    return (ax * bx) + (ay * by);
+}
+
+/// The point of triangle `abc` nearest `p`, as barycentric coordinates: Ericson's region test
+/// (Real-Time Collision Detection, 5.1.5) in two dimensions. Inside the triangle it is `p` itself.
+[[nodiscard]] Barycentric nearest_on_triangle(const BlendSample& a, const BlendSample& b,
+                                              const BlendSample& c, f32 px, f32 py) noexcept {
+    const f32 abx = b.x - a.x;
+    const f32 aby = b.y - a.y;
+    const f32 acx = c.x - a.x;
+    const f32 acy = c.y - a.y;
+    const f32 d1 = dot2(abx, aby, px - a.x, py - a.y);
+    const f32 d2 = dot2(acx, acy, px - a.x, py - a.y);
+    if (d1 <= 0.0F && d2 <= 0.0F) {
+        return {1.0F, 0.0F, 0.0F};
+    }
+    const f32 d3 = dot2(abx, aby, px - b.x, py - b.y);
+    const f32 d4 = dot2(acx, acy, px - b.x, py - b.y);
+    if (d3 >= 0.0F && d4 <= d3) {
+        return {0.0F, 1.0F, 0.0F};
+    }
+    const f32 vc = (d1 * d4) - (d3 * d2);
+    if (vc <= 0.0F && d1 >= 0.0F && d3 <= 0.0F) {
+        const f32 v = d1 / (d1 - d3);
+        return {1.0F - v, v, 0.0F};
+    }
+    const f32 d5 = dot2(abx, aby, px - c.x, py - c.y);
+    const f32 d6 = dot2(acx, acy, px - c.x, py - c.y);
+    if (d6 >= 0.0F && d5 <= d6) {
+        return {0.0F, 0.0F, 1.0F};
+    }
+    const f32 vb = (d5 * d2) - (d1 * d6);
+    if (vb <= 0.0F && d2 >= 0.0F && d6 <= 0.0F) {
+        const f32 w = d2 / (d2 - d6);
+        return {1.0F - w, 0.0F, w};
+    }
+    const f32 va = (d3 * d6) - (d5 * d4);
+    if (va <= 0.0F && (d4 - d3) >= 0.0F && (d5 - d6) >= 0.0F) {
+        const f32 w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return {0.0F, 1.0F - w, w};
+    }
+    const f32 denominator = 1.0F / (va + vb + vc);
+    const f32 v = vb * denominator;
+    const f32 w = vc * denominator;
+    return {1.0F - v - w, v, w};
+}
+
+void weights_1d(Span<const BlendSample> samples, f32 x, Span<f32> out) noexcept {
+    const usize last = samples.size() - 1;
+    if (x <= samples[0].x) {
+        out[0] = 1.0F;
+        return;
+    }
+    if (x >= samples[last].x) {
+        out[last] = 1.0F;
+        return;
+    }
+    for (usize index = 0; index < last; ++index) {
+        const f32 low = samples[index].x;
+        const f32 high = samples[index + 1].x;
+        if (x >= low && x < high) {
+            const f32 t = (x - low) / (high - low);
+            out[index] = 1.0F - t;
+            out[index + 1] = t;
+            return;
+        }
+    }
+    out[last] = 1.0F;
+}
+
+void weights_2d(Span<const BlendSample> samples, Span<const BlendTriangle> triangles, f32 x, f32 y,
+                Span<f32> out) noexcept {
+    // The first triangle at the smallest distance: zero inside, so the first triangle containing
+    // the point wins, and outside the hull the nearest point of its edge is weighted.
+    usize best = 0;
+    Barycentric best_weights;
+    f32 best_distance = -1.0F;
+    for (usize index = 0; index < triangles.size(); ++index) {
+        const BlendTriangle& triangle = triangles[index];
+        const BlendSample& a = samples[triangle.sample[0]];
+        const BlendSample& b = samples[triangle.sample[1]];
+        const BlendSample& c = samples[triangle.sample[2]];
+        const Barycentric weights = nearest_on_triangle(a, b, c, x, y);
+        const f32 nx = (weights.u * a.x) + (weights.v * b.x) + (weights.w * c.x);
+        const f32 ny = (weights.u * a.y) + (weights.v * b.y) + (weights.w * c.y);
+        const f32 distance = ((nx - x) * (nx - x)) + ((ny - y) * (ny - y));
+        if (best_distance < 0.0F || distance < best_distance) {
+            best = index;
+            best_weights = weights;
+            best_distance = distance;
+        }
+        if (distance == 0.0F) {
+            break;
+        }
+    }
+    const f32 u = best_weights.u > 0.0F ? best_weights.u : 0.0F;
+    const f32 v = best_weights.v > 0.0F ? best_weights.v : 0.0F;
+    const f32 w = best_weights.w > 0.0F ? best_weights.w : 0.0F;
+    const f32 total = u + v + w;
+    const BlendTriangle& triangle = triangles[best];
+    if (!(total > 0.0F)) {
+        // A parameter that is not a number lands on a sample rather than weighting none.
+        out[triangle.sample[0]] += 1.0F;
+        return;
+    }
+    out[triangle.sample[0]] += u / total;
+    out[triangle.sample[1]] += v / total;
+    out[triangle.sample[2]] += w / total;
+}
+
+}  // namespace
+
+bool blend_weights_at(u8 dimensions, Span<const BlendSample> samples,
+                      Span<const BlendTriangle> triangles, f32 x, f32 y, Span<f32> out) noexcept {
+    if (samples.empty() || out.size() < samples.size()) {
+        return false;
+    }
+    for (usize index = 0; index < samples.size(); ++index) {
+        out[index] = 0.0F;
+    }
+    if (samples.size() == 1) {
+        out[0] = 1.0F;
+        return true;
+    }
+    if (dimensions == 1) {
+        weights_1d(samples, x, out);
+        return true;
+    }
+    for (const BlendTriangle& triangle : triangles) {
+        for (const u16 vertex : triangle.sample) {
+            if (vertex >= samples.size()) {
+                return false;
+            }
+        }
+    }
+    if (triangles.empty()) {
+        return false;
+    }
+    weights_2d(samples, triangles, x, y, out);
+    return true;
+}
+
+bool blend_space_weights(const PoseProgram& program, u32 space, Span<const f32> parameters,
+                         Span<f32> out) noexcept {
+    if (space >= program.blend_spaces().size()) {
+        return false;
+    }
+    const BlendSpace& entry = program.blend_spaces()[space];
+    const Span<const BlendSample> samples =
+        program.blend_samples().subspan(entry.first_sample, entry.sample_count);
+    const Span<const BlendTriangle> triangles =
+        program.blend_triangles().subspan(entry.first_triangle, entry.triangle_count);
+    const f32 x = entry.x_param < parameters.size() ? parameters[entry.x_param] : 0.0F;
+    const f32 y = entry.dimensions == 2 && entry.y_param < parameters.size()
+                      ? parameters[entry.y_param]
+                      : 0.0F;
+    return blend_weights_at(entry.dimensions, samples, triangles, x, y, out);
+}
 
 // --- Evaluation -----------------------------------------------------------------------------
 
@@ -178,6 +359,8 @@ struct Evaluator {
     }
 
     [[nodiscard]] Status run(PoseValue value) noexcept;
+    [[nodiscard]] Status blend_space(const PoseInstruction& instruction, Span<f32> out) noexcept;
+    [[nodiscard]] Status modify(const PoseInstruction& instruction, Span<f32> out) noexcept;
 };
 
 Status Evaluator::run(PoseValue value) noexcept {
@@ -239,19 +422,54 @@ Status Evaluator::run(PoseValue value) noexcept {
             }
             return ok();
         }
-        case PoseOp::IK: {
-            if (Status ran = run(instruction.a); !ran) {
-                return ran;
-            }
-            const Span<f32> base = slot(instruction.a);
-            for (usize index = 0; index < out.size(); ++index) {
-                out[index] = base[index];
-            }
-            sampler->solve_ik(instruction.chain, instruction.required, out);
-            return ok();
-        }
+        case PoseOp::IK:
+        case PoseOp::FootPlacement:
+        case PoseOp::Aim:
+            return modify(instruction, out);
+        case PoseOp::BlendSpace:
+            return blend_space(instruction, out);
         case PoseOp::Count:
             break;
+    }
+    return ok();
+}
+
+Status Evaluator::modify(const PoseInstruction& instruction, Span<f32> out) noexcept {
+    if (Status ran = run(instruction.a); !ran) {
+        return ran;
+    }
+    const Span<f32> base = slot(instruction.a);
+    for (usize index = 0; index < out.size(); ++index) {
+        out[index] = base[index];
+    }
+    // A foot placement or an aim needs a skeleton and, for feet, the ground: neither is the
+    // reference evaluator's, so it passes the pose through. The runtime evaluator solves them.
+    if (instruction.op == PoseOp::IK) {
+        sampler->solve_ik(instruction.chain, instruction.required, out);
+    }
+    return ok();
+}
+
+Status Evaluator::blend_space(const PoseInstruction& instruction, Span<f32> out) noexcept {
+    f32 weights[kMaxBlendSamples] = {};
+    if (!blend_space_weights(*program, instruction.clip, parameters,
+                             Span<f32>(weights, kMaxBlendSamples))) {
+        return make_unexpected(
+            Error{ErrorCode::InvalidArgument, "this instruction names no blend space", 0});
+    }
+    for (f32& channel : out) {
+        channel = 0.0F;
+    }
+    const BlendSpace& space = program->blend_spaces()[instruction.clip];
+    for (u32 index = 0; index < space.sample_count; ++index) {
+        if (weights[index] <= 0.0F) {
+            continue;
+        }
+        const PoseValue value = program->blend_samples()[space.first_sample + index].value;
+        if (Status ran = run(value); !ran) {
+            return ran;
+        }
+        add_into(out, slot(value), instruction.required, weights[index], joints);
     }
     return ok();
 }
@@ -439,6 +657,66 @@ namespace {
     return value == kNoPoseValue || value < code;
 }
 
+/// A blend space reads its samples' poses, so they are operands like `a` and `b`: in range, and
+/// computed before it.
+[[nodiscard]] Status check_blend_space(const PoseInstruction& instruction, usize index,
+                                       const PoseProgramParts& parts) noexcept {
+    if (instruction.clip >= parts.blend_spaces.size()) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a cooked pose program blends a space it does not declare");
+    }
+    const BlendSpace& space = parts.blend_spaces[instruction.clip];
+    const usize parameters = parts.parameters.size();
+    const bool shaped =
+        (space.dimensions == 1 || space.dimensions == 2) && space.sample_count != 0 &&
+        space.sample_count <= kMaxBlendSamples &&
+        static_cast<u64>(space.first_sample) + space.sample_count <= parts.blend_samples.size() &&
+        static_cast<u64>(space.first_triangle) + space.triangle_count <=
+            parts.blend_triangles.size() &&
+        space.x_param < parameters && space.y_param < parameters && space.phase_param < parameters;
+    if (!shaped) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a cooked pose program blend space names samples, triangles or parameters it "
+                    "does not have");
+    }
+    for (u32 sample = 0; sample < space.sample_count; ++sample) {
+        const PoseValue value = parts.blend_samples[space.first_sample + sample].value;
+        if (value == kNoPoseValue || value >= index) {
+            return fail(ErrorCode::InvalidArgument,
+                        "a cooked pose program blend space samples a pose it does not have");
+        }
+    }
+    for (u32 triangle = 0; triangle < space.triangle_count; ++triangle) {
+        for (const u16 vertex : parts.blend_triangles[space.first_triangle + triangle].sample) {
+            if (vertex >= space.sample_count) {
+                return fail(ErrorCode::InvalidArgument,
+                            "a cooked pose program blend triangle names a sample it does not "
+                            "have");
+            }
+        }
+    }
+    if (space.dimensions == 2 && space.sample_count > 1 && space.triangle_count == 0) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a cooked two-dimensional blend space has samples and no triangles");
+    }
+    return ok();
+}
+
+[[nodiscard]] Status check_modifiers(const PoseProgramParts& parts) noexcept {
+    for (const AimRef& aim : parts.aims) {
+        bool targets = aim.joint_count != 0 && aim.joint_count <= kMaxAimJoints;
+        for (const u16 parameter : aim.target_param) {
+            targets = targets && parameter < parts.parameters.size();
+        }
+        if (!targets) {
+            return fail(ErrorCode::InvalidArgument,
+                        "a cooked aim chain has no joints, too many, or a target it does not "
+                        "declare");
+        }
+    }
+    return ok();
+}
+
 [[nodiscard]] Status check_instruction(const PoseInstruction& instruction, usize index,
                                        const PoseProgramParts& parts) noexcept {
     const usize code = parts.code.size();
@@ -465,6 +743,20 @@ namespace {
                    instruction.weight_param >= parts.parameters.size())) {
         return fail(ErrorCode::InvalidArgument,
                     "a cooked pose program blends with a mask or a weight it does not declare");
+    }
+    if (instruction.op == PoseOp::BlendSpace) {
+        return check_blend_space(instruction, index, parts);
+    }
+    const bool modifies = instruction.op == PoseOp::FootPlacement || instruction.op == PoseOp::Aim;
+    if (!modifies) {
+        return ok();
+    }
+    const usize table =
+        instruction.op == PoseOp::FootPlacement ? parts.foot_placements.size() : parts.aims.size();
+    if (instruction.chain >= table || instruction.weight_param >= parts.parameters.size()) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a cooked pose program modifies a pose with a setup or a weight it does not "
+                    "declare");
     }
     return ok();
 }
@@ -499,24 +791,8 @@ template <class T>
     return out.append(from);
 }
 
-}  // namespace
-
-Expected<PoseProgram, Error> assemble_pose_program(Allocator& allocator,
-                                                   const PoseProgramParts& parts) noexcept {
-    if (parts.joint_count == 0 || parts.joint_count > kMaxJoints) {
-        return fail(ErrorCode::InvalidArgument,
-                    "a cooked pose program addresses no joints, or more than a mask can");
-    }
-    for (usize index = 0; index < parts.code.size(); ++index) {
-        if (Status checked = check_instruction(parts.code[index], index, parts); !checked) {
-            return make_unexpected(checked.error());
-        }
-    }
-    if (Status checked = check_machine(parts); !checked) {
-        return make_unexpected(checked.error());
-    }
-
-    PoseProgram program(allocator);
+/// Every table of `parts` into `program`, stopping at the first that does not fit.
+[[nodiscard]] Status copy_parts(PoseProgram& program, const PoseProgramParts& parts) noexcept {
     Status copied = copy_into(PoseProgramAccess::code(program), parts.code);
     if (copied) {
         copied = copy_into(PoseProgramAccess::states(program), parts.states);
@@ -539,6 +815,47 @@ Expected<PoseProgram, Error> assemble_pose_program(Allocator& allocator,
     if (copied) {
         copied = copy_into(PoseProgramAccess::markers(program), parts.markers);
     }
+    if (copied) {
+        copied = copy_into(PoseProgramAccess::blend_spaces(program), parts.blend_spaces);
+    }
+    if (copied) {
+        copied = copy_into(PoseProgramAccess::blend_samples(program), parts.blend_samples);
+    }
+    if (copied) {
+        copied = copy_into(PoseProgramAccess::blend_triangles(program), parts.blend_triangles);
+    }
+    if (copied) {
+        copied = copy_into(PoseProgramAccess::foot_placements(program), parts.foot_placements);
+    }
+    if (copied) {
+        copied = copy_into(PoseProgramAccess::aims(program), parts.aims);
+    }
+    return copied;
+}
+
+}  // namespace
+
+Expected<PoseProgram, Error> assemble_pose_program(Allocator& allocator,
+                                                   const PoseProgramParts& parts) noexcept {
+    if (parts.joint_count == 0 || parts.joint_count > kMaxJoints) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a cooked pose program addresses no joints, or more than a mask can");
+    }
+    for (usize index = 0; index < parts.code.size(); ++index) {
+        if (Status checked = check_instruction(parts.code[index], index, parts); !checked) {
+            return make_unexpected(checked.error());
+        }
+    }
+    Status checked = check_machine(parts);
+    if (checked) {
+        checked = check_modifiers(parts);
+    }
+    if (!checked) {
+        return make_unexpected(checked.error());
+    }
+
+    PoseProgram program(allocator);
+    Status copied = copy_parts(program, parts);
     if (!copied) {
         return make_unexpected(copied.error());
     }

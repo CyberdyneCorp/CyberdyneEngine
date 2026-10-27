@@ -555,6 +555,7 @@ void AnimationSystem::schedule_evaluation(f32 seconds) noexcept {
         if (!slot.live) {
             continue;
         }
+        slot.ground_elapsed += seconds;
         const LodTier tier = batches_[slot.rig].instances.instance(slot.index).tier();
         if (!evaluates_pose(tier)) {
             continue;
@@ -625,6 +626,13 @@ Status AnimationSystem::evaluate_slice(const Slice& slice, Span<Transform> scrat
             continue;
         }
         const u8 bone_lod = bone_lod_for(instance.tier());
+        if (ground_ != nullptr && !rig.program().foot_placements().empty()) {
+            FootPlacementContext context;
+            context.model_to_world = placement_of(slot.entity);
+            context.elapsed = slot.ground_elapsed;
+            context.owner = slot.entity.bits();
+            instance.set_ground(ground_, context);
+        }
         skeleton.reference_pose(local);
         EvaluationStats stats;
         if (Status evaluated =
@@ -734,6 +742,7 @@ Status AnimationSystem::evaluate(jobs::JobSystem* jobs) noexcept {
             continue;
         }
         slot.due = false;
+        slot.ground_elapsed = 0.0F;
         if (Status committed = poses_.commit(slot.pose); !committed) {
             return committed;
         }
@@ -821,7 +830,35 @@ Expected<ecs::SystemId, Error> AnimationSystem::install(
     if (Status declared = frame.access.write(animator_); !declared) {
         return make_unexpected(declared.error());
     }
+    // Foot placement reads where each entity stands.
+    if (tree_ != nullptr) {
+        if (Status declared = frame.access.read(tree_->components().world_transform); !declared) {
+            return make_unexpected(declared.error());
+        }
+    }
     return schedule.add(ecs::Stage::Animation, frame);
+}
+
+Transform AnimationSystem::placement_of(ecs::Entity entity) const noexcept {
+    if (tree_ == nullptr) {
+        return Transform{};
+    }
+    const auto* placed =
+        world_->get<scene::WorldTransform>(entity, tree_->components().world_transform);
+    return placed == nullptr ? Transform{} : placed->value;
+}
+
+Expected<FootPlacementReport, Error> AnimationSystem::foot_placement(ecs::Entity entity,
+                                                                     u16 index) const noexcept {
+    const AnimationInstance* found = instance(entity);
+    if (found == nullptr) {
+        return fail(ErrorCode::NotFound, "the entity has no animation instance");
+    }
+    const FootPlacementReport* report = found->foot_report(index);
+    if (report == nullptr) {
+        return fail(ErrorCode::NotFound, "the entity's program has no such foot placement");
+    }
+    return *report;
 }
 
 void AnimationSystem::teardown() noexcept {

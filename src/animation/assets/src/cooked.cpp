@@ -5,6 +5,8 @@
 
 #include "byte_io.h"
 
+#include <initializer_list>
+
 namespace cy::animation {
 namespace {
 
@@ -344,10 +346,76 @@ bool clip_matches_skeleton(const Clip& clip, Span<const Name> joints, const Skel
 
 // --- Program -------------------------------------------------------------------------------------
 
+namespace {
+
+[[nodiscard]] bool has_modifiers(const pose::PoseProgram& program) noexcept {
+    return !program.blend_spaces().empty() || !program.foot_placements().empty() ||
+           !program.aims().empty();
+}
+
+void write_modifiers(Writer& writer, const pose::PoseProgram& program) noexcept {
+    writer.u32_value(static_cast<u32>(program.blend_spaces().size()));
+    for (const pose::BlendSpace& space : program.blend_spaces()) {
+        writer.u16_value(static_cast<u16>((space.dimensions << 8U) | (space.sync ? 1U : 0U)));
+        writer.u16_value(space.x_param);
+        writer.u16_value(space.y_param);
+        writer.u16_value(space.phase_param);
+        writer.u32_value(space.first_sample);
+        writer.u32_value(space.sample_count);
+        writer.u32_value(space.first_triangle);
+        writer.u32_value(space.triangle_count);
+        writer.u64_value(space.origin);
+    }
+    writer.u32_value(static_cast<u32>(program.blend_samples().size()));
+    for (const pose::BlendSample& sample : program.blend_samples()) {
+        writer.f32_value(sample.x);
+        writer.f32_value(sample.y);
+        writer.u16_value(sample.value);
+    }
+    writer.u32_value(static_cast<u32>(program.blend_triangles().size()));
+    for (const pose::BlendTriangle& triangle : program.blend_triangles()) {
+        for (const u16 vertex : triangle.sample) {
+            writer.u16_value(vertex);
+        }
+    }
+    writer.u32_value(static_cast<u32>(program.foot_placements().size()));
+    for (const pose::FootPlacementRef& foot : program.foot_placements()) {
+        writer.name(foot.pelvis);
+        for (const auto& leg : foot.leg) {
+            for (const Name& joint : leg) {
+                writer.name(joint);
+            }
+        }
+        for (const f32 value : {foot.ankle_height, foot.probe_above, foot.probe_below,
+                                foot.max_pelvis_drop, foot.max_foot_raise, foot.smoothing,
+                                foot.max_tilt, foot.pole[0], foot.pole[1], foot.pole[2]}) {
+            writer.f32_value(value);
+        }
+        writer.u64_value(foot.origin);
+    }
+    writer.u32_value(static_cast<u32>(program.aims().size()));
+    for (const pose::AimRef& aim : program.aims()) {
+        writer.u32_value(aim.joint_count);
+        for (u32 joint = 0; joint < aim.joint_count; ++joint) {
+            writer.name(aim.joints[joint]);
+        }
+        for (const f32 value : {aim.axis[0], aim.axis[1], aim.axis[2], aim.max_angle}) {
+            writer.f32_value(value);
+        }
+        for (const u16 parameter : aim.target_param) {
+            writer.u16_value(parameter);
+        }
+        writer.u64_value(aim.origin);
+    }
+}
+
+}  // namespace
+
 Status encode_program(const pose::PoseProgram& program, Array<u8>& out) noexcept {
     Writer writer(out);
+    const bool modifiers = has_modifiers(program);
     writer.u32_value(kCookedProgramMagic);
-    writer.u32_value(kCookedProgramVersion);
+    writer.u32_value(modifiers ? kCookedProgramModifiersVersion : kCookedProgramVersion);
     writer.name(program.name());
     writer.u32_value(program.joint_count());
     writer.u32_value(program.entry_state());
@@ -411,6 +479,9 @@ Status encode_program(const pose::PoseProgram& program, Array<u8>& out) noexcept
         writer.name(marker.name);
         writer.f32_value(marker.time);
     }
+    if (modifiers) {
+        write_modifiers(writer, program);
+    }
     return finished(writer);
 }
 
@@ -426,7 +497,12 @@ struct DecodedProgram {
           masks(allocator),
           parameters(allocator),
           sync_groups(allocator),
-          markers(allocator) {}
+          markers(allocator),
+          blend_spaces(allocator),
+          blend_samples(allocator),
+          blend_triangles(allocator),
+          foot_placements(allocator),
+          aims(allocator) {}
 
     Array<pose::PoseInstruction> code;
     Array<pose::PoseState> states;
@@ -436,6 +512,11 @@ struct DecodedProgram {
     Array<Name> parameters;
     Array<pose::SyncGroup> sync_groups;
     Array<pose::SyncMarker> markers;
+    Array<pose::BlendSpace> blend_spaces;
+    Array<pose::BlendSample> blend_samples;
+    Array<pose::BlendTriangle> blend_triangles;
+    Array<pose::FootPlacementRef> foot_placements;
+    Array<pose::AimRef> aims;
 };
 
 /// Read a counted table, one record at a time through `read`. `bytes` is the smallest a record can
@@ -527,6 +608,70 @@ constexpr u64 kMaskBytes = u64{pose::kMaxJoints / 64U} * 8U;
     return read;
 }
 
+[[nodiscard]] Status read_modifiers(Reader& reader, DecodedProgram& out) noexcept {
+    Status read = read_table(reader, 32, out.blend_spaces, [&](pose::BlendSpace& space) {
+        const u16 shape = reader.u16_value();
+        space.dimensions = static_cast<u8>(shape >> 8U);
+        space.sync = (shape & 1U) != 0U;
+        space.x_param = reader.u16_value();
+        space.y_param = reader.u16_value();
+        space.phase_param = reader.u16_value();
+        space.first_sample = reader.u32_value();
+        space.sample_count = reader.u32_value();
+        space.first_triangle = reader.u32_value();
+        space.triangle_count = reader.u32_value();
+        space.origin = reader.u64_value();
+    });
+    if (read) {
+        read = read_table(reader, 10, out.blend_samples, [&](pose::BlendSample& sample) {
+            sample.x = reader.f32_value();
+            sample.y = reader.f32_value();
+            sample.value = reader.u16_value();
+        });
+    }
+    if (read) {
+        read = read_table(reader, 6, out.blend_triangles, [&](pose::BlendTriangle& triangle) {
+            for (u16& vertex : triangle.sample) {
+                vertex = reader.u16_value();
+            }
+        });
+    }
+    if (read) {
+        read = read_table(reader, 76, out.foot_placements, [&](pose::FootPlacementRef& foot) {
+            foot.pelvis = reader.name();
+            for (auto& leg : foot.leg) {
+                for (Name& joint : leg) {
+                    joint = reader.name();
+                }
+            }
+            for (f32* value : {&foot.ankle_height, &foot.probe_above, &foot.probe_below,
+                               &foot.max_pelvis_drop, &foot.max_foot_raise, &foot.smoothing,
+                               &foot.max_tilt, &foot.pole[0], &foot.pole[1], &foot.pole[2]}) {
+                *value = reader.f32_value();
+            }
+            foot.origin = reader.u64_value();
+        });
+    }
+    if (read) {
+        read = read_table(reader, 34, out.aims, [&](pose::AimRef& aim) {
+            const u32 joints = reader.u32_value();
+            // Refused by `assemble_pose_program`; read no further than the table can hold.
+            aim.joint_count = static_cast<u8>(joints <= pose::kMaxAimJoints ? joints : 0U);
+            for (u32 joint = 0; joint < aim.joint_count; ++joint) {
+                aim.joints[joint] = reader.name();
+            }
+            for (f32* value : {&aim.axis[0], &aim.axis[1], &aim.axis[2], &aim.max_angle}) {
+                *value = reader.f32_value();
+            }
+            for (u16& parameter : aim.target_param) {
+                parameter = reader.u16_value();
+            }
+            aim.origin = reader.u64_value();
+        });
+    }
+    return read;
+}
+
 }  // namespace
 
 Expected<pose::PoseProgram, Error> decode_program(Allocator& allocator,
@@ -535,7 +680,8 @@ Expected<pose::PoseProgram, Error> decode_program(Allocator& allocator,
     if (reader.u32_value() != kCookedProgramMagic) {
         return fail(ErrorCode::InvalidArgument, "not a cooked pose program");
     }
-    if (reader.u32_value() != kCookedProgramVersion) {
+    const u32 version = reader.u32_value();
+    if (version != kCookedProgramVersion && version != kCookedProgramModifiersVersion) {
         return fail(ErrorCode::Unsupported, "a cooked pose program from another format version");
     }
     pose::PoseProgramParts parts;
@@ -547,6 +693,11 @@ Expected<pose::PoseProgram, Error> decode_program(Allocator& allocator,
     DecodedProgram decoded(allocator);
     if (Status read = read_tables(reader, decoded); !read) {
         return make_unexpected(read.error());
+    }
+    if (version == kCookedProgramModifiersVersion) {
+        if (Status read = read_modifiers(reader, decoded); !read) {
+            return make_unexpected(read.error());
+        }
     }
     if (!reader.finished()) {
         return fail(ErrorCode::InvalidArgument,
@@ -560,6 +711,11 @@ Expected<pose::PoseProgram, Error> decode_program(Allocator& allocator,
     parts.parameters = decoded.parameters.span();
     parts.sync_groups = decoded.sync_groups.span();
     parts.markers = decoded.markers.span();
+    parts.blend_spaces = decoded.blend_spaces.span();
+    parts.blend_samples = decoded.blend_samples.span();
+    parts.blend_triangles = decoded.blend_triangles.span();
+    parts.foot_placements = decoded.foot_placements.span();
+    parts.aims = decoded.aims.span();
     return pose::assemble_pose_program(allocator, parts);
 }
 

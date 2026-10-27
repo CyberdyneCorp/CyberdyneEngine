@@ -38,6 +38,8 @@ struct PropertySpec {
     std::string_view literal;
     Choices choices;
     std::string_view tooltip;
+    /// A vector's lane count; zero for every other control.
+    u8 lanes = 0;
 };
 
 constexpr PropertySpec kProperties[] = {
@@ -80,6 +82,124 @@ constexpr PropertySpec kProperties[] = {
      "How many joints the layer covers; zero for every joint."},
     {"pose.ik", "chain", ControlKind::Scalar, "0", "int", Choices::None,
      "The two-bone chain the character's rig solves."},
+    {"pose.blend1d", "x_parameter", ControlKind::Text, "speed", "name", Choices::None,
+     "The parameter that places the character along the space's axis."},
+    {"pose.blend1d", "sync", ControlKind::Bool, "false", "bool", Choices::None,
+     "Play the clip samples on one clock aligned by their sync markers, so the feet stay in "
+     "phase."},
+    {"pose.blend1d", "s0", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s0 sits along the axis."},
+    {"pose.blend1d", "s1", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s1 sits along the axis."},
+    {"pose.blend1d", "s2", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s2 sits along the axis."},
+    {"pose.blend1d", "s3", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s3 sits along the axis."},
+    {"pose.blend1d", "s4", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s4 sits along the axis."},
+    {"pose.blend1d", "s5", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s5 sits along the axis."},
+    {"pose.blend1d", "s6", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s6 sits along the axis."},
+    {"pose.blend1d", "s7", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s7 sits along the axis."},
+    {"pose.blend1d", "s8", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s8 sits along the axis."},
+    {"pose.blend1d", "s9", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s9 sits along the axis."},
+    {"pose.blend1d", "s10", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s10 sits along the axis."},
+    {"pose.blend1d", "s11", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s11 sits along the axis."},
+    {"pose.blend1d", "s12", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s12 sits along the axis."},
+    {"pose.blend1d", "s13", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s13 sits along the axis."},
+    {"pose.blend1d", "s14", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s14 sits along the axis."},
+    {"pose.blend1d", "s15", ControlKind::Scalar, "0", "float", Choices::None,
+     "Where the pose wired to s15 sits along the axis."},
+    {"pose.blend2d", "x_parameter", ControlKind::Text, "speed", "name", Choices::None,
+     "The parameter that places the character along the space's x axis."},
+    {"pose.blend2d", "y_parameter", ControlKind::Text, "direction", "name", Choices::None,
+     "The parameter that places the character along the space's y axis."},
+    {"pose.blend2d", "sync", ControlKind::Bool, "false", "bool", Choices::None,
+     "Play the clip samples on one clock aligned by their sync markers, so the feet stay in "
+     "phase."},
+    {"pose.blend2d", "s0", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s0 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s1", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s1 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s2", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s2 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s3", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s3 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s4", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s4 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s5", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s5 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s6", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s6 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s7", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s7 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s8", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s8 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s9", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s9 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s10", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s10 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s11", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s11 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s12", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s12 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s13", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s13 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s14", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s14 sits in the space: x, y.", 2},
+    {"pose.blend2d", "s15", ControlKind::Vector, "0, 0", "vec2", Choices::None,
+     "Where the pose wired to s15 sits in the space: x, y.", 2},
+    {"pose.foot_ik", "pelvis", ControlKind::Text, "pelvis", "name", Choices::None,
+     "The joint the hips are lowered through."},
+    {"pose.foot_ik", "hip_l", ControlKind::Text, "l_hip", "name", Choices::None,
+     "The left leg's hip joint."},
+    {"pose.foot_ik", "knee_l", ControlKind::Text, "l_knee", "name", Choices::None,
+     "The left leg's knee joint."},
+    {"pose.foot_ik", "ankle_l", ControlKind::Text, "l_ankle", "name", Choices::None,
+     "The left leg's ankle joint."},
+    {"pose.foot_ik", "hip_r", ControlKind::Text, "r_hip", "name", Choices::None,
+     "The right leg's hip joint."},
+    {"pose.foot_ik", "knee_r", ControlKind::Text, "r_knee", "name", Choices::None,
+     "The right leg's knee joint."},
+    {"pose.foot_ik", "ankle_r", ControlKind::Text, "r_ankle", "name", Choices::None,
+     "The right leg's ankle joint."},
+    {"pose.foot_ik", "weight_parameter", ControlKind::Text, "", "name", Choices::None,
+     "The parameter that fades foot placement in, from 0 (off: the pose unchanged) to 1."},
+    {"pose.foot_ik", "ankle_height", ControlKind::Scalar, "0.08", "float", Choices::None,
+     "The ankle's height above the sole, in metres."},
+    {"pose.foot_ik", "probe_above", ControlKind::Scalar, "0.5", "float", Choices::None,
+     "How far above the animated ankle the ground is searched from, in metres."},
+    {"pose.foot_ik", "probe_below", ControlKind::Scalar, "0.6", "float", Choices::None,
+     "How far below the animated ankle the ground is searched to, in metres."},
+    {"pose.foot_ik", "max_pelvis_drop", ControlKind::Scalar, "0.35", "float", Choices::None,
+     "The most the hips drop so the lower foot reaches, in metres."},
+    {"pose.foot_ik", "max_foot_raise", ControlKind::Scalar, "0.45", "float", Choices::None,
+     "The most a foot is raised onto higher ground, in metres."},
+    {"pose.foot_ik", "smoothing", ControlKind::Scalar, "0.08", "float", Choices::None,
+     "The time constant the feet and hips follow the ground with, in seconds."},
+    {"pose.foot_ik", "max_tilt", ControlKind::Scalar, "0.6", "float", Choices::None,
+     "The steepest ground a foot turns to, in radians."},
+    {"pose.foot_ik", "pole", ControlKind::Vector, "0, 0, 1", "vec3", Choices::None,
+     "The direction the knees bend towards, in model space.", 3},
+    {"pose.aim", "chain", ControlKind::Text, "spine, head", "name", Choices::None,
+     "The joints that turn, from the chain's root to the one that points, separated by commas."},
+    {"pose.aim", "target_parameter", ControlKind::Text, "aim", "name", Choices::None,
+     "The point aimed at, in model space, as the parameters <name>.x, <name>.y and <name>.z."},
+    {"pose.aim", "weight_parameter", ControlKind::Text, "", "name", Choices::None,
+     "The parameter that fades the aim in, from 0 to 1."},
+    {"pose.aim", "axis", ControlKind::Vector, "0, 0, 1", "vec3", Choices::None,
+     "The pointing joint's forward axis, in its own space.", 3},
+    {"pose.aim", "max_angle", ControlKind::Scalar, "1.4", "float", Choices::None,
+     "The most the chain turns, in radians."},
 };
 
 constexpr std::string_view kInterruptions[] = {"none", "higher_priority", "any"};
@@ -143,7 +263,7 @@ void encode_property(Out& out, const PropertySpec& property, u32 identity,
     out.u32v(identity).u8v(static_cast<u8>(kind)).text(property.name);
     out.text(fallback).text(property.tooltip).text(semantic).text("");
     encode_choices(out, property, preview);
-    out.text("").text("animation-and-skinning").u64v(0).u8v(0);
+    out.text("").text("animation-and-skinning").u64v(0).u8v(property.lanes);
     // A whole number is zero or more, in steps of one: the compiler reads it unsigned.
     out.u8v(integral ? 0x5U : 0x0U).f64v(0.0).f64v(0.0).f64v(integral ? 1.0 : 0.0);
 }
@@ -365,11 +485,19 @@ void compile(const AnimationClipCatalogue* preview, std::string_view source,
     out.compiled = !has_error(out.sink);
 }
 
+/// Whether the runtime advances `parameter` rather than the author setting it: a clip's clock, or a
+/// synchronised blend space's shared phase.
 [[nodiscard]] bool is_clock(const pose::PoseProgram& program, u16 parameter) noexcept {
-    return std::ranges::any_of(program.code(), [parameter](
-                                                   const pose::PoseInstruction& instruction) {
-        return instruction.op == pose::PoseOp::SampleClip && instruction.time_param == parameter;
-    });
+    const bool clip =
+        std::ranges::any_of(program.code(), [parameter](const pose::PoseInstruction& instruction) {
+            return instruction.op == pose::PoseOp::SampleClip &&
+                   instruction.time_param == parameter;
+        });
+    const bool phase =
+        std::ranges::any_of(program.blend_spaces(), [parameter](const pose::BlendSpace& space) {
+            return space.sync && space.phase_param == parameter;
+        });
+    return clip || phase;
 }
 
 [[nodiscard]] u32 events_of(Span<const AnimationClipEvent> events, Name clip) noexcept {

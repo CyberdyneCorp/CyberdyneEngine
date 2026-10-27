@@ -272,6 +272,9 @@ ENTRIES: dict[str, Entry] = {
     "first_person_release": Entry(("engine", "camera"), result="throwing"),
     "viewmodel_configure": Entry(("engine", "camera", "desc"), result="throwing"),
     "viewmodel_get": Entry(("engine", "camera", "into"), result="throwing"),
+    # 1.14: foot placement and aim
+    "animation_aim_at": Entry(("engine", "entity", "target", "point"), result="throwing"),
+    "animation_foot_placement": Entry(("engine", "entity", "index", "into"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

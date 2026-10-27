@@ -72,6 +72,7 @@ function(cy_animation_declare_tests)
             "${tests_dir}/test_skeleton.cpp"
             "${tests_dir}/test_clip.cpp"
             "${tests_dir}/test_ik.cpp"
+            "${tests_dir}/test_foot_placement.cpp"
             "${tests_dir}/test_lod.cpp"
             "${tests_dir}/test_retarget.cpp"
             "${tests_dir}/test_retarget_build.cpp"
@@ -85,6 +86,7 @@ function(cy_animation_declare_tests)
         KIND integration
         SOURCES
             "${tests_dir}/test_bake.cpp"
+            "${tests_dir}/test_blend_spaces.cpp"
             "${tests_dir}/test_clocks.cpp"
             "${tests_dir}/test_retarget_exports.cpp"
             "${tests_dir}/test_evaluate.cpp"
@@ -97,7 +99,7 @@ function(cy_animation_declare_tests)
     cy_add_test(
         NAME animation_system
         KIND integration
-        SOURCES "${tests_dir}/test_system.cpp"
+        SOURCES "${tests_dir}/test_system.cpp" "${tests_dir}/test_system_feet.cpp"
         DEPENDENCIES cy::animation-system cy::core-jobs cy::runtime cy::scene)
 
     # The cooked records and the library over a real asset system. Issue #76 stage 2.

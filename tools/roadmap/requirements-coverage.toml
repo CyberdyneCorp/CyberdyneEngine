@@ -3859,8 +3859,9 @@ note = "Absent: src/animation/README.md records no partial residency in clip.h a
 [[coverage]]
 row = "animation-and-skinning"
 requirement = "Animation graph"
-evidence = "exempt:m11e"
-note = "cy::graph::pose registers pose.clip, pose.blend, pose.blend_mask, pose.additive, pose.layer, pose.ik, pose.state and pose.transition; integration.graph_compiler 'graph_pose: the state machine transitions, blends, and honours interruption' and the graph_locomotion cases cover transitions and interruption, and masked layers are covered. No Blend1D, Blend2D (triangulated barycentric weights) or Custom node exists, so the locomotion blend-space scenario cannot run. Re-enter with a Blend2D node driven by forward and lateral speed asserting barycentric weights over the surrounding clips, and a Custom node case."
+evidence = "test:integration.animation_runtime"
+case = "animation: a two-dimensional blend space blends the three poses around the character"
+note = "Issue #92: cy::graph::pose registers pose.blend1d and pose.blend2d beside pose.clip, pose.blend, pose.blend_mask, pose.additive, pose.layer, pose.ik, pose.foot_ik, pose.aim, pose.state and pose.transition. A Blend2D space driven by a lateral and a forward speed blends the three clips around the point by barycentric weights (the hips land on the weighted sum to 0.1 mm, the two far samples are never sampled, and root motion blends by the same weights); integration.graph_compiler 'graph_pose: a two-dimensional blend space weights a point barycentrically' asserts the weights exactly, outside the hull included, and 'graph_pose: a one-dimensional blend space interpolates the two samples around it' the 1D case. Transitions and interruption stay covered by 'graph_pose: the state machine transitions, blends, and honours interruption'. The Custom node (a user node in Swift or native code) is not built."
 
 [[coverage]]
 row = "animation-and-skinning"
@@ -3886,8 +3887,9 @@ note = "Five hundred Animator entities over three rigs form exactly three Animat
 [[coverage]]
 row = "animation-and-skinning"
 requirement = "Layers, masks, sync groups and markers"
-evidence = "exempt:m11e"
-note = "Masked and weighted layers are covered by integration.animation_runtime 'animation: a state nobody is in samples nothing, and neither does a masked-out clip' and 'animation: a layer at zero weight costs no sample at all'. Clip::marker_time exists but no case synchronises two clips by marker correspondence, and no case assigns a partial per-joint mask weight. Re-enter with a walk/run sync-group case aligning foot-down markers across clips of different length, and a mask with 0.5 spine weight blending that joint proportionally."
+evidence = "test:integration.animation_runtime"
+case = "animation: a sync group keeps a walk and a run of different lengths in step"
+note = "Issue #92: a synchronised blend space plays its clips on one marker-space phase, so a one-second walk and a 0.6 s run that starts on the other foot stay within 0.001 of a stride segment of each other on every tick of a speed sweep, and drift by more than a quarter without the group; 'animation: a synchronised space strides at the blend of its clips' cadences' asserts the blended cadence and root speed. 'animation: a mask with half weight on the spine blends that joint proportionally' sets 0.5 on the spine through AnimationRig::set_mask_weight. Masked and weighted layers stay covered by 'animation: a state nobody is in samples nothing, and neither does a masked-out clip'. The upper-body layer scenario is the masked layer of test_evaluate.cpp."
 
 [[coverage]]
 row = "animation-and-skinning"
@@ -3898,8 +3900,9 @@ note = "Curve tracks exist (Clip::add_curve_track, sample_curve, SampleStats::cu
 [[coverage]]
 row = "animation-and-skinning"
 requirement = "Root motion"
-evidence = "exempt:m11e"
-note = "RootDelta exposes translation, rotation, the distance curve and contact bits; unit.animation 'clip: root motion is a delta over an interval, including one that wraps the loop' covers extraction, and the consumer is now a per-instance RootMotionMode (issue #76 stage 1): integration.animation_system 'animation system: root motion goes where each instance's mode says' applies one to the transform, feeds one to a controller that takes it, extracts one and ignores one. Since issue #76 stage 4 the controller consumer is real: integration.game_backend_animation 'animation abi: root motion is taken, extracted, or moves a character' takes an accumulating animator's composed deltas through the ABI and feeds a CY_ROOT_MOTION_CHARACTER animator's into a cy::physics::CharacterController, which walks a metre down -z on the ground. Still missing, and moved to issue #92 stage 2: a case blending two clips' root deltas by the pose weights."
+evidence = "test:integration.animation_runtime"
+case = "animation: a blend space's root motion and events follow its pose weights"
+note = "RootDelta exposes translation, rotation, the distance curve and contact bits; unit.animation 'clip: root motion is a delta over an interval, including one that wraps the loop' covers extraction, and the consumer is a per-instance RootMotionMode: integration.animation_system 'animation system: root motion goes where each instance's mode says', and integration.game_backend_animation 'animation abi: root motion is taken, extracted, or moves a character' feeds a CY_ROOT_MOTION_CHARACTER animator's deltas into a cy::physics::CharacterController. Issue #92: a quarter-walk, three-quarter-run blend travels at exactly the weighted speed every tick, and a synchronised space's root speed is the blend of its clips' at the blended cadence. Warping is not built."
 
 [[coverage]]
 row = "animation-and-skinning"
@@ -3923,7 +3926,7 @@ note = "Absent as an asset: the constraint framework a rig would compile against
 row = "animation-and-skinning"
 requirement = "Constraint and IK framework"
 evidence = "exempt:m11e"
-note = "ik.h declares reads and writes per constraint; unit.animation covers conflict detection at setup ('ik: two constraints writing one joint at one order are reported at setup'), weight fading, two-bone IK and look-at. FABRIK, CCD, spline IK, full-body IK, foot placement and spring bones are refused by name ('ik: the solvers this milestone does not have are refused by name'), and position/rotation/scale/parent/physics constraints are absent. Re-enter with a full-body IK case solving two hands, two feet and the head as one weighted problem, and foot placement on a slope lowering the hips."
+note = "ik.h declares reads and writes per constraint; unit.animation covers conflict detection at setup, weight fading, two-bone IK (exact under a rotated parent since issue #92: 'ik: a two-bone chain under a rotated parent reaches its target exactly'), look-at and an aim chain ('ik: an aim chain points its last joint at the target and fades with its weight'). Issue #92 built foot placement (foot_placement.h, the pose.foot_ik node): 'foot placement: on a slope both feet stand on the ground and turn to it' lowers the hips and plants both feet to a millimetre with the soles turned to the slope, and integration.animation_system and integration.animation_ground run it through the frame system and a physics world; it is tier-gated and declares its joints by name. Still absent, so the requirement stays exempt: full-body IK solving hands, feet and head as one weighted problem, FABRIK, CCD, spline IK, spring bones, and position/rotation/scale/parent/physics constraints. Re-enter with the full-body IK case."
 
 [[coverage]]
 row = "animation-and-skinning"
@@ -9241,3 +9244,24 @@ row = "xr-support"
 requirement = "Comfort and safety requirements"
 evidence = "exempt:m11e"
 note = "No XR frame-rate budget, locomotion comfort defaults, boundary API or cadence warning exists, because XR is unimplemented. Re-enter with an XR session and a case where frames consistently exceed the display cadence, requiring a prominent development-build report, and a boundary query answered from the runtime."
+
+[[coverage]]
+row = "animation-and-skinning"
+requirement = "Blend spaces with marker-space sync"
+evidence = "test:integration.animation_runtime"
+case = "animation: a sync group keeps a walk and a run of different lengths in step"
+note = "Issue #92 (`add-blend-spaces-and-foot-placement`). The marker-space scenario is this case: a one-second walk and a 0.6 s run starting on the other foot stay within 0.001 of a stride segment on every tick of a speed sweep, and drift by more than a quarter without sync. 'animation: a synchronised space strides at the blend of its clips' cadences' is the blended-cadence scenario and 'animation: a two-dimensional blend space blends the three poses around the character' the barycentric one (two samples never sampled, root motion by the same weights); integration.graph_compiler's test_blend_space.cpp asserts the weights exactly in 1D and 2D, outside the hull, over a grid's triangulation, and the refusals. Each proved red by a mutation (openspec/changes/add-blend-spaces-and-foot-placement/evidence/falsification.txt)."
+
+[[coverage]]
+row = "animation-and-skinning"
+requirement = "Foot placement on the host's ground"
+evidence = "test:unit.animation"
+case = "foot placement: on a slope both feet stand on the ground and turn to it"
+note = "Issue #92. The planted-on-a-slope scenario is this case (each ankle its height above a 20° slope to a millimetre, soles within a degree, the hips dropped by the lower foot's offset); 'foot placement: smoothing follows simulation time, not the number of solves' is the smoothing scenario. The off scenario is integration.animation_system 'animation_system: foot placement off is the frame before, bit for bit' (zero weight and no ground, against a program without the node), and the same suite places a turned character on a slope through its world placement and compares job workers with one thread. integration.animation_ground answers the ground from a reference physics world and a terrain. Each proved red by a mutation, except workers against one thread (see the evidence file)."
+
+[[coverage]]
+row = "native-abi"
+requirement = "Aim and foot placement through the ABI"
+evidence = "test:integration.game_backend_animation"
+case = "animation abi: an aim takes a world point into the character, and feet report"
+note = "ABI 1.14 (issue #92): a character two metres along x and turned a quarter receives a world aim point in its model space, an unknown target is NOT_FOUND having written nothing, and animation_foot_placement reports the step under its right foot in the world. unit.abi 'animation: an aim is simulation, a foot placement is the frame's, and both check' holds the phases, the refusals before the backend, struct_size both ways and a 1.13 backend answering UNAVAILABLE; CyberdyneKit's AnimationTests 'testABehaviourSetsSpeedAndDirectionFromItsVelocity' is the speed-and-direction scenario. Each proved red by a mutation."

@@ -25,19 +25,6 @@ namespace {
     return std::acos(math::clamp(value, -1.0F, 1.0F));
 }
 
-/// The interior angle at `b` of a triangle with the given side lengths, or zero when the triangle
-/// is degenerate.
-[[nodiscard]] f32 triangle_angle(f32 adjacent_a, f32 adjacent_b, f32 opposite) noexcept {
-    const f32 denominator = 2.0F * adjacent_a * adjacent_b;
-    if (denominator <= math::kSmallLength) {
-        return 0.0F;
-    }
-    const f32 cosine =
-        ((adjacent_a * adjacent_a) + (adjacent_b * adjacent_b) - (opposite * opposite)) /
-        denominator;
-    return safe_acos(cosine);
-}
-
 /// The lowest joint a mask holds, so a conflict points at one joint rather than at a mask.
 [[nodiscard]] u16 lowest_joint(const JointMask& mask) noexcept {
     for (u32 index = 0; index < kMaxJoints; ++index) {
@@ -99,58 +86,61 @@ Expected<bool, Error> solve_two_bone(const Skeleton& skeleton, const IkChain& ch
         return false;
     }
 
-    const Transform root_model = model_of(skeleton, chain.root, local);
-    const Transform mid_model = model_of(skeleton, chain.mid, local);
-    const Transform tip_model = model_of(skeleton, chain.tip, local);
+    const u16 parent = skeleton.joints()[chain.root].parent;
+    const Transform parent_model =
+        parent == kInvalidJoint ? Transform::identity() : model_of(skeleton, parent, local);
+    const Transform root_model = parent_model * local[chain.root];
+    const Transform mid_model = root_model * local[chain.mid];
+    const Transform tip_model = mid_model * local[chain.tip];
 
-    const f32 upper = length(mid_model.translation - root_model.translation);
-    const f32 lower = length(tip_model.translation - mid_model.translation);
-    const Vec3 to_target = target - root_model.translation;
+    const Vec3 root = root_model.translation;
+    const Vec3 mid = mid_model.translation;
+    const Vec3 tip = tip_model.translation;
+    const f32 upper = length(mid - root);
+    const f32 lower = length(tip - mid);
+    const Vec3 to_target = target - root;
     const f32 distance = length(to_target);
     if (distance <= math::kSmallLength || upper <= math::kSmallLength ||
         lower <= math::kSmallLength) {
         return false;
     }
     const bool reachable = distance < (upper + lower);
-    const f32 reach = math::min(distance, (upper + lower) * 0.999F);
+    const f32 longest = (upper + lower) * 0.9999F;
+    const f32 shortest = math::max(std::fabs(upper - lower) * 1.0001F, math::kSmallLength);
+    const f32 reach = math::clamp(distance, shortest, longest);
 
-    // The two angles the law of cosines gives, against the two the chain has now. Working in
-    // deltas keeps whatever twist the animation authored on the chain.
-    const f32 current_root =
-        triangle_angle(upper, length(tip_model.translation - root_model.translation), lower);
-    const f32 wanted_root = triangle_angle(upper, reach, lower);
-    const f32 current_mid =
-        triangle_angle(upper, lower, length(tip_model.translation - root_model.translation));
-    const f32 wanted_mid = triangle_angle(upper, lower, reach);
-
-    const Vec3 chain_axis = normalize(mid_model.translation - root_model.translation);
-    Vec3 bend_axis = cross(chain_axis, chain.pole);
-    if (length_squared(bend_axis) <= math::kSmallLength) {
-        bend_axis = cross(chain_axis, Vec3{0.0F, 1.0F, 0.0F});
+    // WHERE THE KNEE GOES, solved directly rather than as two angle deltas. The knee lies on the
+    // circle the two bone lengths allow around the root-to-target axis; the pole picks the point
+    // of that circle, and the knee's current offset breaks the tie when the pole is on the axis.
+    const Vec3 axis = to_target * (1.0F / distance);
+    const f32 along = ((upper * upper) - (lower * lower) + (reach * reach)) / (2.0F * reach);
+    const f32 out = std::sqrt(math::max((upper * upper) - (along * along), 0.0F));
+    Vec3 bend = chain.pole - (axis * dot(chain.pole, axis));
+    if (length_squared(bend) <= math::kSmallLength) {
+        const Vec3 knee = mid - root;
+        bend = knee - (axis * dot(knee, axis));
     }
-    if (length_squared(bend_axis) <= math::kSmallLength) {
-        return false;
+    if (length_squared(bend) <= math::kSmallLength) {
+        bend = cross(axis, Vec3{1.0F, 0.0F, 0.0F});
     }
-    bend_axis = normalize(bend_axis);
+    if (length_squared(bend) <= math::kSmallLength) {
+        bend = cross(axis, Vec3{0.0F, 0.0F, 1.0F});
+    }
+    const Vec3 knee = root + (axis * along) + (normalize(bend) * out);
+    const Vec3 reached = root + (axis * reach);
 
-    const Quat root_bend = Quat::from_axis_angle(bend_axis, (wanted_root - current_root) * blend);
-    const Quat mid_bend = Quat::from_axis_angle(bend_axis, (wanted_mid - current_mid) * blend);
+    // Two minimal rotations in model space, written back through each parent's inverse, so a chain
+    // under a rotated parent is solved the same way as one at the top and keeps its twist.
+    const Quat swing_root = Quat::from_to(normalize(mid - root), normalize(knee - root));
+    const Quat root_rotation = normalize(swing_root * root_model.rotation);
+    const Vec3 tip_after = knee + (swing_root * (tip - mid));
+    const Quat swing_mid = Quat::from_to(normalize(tip_after - knee), normalize(reached - knee));
+    const Quat mid_rotation = normalize(swing_mid * swing_root * mid_model.rotation);
 
-    // Rotate the root so the chain points at the target, then apply the two bends. Both are applied
-    // in model space and written back through the parent's inverse, so a chain deep in a hierarchy
-    // is solved the same way as one at the top.
-    const Vec3 current_direction = normalize(tip_model.translation - root_model.translation);
-    const Vec3 wanted_direction = normalize(to_target);
-    const Quat swing = Quat::from_to(current_direction, wanted_direction);
-    const Quat root_delta = normalize(slerp(Quat::identity(), swing, blend) * root_bend);
-
-    const Transform root_parent =
-        skeleton.joints()[chain.root].parent == kInvalidJoint
-            ? Transform::identity()
-            : model_of(skeleton, skeleton.joints()[chain.root].parent, local);
-    const Quat root_parent_inverse = conjugate(normalize(root_parent.rotation));
-    local[chain.root].rotation = normalize(root_parent_inverse * root_delta * root_model.rotation);
-    local[chain.mid].rotation = normalize(local[chain.mid].rotation * mid_bend);
+    const Quat solved_root = normalize(conjugate(normalize(parent_model.rotation)) * root_rotation);
+    const Quat solved_mid = normalize(conjugate(root_rotation) * mid_rotation);
+    local[chain.root].rotation = slerp(local[chain.root].rotation, solved_root, blend);
+    local[chain.mid].rotation = slerp(local[chain.mid].rotation, solved_mid, blend);
     return reachable;
 }
 
@@ -177,6 +167,98 @@ Status solve_look_at(const Skeleton& skeleton, u16 joint, Vec3 target, f32 weigh
     return ok();
 }
 
+Transform joint_model(const Skeleton& skeleton, u16 joint, Span<const Transform> local) noexcept {
+    return model_of(skeleton, joint, local);
+}
+
+namespace {
+
+/// Turn joint `joint` by `turn` in model space, about its own position: its descendants follow.
+void turn_in_model(const Skeleton& skeleton, u16 joint, const Quat& turn,
+                   Span<Transform> local) noexcept {
+    const u16 parent = skeleton.joints()[joint].parent;
+    const Quat parent_rotation = parent == kInvalidJoint
+                                     ? Quat::identity()
+                                     : normalize(model_of(skeleton, parent, local).rotation);
+    const Quat model = normalize(parent_rotation * local[joint].rotation);
+    local[joint].rotation = normalize(conjugate(parent_rotation) * (turn * model));
+}
+
+/// `turn` with its angle capped at `limit` radians.
+[[nodiscard]] Quat capped(const Quat& turn, f32 limit) noexcept {
+    const f32 angle = 2.0F * safe_acos(std::fabs(normalize(turn).w));
+    if (angle <= limit || angle <= math::kSmallLength) {
+        return turn;
+    }
+    return slerp(Quat::identity(), turn, limit / angle);
+}
+
+}  // namespace
+
+namespace {
+
+[[nodiscard]] Status check_aim(const Skeleton& skeleton, const AimChain& chain,
+                               Span<Transform> local) noexcept {
+    if (!chain.valid()) {
+        return fail(ErrorCode::InvalidArgument, "an aim chain names one to four joints");
+    }
+    if (local.size() < skeleton.joint_count()) {
+        return fail(ErrorCode::InvalidArgument, "the pose is smaller than the skeleton");
+    }
+    for (u32 index = 0; index < chain.count; ++index) {
+        if (chain.joints[index] >= skeleton.joint_count()) {
+            return fail(ErrorCode::OutOfRange, "an aim chain names a joint the skeleton lacks");
+        }
+    }
+    return ok();
+}
+
+/// One pass: the turn that points the chain's last joint at `target`, capped at `budget`, shared
+/// equally — n turns by one rotation about one axis compose to the whole. Returns the angle used.
+[[nodiscard]] f32 aim_pass(const Skeleton& skeleton, const AimChain& chain, Vec3 target, f32 budget,
+                           Span<Transform> local) noexcept {
+    const Transform model = model_of(skeleton, chain.joints[chain.count - 1], local);
+    const Vec3 forward = normalize(model.rotation * chain.axis);
+    const Vec3 to_target = target - model.translation;
+    if (length_squared(to_target) <= math::kSmallLength) {
+        return budget;
+    }
+    const Quat turn = capped(Quat::from_to(forward, normalize(to_target)), budget);
+    const Quat share = slerp(Quat::identity(), turn, 1.0F / static_cast<f32>(chain.count));
+    for (u32 index = 0; index < chain.count; ++index) {
+        turn_in_model(skeleton, chain.joints[index], share, local);
+    }
+    return 2.0F * safe_acos(std::fabs(normalize(turn).w));
+}
+
+}  // namespace
+
+Status solve_aim(const Skeleton& skeleton, const AimChain& chain, Vec3 target, f32 weight,
+                 Span<Transform> local) noexcept {
+    if (Status checked = check_aim(skeleton, chain, local); !checked) {
+        return checked;
+    }
+    const f32 blend = math::clamp(weight, 0.0F, 1.0F);
+    if (blend <= 0.0F) {
+        return ok();
+    }
+    Quat original[kMaxAimJoints];
+    for (u32 index = 0; index < chain.count; ++index) {
+        original[index] = local[chain.joints[index]].rotation;
+    }
+    // Twice: the pointing joint's own position moves as the joints above it turn, and the second
+    // pass removes the parallax the first one left.
+    f32 budget = chain.max_angle;
+    for (u32 pass = 0; pass < 2 && budget > 0.0F; ++pass) {
+        budget -= aim_pass(skeleton, chain, target, budget, local);
+    }
+    for (u32 index = 0; index < chain.count && blend < 1.0F; ++index) {
+        Transform& joint = local[chain.joints[index]];
+        joint.rotation = slerp(original[index], joint.rotation, blend);
+    }
+    return ok();
+}
+
 Status solve_unimplemented(UnimplementedSolver solver) noexcept {
     switch (solver) {
         case UnimplementedSolver::Fabrik:
@@ -196,9 +278,11 @@ Status solve_unimplemented(UnimplementedSolver solver) noexcept {
         case UnimplementedSolver::SpringBones:
             return fail(ErrorCode::NotImplemented, "spring bones are not in M8.b");
         case UnimplementedSolver::FootPlacement:
+            // Built since issue #92, behind a different entry point: the ground is the host's, so
+            // the solver takes a `GroundProbe` and cannot be called through this one.
             return fail(ErrorCode::NotImplemented,
-                        "foot placement raycasts the ground, which this module may not do; it is "
-                        "not in M8.b");
+                        "foot placement asks the host for the ground: call solve_foot_placement "
+                        "in foot_placement.h with a GroundProbe");
     }
     return fail(ErrorCode::NotImplemented, "no such solver");
 }

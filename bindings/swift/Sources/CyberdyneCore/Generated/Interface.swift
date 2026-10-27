@@ -993,4 +993,14 @@ public struct Interface: @unchecked Sendable {
     public func viewmodelGet(engine: CyEngine, camera: CyCamera, into: UnsafeMutablePointer<CyViewmodelDesc>?) throws {
         try check(table.pointee.viewmodel_get(engine, camera, into))
     }
+
+    @inlinable
+    public func animationAimAt(engine: CyEngine, entity: CyEntity, target: UnsafePointer<CChar>?, point: UnsafePointer<Float>?) throws {
+        try check(table.pointee.animation_aim_at(engine, entity, target, point))
+    }
+
+    @inlinable
+    public func animationFootPlacement(engine: CyEngine, entity: CyEntity, index: UInt32, into: UnsafeMutablePointer<CyFootPlacement>?) throws {
+        try check(table.pointee.animation_foot_placement(engine, entity, index, into))
+    }
 }

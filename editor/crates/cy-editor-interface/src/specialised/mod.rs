@@ -390,9 +390,13 @@ const MATERIAL_NODES: &[&str] = &[
 /// `pose.*`: the vocabulary `lower_pose.cpp` and `locomotion.cpp` register.
 const POSE_NODES: &[&str] = &[
     "pose.additive",
+    "pose.aim",
     "pose.blend",
+    "pose.blend1d",
+    "pose.blend2d",
     "pose.blend_mask",
     "pose.clip",
+    "pose.foot_ik",
     "pose.ik",
     "pose.layer",
     "pose.ref",

@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 13,
+    "minor": 14,
     "patch": 0
   },
   "functions": [
@@ -962,10 +962,20 @@
         "index": 187,
         "name": "viewmodel_get",
         "type": "CyResult(*)(CyEngine, CyCamera, CyViewmodelDesc*)"
+      },
+      {
+        "index": 188,
+        "name": "animation_aim_at",
+        "type": "CyResult(*)(CyEngine, CyEntity, const char*, const float*)"
+      },
+      {
+        "index": 189,
+        "name": "animation_foot_placement",
+        "type": "CyResult(*)(CyEngine, CyEntity, uint32_t, CyFootPlacement*)"
       }
     ],
     "name": "CyInterface",
-    "size": 1512
+    "size": 1528
   },
   "types": [
     {
@@ -5888,6 +5898,56 @@
       "members": [
         {
           "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "pelvis",
+          "offset": 8,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "offset",
+          "offset": 12,
+          "size": 8,
+          "type": "float[2]"
+        },
+        {
+          "alignment": 4,
+          "name": "ground",
+          "offset": 20,
+          "size": 24,
+          "type": "float[6]"
+        },
+        {
+          "alignment": 4,
+          "name": "normal",
+          "offset": 44,
+          "size": 24,
+          "type": "float[6]"
+        }
+      ],
+      "name": "CyFootPlacement",
+      "size": 68
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
           "name": "abi_major",
           "offset": 0,
           "size": 4,
@@ -7237,10 +7297,24 @@
           "offset": 1504,
           "size": 8,
           "type": "CyResult(*)(CyEngine, CyCamera, CyViewmodelDesc*)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_aim_at",
+          "offset": 1512,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const char*, const float*)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_foot_placement",
+          "offset": 1520,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, uint32_t, CyFootPlacement*)"
         }
       ],
       "name": "CyInterface",
-      "size": 1512
+      "size": 1528
     },
     {
       "kind": "enum",

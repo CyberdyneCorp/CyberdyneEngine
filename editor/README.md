@@ -656,6 +656,11 @@ the editor evaluates nothing.
   drawn skinned in the viewport through the frame's `SkinnedScene`. The preview shows either the
   timeline's clip alone or the state machine run from its entry state with the parameters set. Saving,
   undoing or redoing the previewed graph previews it again. `animation.status` reports all of it.
+- **Blend spaces, foot placement and aim** (issue #92) are in the palette as the engine declares
+  them: a 2D sample's position and a pole are vector properties (`0.5, -1`). Parameter rows run from
+  −10 to 10, so a blend space's axes can be dragged through it. A graph with `pose.foot_ik` gets a
+  **Preview ground** slope, sent as the preview parameter `preview.ground_slope`; the engine stands
+  the preview character on that plane.
 - **The character is the project's.** The Character row (`animation.character.list`,
   `animation.character.set`) plays the graph on the built-in mannequin or on a model the project
   imported whose import cooked a skeleton. The choice is the graph's `.cyanimcharacter` file beside

@@ -11,9 +11,17 @@
 #include <cy/test/test.h>
 
 #include <cmath>
+#include <cstring>
 #include <string_view>
 
 namespace cy::animation::testing {
+
+/// Whether two buffers hold the same bytes: what "bit for bit" means for a pose. Bytes rather than
+/// float equality on purpose, because the claim is about the representation: -0 and +0 are equal
+/// floats and different poses' bits.
+inline bool same_bits(const void* a, const void* b, usize size) noexcept {
+    return std::memcmp(a, b, size) == 0;
+}
 
 inline Allocator& allocator() noexcept {
     return system_allocator(MemoryDomain::Animation);

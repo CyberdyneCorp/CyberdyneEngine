@@ -1,0 +1,84 @@
+Mutation proofs for add-blend-spaces-and-foot-placement (issue #92).
+
+Each line: a one-site mutation of the code, the suite rebuilt, the named case run alone, and its
+verdict. Every mutation was reverted after its run. Produced by a script that applies the replacement,
+runs `cmake --build build/dev --target <suite>` and `<suite> -tc=<case>`, and records the exit status.
+Run on Linux, GCC 13, profile dev.
+
+[RED] graph_compiler :: graph_pose: a one-dimensional blend space interpolates the two samples around it
+      src/graph/src/pose_program.cpp: `const f32 t = (x - low) / (high - low);` -> `const f32 t = 1.0F - ((x - low) / (high - low));`
+[RED] graph_compiler :: graph_pose: a two-dimensional blend space weights a point barycentrically
+      src/graph/src/pose_program.cpp: `return {1.0F - v - w, v, w};` -> `return {1.0F - v - w, w, v};`
+[RED] graph_compiler :: graph_pose: a locomotion grid's co-circular quads triangulate the same every time
+      src/graph/src/blend_triangulation.cpp: `if (other != index && same_edge(edges[index], edges[other])) {` -> `if (false && other != index && same_edge(edges[index], edges[other])) {`
+[RED] graph_compiler :: graph_pose: a blend space that cannot weight its samples is refused by name
+      src/graph/src/lower_pose.cpp: `if (other.x == sample.x && other.y == sample.y) {` -> `if (other.x != other.x && other.y == sample.y) {`
+[RED] graph_compiler :: graph_pose: a synchronised space has a phase of its own, and the digest knows it
+      src/graph/src/lower_pose.cpp: `digest = hash_modifiers(digest, program);` -> `(void)&hash_modifiers;`
+[RED] graph_compiler :: graph_pose: the reference evaluator blends a space's samples by their weights
+      src/graph/src/pose_program.cpp: `add_into(out, slot(value), instruction.required, weights[index], joints);` -> `add_into(out, slot(value), instruction.required, 1.0F, joints);`
+[RED] graph_compiler :: graph_pose: foot placement and aim nodes carry their joints by name
+      src/graph/src/lower_pose.cpp: `aim.target_param[0] = intern_parameter(*state.program, component(target, 'x'));` -> `aim.target_param[0] = intern_parameter(*state.program, target);`
+[RED] graph_compiler :: graph_pose: a cooked blend space that names what it does not have is refused
+      src/graph/src/pose_program.cpp: `if (vertex >= space.sample_count) {` -> `if (vertex > space.sample_count) {`
+[RED] animation_runtime :: animation: a two-dimensional blend space blends the three poses around the character
+      src/animation/src/evaluate.cpp: `const f32 share = weights[index] / seen;` -> `const f32 share = weights[index];`
+[RED] animation_runtime :: animation: a sync group keeps a walk and a run of different lengths in step
+      src/animation/src/evaluate.cpp: `detail::advance_sync(rig, instance, step);` -> `(void)step;`
+[RED] animation_runtime :: animation: a synchronised space strides at the blend of its clips' cadences
+      src/animation/src/blend_space.cpp: `out[index] = total > 0.0F ? weight / total : 1.0F / static_cast<f32>(space.sample_count);` -> `out[index] = (0.0F * weight) + (1.0F / static_cast<f32>(space.sample_count));`
+[RED] animation_runtime :: animation: a blend space's root motion and events follow its pose weights
+      src/animation/src/evaluate.cpp: `const u32 heaviest = detail::heaviest_sample(rig, instruction.clip, instance.parameters());` -> `const u32 heaviest = 0;`
+[RED] animation_runtime :: animation: a mask with half weight on the spine blends that joint proportionally
+      src/animation/src/evaluate.cpp: `masked ? rig->mask_weight(instruction.mask, static_cast<u16>(joint)) : 1.0F;` -> `1.0F;`
+[RED] animation_assets :: cooked animation: blend spaces, foot placement and aim round-trip at version 2
+      src/animation/assets/src/cooked.cpp: `writer.u32_value(modifiers ? kCookedProgramModifiersVersion : kCookedProgramVersion);` -> `writer.u32_value(kCookedProgramVersion);`
+[RED] animation :: ik: a two-bone chain under a rotated parent reaches its target exactly
+      src/animation/src/ik.cpp: `<the solver this change writes>` -> `<the solver from origin/main>`
+[RED] animation :: foot placement: on a stair one foot is raised and the hips stay
+      src/animation/src/foot_placement.cpp: `targets.pelvis = math::clamp(math::min(targets.offset[0], targets.offset[1]),` -> `targets.pelvis = math::clamp(math::max(targets.offset[0], targets.offset[1]),`
+[RED] animation :: foot placement: on a slope both feet stand on the ground and turn to it
+      src/animation/src/foot_placement.cpp: `tilt_foot(skeleton, setup.legs[leg].tip, normalize(animated[leg].rotation),` -> `if (false) tilt_foot(skeleton, setup.legs[leg].tip, normalize(animated[leg].rotation),`
+[RED] animation :: foot placement: at zero weight the pose is untouched bit for bit
+      src/animation/src/foot_placement.cpp: `if (blend <= 0.0F) {
+        // OFF IS` -> `if (blend < 0.0F) {
+        // OFF IS`
+[RED] animation :: foot placement: smoothing follows simulation time, not the number of solves
+      src/animation/src/foot_placement.cpp: `return 1.0F - std::exp(-elapsed / smoothing);` -> `return (void)elapsed, 1.0F - std::exp(-0.1F / smoothing);`
+[RED] animation :: ik: an aim chain points its last joint at the target and fades with its weight
+      src/animation/src/ik.cpp: `slerp(Quat::identity(), turn, 1.0F / static_cast<f32>(chain.count));` -> `slerp(Quat::identity(), turn, 1.0F);`
+[RED] animation_system :: animation_system: foot placement plants a character's feet on a slope it stands on
+      src/animation/system/src/animation_system.cpp: `context.model_to_world = placement_of(slot.entity);` -> `(void)placement_of(slot.entity);`
+[RED] animation_system :: animation_system: foot placement off is the frame before, bit for bit
+      src/animation/src/evaluate.cpp: `copy_masked(scratch->slot(value), scratch->slot(instruction.a), required);
+    const f32 weight =` -> `copy_masked(scratch->slot(value), scratch->slot(instruct…`
+[RED] animation_ground :: animation ground: a physics probe finds the first solid surface under a foot
+      src/animation/ground/src/ground_probes.cpp: `if (hit.trigger || (query.owner != 0 && hit.user_data == query.owner)) {` -> `if (hit.trigger) {`
+[RED] animation_ground :: animation ground: a terrain probe answers the surface under a foot, and no hole
+      src/animation/ground/src/ground_probes.cpp: `if (!sample.resolved || sample.hole ||` -> `if (`
+[RED] abi :: animation: an aim is simulation, a foot placement is the frame's, and both check
+      src/abi/src/game/animation_thunks.cpp: `if (!std::isfinite(component)) {` -> `if (component != component) {`
+[RED] animation_runtime :: animation: two instances given the same parameters reach the same pose bit for bit
+      src/animation/src/evaluate.cpp: `const f32 share = weights[index] / seen;` -> `static u32 calls = 0;
+        const f32 share = (weights[index] / seen) * (((++calls & 1U) != 0U) ? 1.0F : 0.999F);`
+[RED] game_backend_animation :: animation abi: an aim takes a world point into the character, and feet report
+      src/game_backend/animation/src/animation_backend.cpp: `inverse(placement_of(entity)).transform_point(Vec3{point[0], point[1], point[2]});` -> `Vec3{point[0], point[1], point[2]};`
+
+[RED] Swift CyberdyneKitTests :: AnimationTests.testABehaviourSetsSpeedAndDirectionFromItsVelocity
+      bindings/swift/Sources/CyberdyneKit/Animation.swift: `let angle = atan(x / y)` -> `let angle = -atan(x / y)`
+[RED] Rust cy-editor-services :: script_graph::tests::a_vector_is_written_lane_by_lane_and_reads_back
+      editor/crates/cy-editor-services/src/script_graph.rs: `.join(", ")` -> `.join(",")`
+
+Two mutations were green at first and are recorded with what answered them:
+  - `digest = hash_modifiers(...)` removed: 'a synchronised space has a phase of its own' stayed green,
+    because the synchronised program also has one more parameter, which the digest already hashes.
+    The case now also compiles a space with one sample moved — same code, clips and parameters —
+    and requires a different digest; red after that.
+  - the zero-weight gate in `modifier_input` removed: 'foot placement off is the frame before' stayed
+    green, because `place_feet` and `solve_foot_placement` each refuse a zero weight as well. The
+    mutation recorded above is the one that makes the pass-through itself inexact, which the case
+    catches.
+
+Not proven by a mutation: 'animation_system: planted feet are the same bytes from job workers as
+from one thread'. One character's bytes can differ between threads only by a data race, which no
+one-site mutation of this change introduces; the case pins the serial and parallel bytes equal.

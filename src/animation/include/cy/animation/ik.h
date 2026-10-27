@@ -16,12 +16,13 @@
 // masks and `detect_conflicts()` reads them. Two constraints writing one joint at the same order
 // are reported at setup — "rather than resolved arbitrarily" — and the report names both.
 //
-// WHAT IS DELIVERED AND WHAT IS NOT, STATED RATHER THAN IMPLIED. Two-bone IK, look-at and copy are
-// here, each weighted and each declaring its joints. FABRIK, CCD, spline IK, FULL-BODY IK, spring
-// bones and foot placement are named by the specification and are NOT in this milestone: full-body
-// IK is a multi-effector pose solve rather than a chain, and foot placement needs a raycast this
-// module may not issue. A caller asking for one gets `NotImplemented` naming it, not a two-bone
-// solve wearing its name.
+// WHAT IS DELIVERED AND WHAT IS NOT, STATED RATHER THAN IMPLIED. Two-bone IK, look-at, aim chains
+// and copy are here, each weighted and each declaring its joints; foot placement is
+// foot_placement.h, which asks the HOST for the ground through `GroundProbe` rather than issuing a
+// raycast itself (issue #92). FABRIK, CCD, spline IK, FULL-BODY IK and spring bones are named by
+// the specification and are NOT built: full-body IK is a multi-effector pose solve rather than a
+// chain. A caller asking for one gets `NotImplemented` naming it, not a two-bone solve wearing its
+// name.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/math/transform.h>
@@ -104,6 +105,35 @@ struct ConflictReport {
 /// Rotate `joint` so its forward axis points at `target`, in model space, weighted.
 [[nodiscard]] Status solve_look_at(const Skeleton& skeleton, u16 joint, Vec3 target, f32 weight,
                                    Span<Transform> local) noexcept;
+
+/// The most joints an aim chain spreads its turn over: a spine, a chest, a neck and a head.
+inline constexpr u32 kMaxAimJoints = 4;
+
+/// A chain that turns so one joint's axis points at a target: an aim (a spine and a weapon arm)
+/// or a look-at spread over the neck rather than snapped at the head.
+struct AimChain {
+    /// The chain's root first, the joint that points last. Each joint is the parent's descendant.
+    u16 joints[kMaxAimJoints] = {kInvalidJoint, kInvalidJoint, kInvalidJoint, kInvalidJoint};
+    u8 count = 0;
+    /// The pointing joint's axis, in its own space.
+    Vec3 axis{0.0F, 0.0F, 1.0F};
+    /// The most the whole chain turns, in radians. A target behind the character is turned
+    /// towards by this much rather than reached by twisting the spine round.
+    f32 max_angle = 1.4F;
+    [[nodiscard]] bool valid() const noexcept { return count != 0 && count <= kMaxAimJoints; }
+};
+
+/// Turn `chain` so its last joint's axis points at `target` (model space), each joint taking an
+/// equal share of the turn, weighted. Zero weight leaves `local` untouched bit for bit. The
+/// pointing joint's own position moves as the joints above it turn, so the turn is solved twice:
+/// the second pass removes the parallax the first one left.
+[[nodiscard]] Status solve_aim(const Skeleton& skeleton, const AimChain& chain, Vec3 target,
+                               f32 weight, Span<Transform> local) noexcept;
+
+/// The joint's placement in model space, walked up its parents through `local`. What the solvers
+/// read; exposed because a caller checking a solve reads the same thing.
+[[nodiscard]] Transform joint_model(const Skeleton& skeleton, u16 joint,
+                                    Span<const Transform> local) noexcept;
 
 /// The solvers this milestone does not implement, refused by name rather than approximated.
 enum class UnimplementedSolver : u8 {

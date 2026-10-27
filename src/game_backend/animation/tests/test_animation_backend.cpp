@@ -16,6 +16,7 @@
 #include <cy/scene/components.h>
 #include <cy/scene/tree.h>
 
+#include "legs_fixture.h"
 #include "locomotion_fixture.h"
 #include "physics_fixture.h"
 
@@ -23,6 +24,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -515,4 +517,161 @@ CY_TEST_CASE("animation abi: what it refuses, by name") {
     CY_CHECK_EQ(table().animation_state(game.engine(), hero, &state), CY_RESULT_UNAVAILABLE);
     game_backend::bind_animation(game.host, game.adapter.get());
     abi::clear_last_error();
+}
+
+namespace {
+
+[[nodiscard]] graph::Literal text_literal(const char* value) noexcept {
+    graph::Literal literal;
+    literal.type = Name::intern("name");
+    literal.text = Name::intern(value);
+    return literal;
+}
+
+/// The legs standing, through foot placement (weight `feet`) and an aim of the spine and head at
+/// `look`: ABI 1.14's two entries' program. Issue #92.
+struct PlantedRig {
+    PlantedRig()
+        : skeleton(animation::testing::allocator()),
+          clip(animation::testing::allocator()),
+          program(animation::testing::allocator()),
+          rig(animation::testing::allocator()) {
+        using animation::testing::kPelvis;
+        CY_REQUIRE(animation::testing::build_legs(skeleton).has_value());
+        clip.set_name(Name::intern("stand"));
+        clip.set_duration(1.0F);
+        clip.set_loop_mode(animation::LoopMode::Loop);
+        Expected<u32, Error> track = clip.add_joint_track(
+            animation::TrackKind::Translation, kPelvis, animation::Interpolation::Linear);
+        CY_REQUIRE(track.has_value());
+        CY_REQUIRE(clip.add_key(*track, 0.0F, Vec4{0.0F, 0.96F, 0.0F, 0.0F}).has_value());
+        CY_REQUIRE(clip.add_key(*track, 1.0F, Vec4{0.0F, 0.96F, 0.0F, 0.0F}).has_value());
+        CY_REQUIRE(clip.compress(animation::CompressionSettings{}).has_value());
+
+        graph::NodeRegistry registry(animation::testing::allocator());
+        CY_REQUIRE(graph::pose::register_pose_nodes(registry).has_value());
+        graph::Graph graph(animation::testing::allocator(), Name::intern("planted"));
+        CY_REQUIRE(graph.add_node(1, Name::intern("pose.clip")).has_value());
+        CY_REQUIRE(graph.set_property(1, Name::intern("clip"), text_literal("stand")).has_value());
+        CY_REQUIRE(graph.add_node(2, Name::intern("pose.foot_ik")).has_value());
+        for (const auto& [property, joint] :
+             {std::pair{"pelvis", "pelvis"}, std::pair{"hip_l", "l_hip"},
+              std::pair{"knee_l", "l_knee"}, std::pair{"ankle_l", "l_ankle"},
+              std::pair{"hip_r", "r_hip"}, std::pair{"knee_r", "r_knee"},
+              std::pair{"ankle_r", "r_ankle"}, std::pair{"weight_parameter", "feet"}}) {
+            CY_REQUIRE(
+                graph.set_property(2, Name::intern(property), text_literal(joint)).has_value());
+        }
+        CY_REQUIRE(graph.add_node(3, Name::intern("pose.aim")).has_value());
+        CY_REQUIRE(
+            graph.set_property(3, Name::intern("chain"), text_literal("spine, head")).has_value());
+        CY_REQUIRE(graph.set_property(3, Name::intern("target_parameter"), text_literal("look"))
+                       .has_value());
+        CY_REQUIRE(graph.set_property(3, Name::intern("weight_parameter"), text_literal("aiming"))
+                       .has_value());
+        CY_REQUIRE(graph.add_node(4, Name::intern("pose.state")).has_value());
+        CY_REQUIRE(graph.connect(1, Name::intern("pose"), 2, Name::intern("a")).has_value());
+        CY_REQUIRE(graph.connect(2, Name::intern("pose"), 3, Name::intern("a")).has_value());
+        CY_REQUIRE(graph.connect(3, Name::intern("pose"), 4, Name::intern("pose")).has_value());
+        graph.resolve(registry);
+        graph::DiagnosticSink sink(animation::testing::allocator());
+        Expected<animation::PoseProgram, Error> compiled =
+            graph::pose::compile_pose(graph, registry, animation::testing::kLegJoints, sink);
+        CY_REQUIRE(compiled.has_value());
+        program = std::move(*compiled);
+        const animation::Clip* clips[] = {&clip};
+        CY_REQUIRE(
+            rig.bind(skeleton, program, Span<const animation::Clip* const>(clips, 1)).has_value());
+    }
+
+    animation::Skeleton skeleton;
+    animation::Clip clip;
+    animation::PoseProgram program;
+    animation::AnimationRig rig;
+};
+
+}  // namespace
+
+CY_TEST_CASE("animation abi: an aim takes a world point into the character, and feet report") {
+    PlantedRig planted;
+    runtime::Simulation simulation(animation::testing::allocator(), config_for(1));
+    CY_REQUIRE(simulation.initialize().has_value());
+    Expected<ecs::ComponentTypeId, Error> animator =
+        animation::register_animator(simulation.world());
+    CY_REQUIRE(animator.has_value());
+    scene::SceneTree* tree = simulation.tree();
+    CY_REQUIRE(tree != nullptr);
+    animation::AnimationSystem system(animation::testing::allocator(), simulation.world(),
+                                      *animator, tree);
+    Expected<animation::RigId, Error> added = system.add_rig(planted.rig);
+    CY_REQUIRE(added.has_value());
+    CY_REQUIRE(system.install(simulation.schedule(), simulation.clock()).has_value());
+    CY_REQUIRE(simulation.finalize_registration().has_value());
+    abi::Host host(system_allocator(MemoryDomain::Scripting));
+    game_backend::AnimationAdapter adapter(animation::testing::allocator(), simulation.world(),
+                                           system, *animator, tree);
+    CY_REQUIRE(adapter.add_rig("planted", *added).has_value());
+    game_backend::bind_animation(host, &adapter);
+
+    // Two metres along x, turned a quarter about the vertical, standing on an 18 cm step under
+    // its right foot — which, turned, is world -z.
+    Expected<scene::Node, Error> node = tree->create_node(Name::intern("hero"), tree->root());
+    CY_REQUIRE(node.has_value());
+    Transform placement = Transform::from_translation(Vec3{2.0F, 0.0F, 0.0F});
+    placement.rotation = Quat::from_axis_angle(Vec3{0.0F, 1.0F, 0.0F}, 1.5707963F);
+    CY_REQUIRE(node->set_local_transform(placement).has_value());
+    const CyEntity entity = abi::to_abi(node->entity());
+    CyAnimatorDesc desc{};
+    desc.struct_size = sizeof(desc);
+    desc.rig = "planted";
+    CY_REQUIRE_EQ(table().animation_attach(&host, entity, &desc), CY_RESULT_OK);
+    // The right ankle (model +x) is at world z = -0.1 once turned: the step covers z < 0.
+    class Step final : public animation::GroundProbe {
+    public:
+        [[nodiscard]] animation::GroundHit cast_down(
+            const animation::GroundQuery& query) const noexcept override {
+            animation::GroundHit hit;
+            hit.hit = true;
+            hit.point = Vec3{query.origin.x, query.origin.z < 0.0F ? 0.18F : 0.0F, query.origin.z};
+            return hit;
+        }
+    } step;
+    system.set_ground_probe(&step);
+    CY_REQUIRE_EQ(table().animation_set_float(&host, entity, "feet", 1.0F), CY_RESULT_OK);
+
+    for (u32 frame = 0; frame < 3; ++frame) {
+        const determinism::FrameTicks ticks = simulation.begin_frame(0);
+        for (u32 tick = 0; tick < ticks.ticks; ++tick) {
+            CY_REQUIRE(simulation.step(nullptr).has_value());
+        }
+        CY_REQUIRE(simulation.frame(ticks.alpha, nullptr).has_value());
+        CY_REQUIRE(system.last_error().has_value());
+    }
+
+    // THE AIM: a world point, read back from the program in the character's own space — through
+    // the placement the scene propagated, so after a frame.
+    const float point[3] = {2.0F, 1.6F, -5.0F};
+    CY_REQUIRE_EQ(table().animation_aim_at(&host, entity, "look", point), CY_RESULT_OK);
+    const Vec3 model = inverse(placement).transform_point(Vec3{2.0F, 1.6F, -5.0F});
+    float value = 0.0F;
+    CY_REQUIRE_EQ(table().animation_get_float(&host, entity, "look.x", &value), CY_RESULT_OK);
+    CY_CHECK_NEAR(value, model.x, 1e-5F);
+    CY_REQUIRE_EQ(table().animation_get_float(&host, entity, "look.z", &value), CY_RESULT_OK);
+    CY_CHECK_NEAR(value, model.z, 1e-5F);
+    // A target the program does not have is refused and writes nothing.
+    CY_CHECK_EQ(table().animation_aim_at(&host, entity, "elsewhere", point), CY_RESULT_NOT_FOUND);
+
+    CyFootPlacement feet{};
+    feet.struct_size = sizeof(feet);
+    CY_REQUIRE_EQ(table().animation_foot_placement(&host, entity, 0, &feet), CY_RESULT_OK);
+    CY_CHECK((feet.flags & CY_FOOT_PLACEMENT_SOLVED) != 0U);
+    CY_CHECK((feet.flags & CY_FOOT_PLACEMENT_LEFT_GROUND) != 0U);
+    CY_CHECK((feet.flags & CY_FOOT_PLACEMENT_RIGHT_GROUND) != 0U);
+    CY_CHECK_NEAR(feet.offset[1], 0.18F, 1e-4F);
+    CY_CHECK_NEAR(feet.pelvis, 0.0F, 1e-6F);
+    // The ground is reported in the world: the right foot's is on the step, at world z = -0.1.
+    CY_CHECK_NEAR(feet.ground[4], 0.18F, 1e-5F);
+    CY_CHECK_NEAR(feet.ground[5], -0.1F, 1e-4F);
+    CY_CHECK_EQ(table().animation_foot_placement(&host, entity, 1, &feet), CY_RESULT_NOT_FOUND);
+    game_backend::bind_animation(host, nullptr);
 }
