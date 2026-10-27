@@ -19,6 +19,17 @@ What is *missing* is a `physicsapi` check in `tools/layercheck/layercheck.py`, b
 `sdl`. The two mechanisms above make the mistake a build failure today; the third would make it a
 named diagnostic. It is recommended in this milestone's report.
 
+## The temp arena is sized from the world, and from Jolt's own constraint size
+
+Each world owns a temp arena, sized from its declared capacities so a small test world does not
+reserve the megabytes a full scene needs (`JoltWorld::temp_arena_bytes`). Its contact term is Jolt's
+own `ContactConstraintManager::cMaxConstraintSize` a constraint: every step Jolt takes the WHOLE
+contact capacity's worth from the arena in one block, however few contacts there are. At the 256
+bytes a constraint the term used to count, a 128-body world at the default 2048 contacts had too small
+an arena, the allocation failed inside Jolt, and the first step with a contact crashed on the null
+buffer — samples/15-first-person's arena found it. `integration.physics_jolt`'s 'a small world's first
+contact steps' drops a box onto a floor in exactly that world.
+
 ## The four places Jolt's model and the engine's do not line up
 
 Each is marked in `src/jolt_server.cpp` where it bites, and none of them is papered over.

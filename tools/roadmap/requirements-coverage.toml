@@ -6470,14 +6470,21 @@ row = "native-abi"
 requirement = "Lights a game spawns through the ABI"
 evidence = "test:unit.abi"
 case = "lights: a frame update may spawn, move and end a light; a fixed step may not"
-note = "ABI 1.11 (`add-many-lights-and-area-lights`): five `light_*` entries over `cy::rendering::TransientLights` through `cy::abi::game::LightsBackend`, every one `[N U]`. This case is the phase rule both ways: spawn, update, alive, destroy and status accepted in a frame update and PERMISSION_DENIED in a fixed step. Its neighbours in `test_game_lights.cpp`: 'without a bound pool every entry is UNAVAILABLE' and 'a description is whole and in range before the backend sees it' (every enumerator, flag, sign and reserved word); `test_layout.cpp` the 1.11 layouts; `integration.game_backend_lights` the adapter through the table — a flash fades and expires, a stale handle never answers, a full pool refuses with OUT_OF_RANGE; CyberdyneKit's `LightsTests` the Swift face through `FakeEngine`. Each proved red by a mutation (`openspec/changes/add-many-lights-and-area-lights/evidence/falsification.txt`). No sample binds a pool to a running game yet."
+note = "ABI 1.11 (`add-many-lights-and-area-lights`): five `light_*` entries over `cy::rendering::TransientLights` through `cy::abi::game::LightsBackend`, every one `[N U]`. This case is the phase rule both ways: spawn, update, alive, destroy and status accepted in a frame update and PERMISSION_DENIED in a fixed step. Its neighbours in `test_game_lights.cpp`: 'without a bound pool every entry is UNAVAILABLE' and 'a description is whole and in range before the backend sees it' (every enumerator, flag, sign and reserved word); `test_layout.cpp` the 1.11 layouts; `integration.game_backend_lights` the adapter through the table — a flash fades and expires, a stale handle never answers, a full pool refuses with OUT_OF_RANGE; CyberdyneKit's `LightsTests` the Swift face through `FakeEngine`. Each proved red by a mutation (`openspec/changes/add-many-lights-and-area-lights/evidence/falsification.txt`). samples/15-first-person binds a pool to a running game: its muzzle flashes, counted by `integration.first_person_sample` and drawn by `smoke.first_person_render`."
 
 [[coverage]]
 row = "native-abi"
 requirement = "The first-person camera through the ABI"
 evidence = "test:unit.abi"
 case = "first person: a frame update drives it; a fixed step may not touch it"
-note = "ABI 1.13 (`add-first-person-weapon-view`): eight `first_person_*` and `viewmodel_*` entries over `cy::abi::game::FirstPersonBackend`, every one `[N U]`. This case is the phase rule both ways. Its neighbours in `test_game_first_person.cpp` cover UNAVAILABLE, every range, flag and reserved word, and `struct_size` both ways; `integration.game_backend_first_person`'s 'the look a game feeds turns the camera once, when the host advances it' is the first scenario through the real behaviours; CyberdyneKit's `FirstPersonTests` the Swift face. Each proved red by a mutation (`openspec/changes/add-first-person-weapon-view/evidence/falsification.txt`). No sample drives a first-person rig yet."
+note = "ABI 1.13 (`add-first-person-weapon-view`): eight `first_person_*` and `viewmodel_*` entries over `cy::abi::game::FirstPersonBackend`, every one `[N U]`. This case is the phase rule both ways. Its neighbours in `test_game_first_person.cpp` cover UNAVAILABLE, every range, flag and reserved word, and `struct_size` both ways; `integration.game_backend_first_person`'s 'the look a game feeds turns the camera once, when the host advances it' is the first scenario through the real behaviours; CyberdyneKit's `FirstPersonTests` the Swift face. Each proved red by a mutation (`openspec/changes/add-first-person-weapon-view/evidence/falsification.txt`). samples/15-first-person drives a first-person rig from Swift end to end: `integration.first_person_sample` holds its recoil and sights, `smoke.first_person_render` draws its weapon view."
+
+[[coverage]]
+row = "native-abi"
+requirement = "Effects and decals a game spawns through the ABI"
+evidence = "test:unit.abi"
+case = "effects: a frame update plays an effect; a fixed step may not"
+note = "ABI 1.15 (`add-first-person-demo`): `effect_find`/`effect_play` over `cy::abi::game::EffectsBackend` and `decal_find_material`/`decal_spawn`/`decal_status` over `DecalsBackend`; playing and spawning `[N U]`, resolving `[N F U]`. This case is the phase rule both ways for an effect; 'decals: a material resolves in every phase; a spawn only outside a fixed step' is the decal's, and the neighbours in `test_game_effects.cpp` and `test_game_decals.cpp` cover UNAVAILABLE, every range and reserved word and `struct_size` both ways; `test_layout.cpp` the 1.15 layouts. `integration.game_backend_effects` plays through the table into a real `vfx::SimulationWorld` (position, scale, a parameter override, fire-and-forget released, a full world OUT_OF_RANGE); `integration.game_backend_decals` spawns into a real `DecalBudget` (+Z on the normal, the fades' defaults, eviction answering CY_DECAL_NULL and counted); CyberdyneKit's `EffectsTests` the Swift face. samples/15-first-person plays both from Swift, and `smoke.first_person_render` holds every texel the marks change to where the shots' raycasts hit. Each proved red by a mutation (`openspec/changes/add-first-person-demo/evidence/falsification.txt`)."
 
 # --- networking-and-replication -------------------------------------------------------------------
 #
@@ -9265,3 +9272,20 @@ requirement = "Aim and foot placement through the ABI"
 evidence = "test:integration.game_backend_animation"
 case = "animation abi: an aim takes a world point into the character, and feet report"
 note = "ABI 1.14 (issue #92): a character two metres along x and turned a quarter receives a world aim point in its model space, an unknown target is NOT_FOUND having written nothing, and animation_foot_placement reports the step under its right foot in the world. unit.abi 'animation: an aim is simulation, a foot placement is the frame's, and both check' holds the phases, the refusals before the backend, struct_size both ways and a 1.13 backend answering UNAVAILABLE; CyberdyneKit's AnimationTests 'testABehaviourSetsSpeedAndDirectionFromItsVelocity' is the speed-and-direction scenario. Each proved red by a mutation."
+
+# --- add-first-person-demo: a spawn that ends, and a Jolt world's temporary memory ----------------
+
+[[coverage]]
+row = "vfx-system"
+requirement = "A spawn that ends"
+evidence = "test:integration.vfx"
+case = "a fire-and-forget burst with a spawn duration releases itself without a stop"
+note = "`EffectSpawn::spawn_seconds` (`add-first-person-demo`): a burst played with a duration and never stopped stops spawning, lets its particles die and gives its block back, while the same effect played with none is still spawning — the control. 'a spawn duration shorter than a sub-step still spawns once' is the second scenario at a 10 Hz instance. Each proved red by a mutation (`openspec/changes/add-first-person-demo/evidence/falsification.txt`)."
+
+[[coverage]]
+row = "physics"
+requirement = "A world's step never outgrows its temporary memory"
+evidence = "test:integration.physics_jolt"
+case = "a small world's first contact steps: the temp arena holds Jolt's constraint buffer"
+note = "The Jolt server sized its temp arena with 256 bytes a contact constraint while Jolt allocates `cMaxConstraintSize` for the whole capacity every step; a 128-body world at the default capacities crashed on its first contact (samples/15-first-person found it). The case drops a box onto a floor in exactly that world and holds it at rest; on the old sizing it crashes (`openspec/changes/add-first-person-demo/evidence/falsification.txt`)."
+

@@ -237,6 +237,15 @@ publish_sprites(world, camera_position, ring_capacity, records, publish_report);
 // ... renderer.upload(frame_slot, records.span()); recorder.add_extension(renderer.extension());
 ```
 
+A burst a game plays and forgets — a muzzle flash's sprites, a shower of sparks — is played
+fire-and-forget WITH A SPAWN DURATION: `EffectSpawn{.release_on_completion = true, .spawn_seconds =
+0.05F}`. The instance stops spawning once its age reaches the duration and it has simulated at least
+one sub-step, its particles live out their lifetimes, and it releases itself. Without a duration a
+fire-and-forget instance spawns until `stop` — which nobody holding no handle can call — and is never
+released. `integration.vfx`'s 'a fire-and-forget burst with a spawn duration releases itself without
+a stop' holds it, beside the same effect played without one as the control; ABI 1.15's effects
+adapter registers each effect with its duration (`src/game_backend/effects/`).
+
 ### And on the GPU, where a host has a device
 
 ```cpp
