@@ -182,6 +182,12 @@ add_subdirectory(13-rts-api)
 # has no CTest entry; `render.selection_outlines` is the suite.
 add_subdirectory(13-rts-selection)
 
+# A rendered third-person game: samples/14-third-person's hero, written in Swift, runs, jumps, climbs
+# stairs and slopes on a cooked hillside — locomotion through a synchronised blend space, its feet
+# placed on the ground the physics world reports, a camera that a collision node keeps in front of
+# walls — and the engine draws it with shadows, ambient occlusion, the device GI and the temporal
+# upscaler. Declares nothing without Swift, the animation runtime or Jolt.
+add_subdirectory(14-third-person)
 # A first-person shooter written in Swift against ABI 1.15: a character that walks, sprints, jumps and
 # crouches, a first-person camera with a weapon view, hitscan shots by physics raycast, props pushed
 # by impulses, targets driven by the engine's AI, and what a shot leaves — a flash, bursts, sparks

@@ -1,0 +1,26 @@
+# The game module's manifest. `native-abi`: "module name, entry symbol, minimum ABI version,
+# per-platform library paths, and whether the module is hot-reloadable".
+#
+# The host takes the library's path from the build (`CY_THIRD_PERSON_MODULE_LIBRARY`) because the
+# file is named for its hot-reload generation; see samples/04-character/module.toml for the
+# reasoning.
+#
+# min_abi_minor = 14: the game drives its hero's locomotion blend space and reads its foot
+# placement through ABI 1.14's entries, besides the input, camera, audio, character controller,
+# scene-path and animation entries of 1.3, 1.5 and 1.7; an engine older than that does not have
+# them.
+
+name = "third-person"
+entry_symbol = "cy_module_entry"
+min_abi_major = 1
+min_abi_minor = 14
+hot_reload = true
+
+[platform.linux]
+library = "libCyGame_g0.so"
+
+[platform.windows]
+library = "CyGame_g0.dll"
+
+[platform.macos]
+library = "libCyGame_g0.dylib"
