@@ -91,6 +91,7 @@ public struct Decal: Hashable, Sendable {
     /// What a decal is: a box projected along its local -Z, so its local +Z is the normal of the
     /// surface it marks.
     public struct Description: Equatable, Sendable {
+        /// What the mark looks like: a material the host registered.
         public var material: DecalMaterial
         /// World; the box's centre and its frame.
         public var pose: Pose
@@ -102,8 +103,9 @@ public struct Decal: Hashable, Sendable {
         public var sortOrder: Int32
         /// Radians; past it the mark fades rather than stretches. Zero is the engine's 60 degrees.
         public var fadeAngle: Float
-        /// Metres from the eye the mark fades over; zeros are the engine's 20 and 40.
+        /// Metres from the eye the mark starts fading; zero is the engine's 20.
         public var fadeStart: Float
+        /// Metres from the eye it is gone by, past `fadeStart`; zero is the engine's 40.
         public var fadeEnd: Float
 
         /// Every field.
@@ -150,9 +152,13 @@ public struct Decal: Hashable, Sendable {
 
     /// The budget and what it has done.
     public struct Status: Equatable, Sendable {
+        /// Marks in the budget now.
         public var live: UInt32
+        /// The most it holds before the least worth keeping is evicted.
         public var capacity: UInt32
+        /// Spawned since the budget was bound.
         public var spawned: UInt64
+        /// Evicted by a full budget, a spawned mark that was the least worth keeping included.
         public var evicted: UInt64
 
         /// From the ABI's spelling.

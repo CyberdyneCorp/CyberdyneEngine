@@ -75,9 +75,9 @@ constexpr SurfaceLook kLooks[] = {
     {Vec3{0.42F, 0.43F, 0.45F}, Vec3{}, 0.32F, 0.9F},  // WeaponMetal
     {Vec3{0.12F, 0.12F, 0.12F}, Vec3{}, 0.50F, 0.0F},  // WeaponPolymer
     {Vec3{0.20F, 0.26F, 0.14F}, Vec3{}, 0.85F, 0.0F},  // Sleeve
-    // A clear sky's radiance, nits: a few thousand at the horizon, deeper blue overhead.
+    // A clear sky's radiance, nits: a few thousand. One radiance over every panel, so no seam
+    // between two of them shows.
     {Vec3{}, Vec3{2600.0F, 3500.0F, 5000.0F}, 1.0F, 0.0F},  // Sky
-    {Vec3{}, Vec3{2300.0F, 3200.0F, 4900.0F}, 1.0F, 0.0F},  // SkyZenith
 };
 static_assert(sizeof(kLooks) / sizeof(kLooks[0]) == static_cast<cy::usize>(Surface::Count));
 
@@ -90,7 +90,7 @@ constexpr ArenaBox kSky[] = {
     {Vec3{0.0F, 40.0F, 120.0F}, Vec3{130.0F, 46.0F, 1.0F}, Surface::Sky},
     {Vec3{-120.0F, 40.0F, 0.0F}, Vec3{1.0F, 46.0F, 130.0F}, Surface::Sky},
     {Vec3{120.0F, 40.0F, 0.0F}, Vec3{1.0F, 46.0F, 130.0F}, Surface::Sky},
-    {Vec3{0.0F, 86.0F, 0.0F}, Vec3{130.0F, 1.0F, 130.0F}, Surface::SkyZenith},
+    {Vec3{0.0F, 86.0F, 0.0F}, Vec3{130.0F, 1.0F, 130.0F}, Surface::Sky},
 };
 
 }  // namespace

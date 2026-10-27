@@ -1857,13 +1857,13 @@ typedef struct CyDecalDesc {
     uint32_t reserved0;       /* zero */
     CyDecalMaterial material; /* from `decal_find_material` */
     CyPose pose;              /* world; an all-zero rotation is the identity */
-    float half_extent[3];     /* metres, > 0: the mark's half width and height, the box's half depth */
-    float importance;         /* 0 to 1: what eviction keeps longest */
-    int32_t sort_order;       /* a higher order covers a lower; equal orders, the later spawn */
-    float fade_angle;         /* radians, 0 to pi/2: past it the mark fades; zero is 60 degrees */
-    float fade_start;         /* metres from the eye the mark starts fading; zero is 20 */
-    float fade_end;           /* metres it is gone by; zero is 40; above fade_start */
-    uint32_t reserved[2];     /* zero */
+    float half_extent[3]; /* metres, > 0: the mark's half width and height, the box's half depth */
+    float importance;     /* 0 to 1: what eviction keeps longest */
+    int32_t sort_order;   /* a higher order covers a lower; equal orders, the later spawn */
+    float fade_angle;     /* radians, 0 to pi/2: past it the mark fades; zero is 60 degrees */
+    float fade_start;     /* metres from the eye the mark starts fading; zero is 20 */
+    float fade_end;       /* metres it is gone by; zero is 40; above fade_start */
+    uint32_t reserved[2]; /* zero */
 } CyDecalDesc;
 
 /* A decal a game spawned: the budget's id, or CY_DECAL_NULL when it was the one evicted. */

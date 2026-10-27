@@ -187,10 +187,10 @@ void age_and_fade(StageBuilder& stage, f32 size_from, f32 size_to, f32 glow_from
         stage.write("velocity", stage.binary("vfx.add", off, scatter));
         stage.write("age", stage.constant(0.0F));
         stage.write("lifetime", ranged(stage, 0.35F, 0.5F));
-        stage.write("size", stage.constant(0.035F));
+        stage.write("size", stage.constant(0.02F));
         stage.write("color", stage.make4(stage.constant(1.0F), stage.constant(0.56F),
                                          stage.constant(0.16F), stage.constant(1.0F)));
-        stage.write("emission", stage.constant(40000.0F));
+        stage.write("emission", stage.constant(60000.0F));
         if (!stage.ok()) {
             return cy::fail(cy::ErrorCode::Internal, "fps effects: the sparks did not author");
         }
@@ -218,7 +218,7 @@ void age_and_fade(StageBuilder& stage, f32 size_from, f32 size_to, f32 glow_from
     const NodeKey bounce = stage.constant(0.55F, -0.35F, 0.55F, 0.0F, "float3");
     stage.write("velocity", stage.ternary("vfx.select", below,
                                           stage.binary("vfx.mul", velocity, bounce), velocity));
-    age_and_fade(stage, 0.035F, 0.015F, 40000.0F, 1200.0F);
+    age_and_fade(stage, 0.02F, 0.008F, 60000.0F, 1500.0F);
     if (!stage.ok()) {
         return cy::fail(cy::ErrorCode::Internal, "fps effects: the sparks update did not author");
     }

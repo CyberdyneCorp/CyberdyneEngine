@@ -37,7 +37,6 @@ enum class Surface : cy::u8 {
     Sleeve,
     /// The sky the renderer hangs round the courtyard: emission only.
     Sky,
-    SkyZenith,
     Count,
 };
 

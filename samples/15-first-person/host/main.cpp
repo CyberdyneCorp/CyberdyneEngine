@@ -205,6 +205,9 @@ int main(int argc, char** argv) {
     // THE GI IS PRESENTATION: a run with no picture has nothing to light, and nothing the game
     // decides reads it, so a headless run leaves it off — the drawn run's game is held to it.
     options.illumination = render.directory != nullptr;
+#if defined(CY_FIRST_PERSON_RENDER)
+    options.illumination = options.illumination && render.options.gi;
+#endif
     FpsHost host(cy::system_allocator(cy::MemoryDomain::World), options);
     const char* detail = "";
     if (const cy::Status started = host.start(&detail); !started) {
