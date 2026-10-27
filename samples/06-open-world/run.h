@@ -32,6 +32,18 @@
 
 namespace cy::sample::openworld {
 
+/// The factor by which the hitch threshold is relaxed in a **sanitized** build: `tests/harness/`'s
+/// sanitizer scale, twenty, as samples/08-vertical-slice gives its own tick budgets, because an
+/// instrumented binary is five to twenty times slower with the tool working. The nightly
+/// ThreadSanitizer run measured this route at a 4.35 ms median tick and failed it on one 8.57 ms
+/// tick against the uninstrumented 8 ms. One in every uninstrumented build, so the threshold means
+/// exactly what it says wherever a game could ship.
+#if defined(CY_SANITIZED)
+inline constexpr f64 kSanitizedAllowance = 20.0;
+#else
+inline constexpr f64 kSanitizedAllowance = 1.0;
+#endif
+
 /// How the route is walked. Fixed in space: `ticks` decides how far along it the run gets, never
 /// how fast the traveller moves, so a short run and a long one traverse the same cells in the same
 /// order and their reports are comparable.
@@ -45,7 +57,7 @@ struct RouteOptions {
     /// the route to its end.
     u32 abort_at = 0;
     /// The ceiling one tick's measured CPU time may reach before the run reports a hitch.
-    f64 hitch_threshold_ms = 8.0;
+    f64 hitch_threshold_ms = 8.0 * kSanitizedAllowance;
 };
 
 /// What one traversal did. Every number is printed, and the driver reads the printed form.

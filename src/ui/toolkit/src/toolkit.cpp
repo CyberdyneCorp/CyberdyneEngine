@@ -455,7 +455,9 @@ Expected<WidgetId, Error> Toolkit::create(WidgetId parent, const WidgetDesc& des
     if (Status built = build(widgets_[slot], desc); !built) {
         return make_unexpected(built.error());
     }
-    if (Status attached = attach_to_parent(widgets_[slot], widget.parent); !attached) {
+    // `widget` is not read past `build`: a radio group makes its radios there, which can move every
+    // record. `parent_element` is the same value, copied before anything could move it.
+    if (Status attached = attach_to_parent(widgets_[slot], parent_element); !attached) {
         return make_unexpected(attached.error());
     }
     if (!desc.enabled) {

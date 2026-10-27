@@ -21,6 +21,8 @@
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
+#include <ctime>
 #include <future>
 #include <mutex>
 #include <string>
@@ -37,7 +39,6 @@
 #    include <cstddef>
 #    include <cstdint>
 #    include <cstdlib>
-#    include <ctime>
 #endif
 
 namespace {
@@ -392,5 +393,67 @@ CY_TEST_CASE("probe: a case that spins") {
     volatile unsigned long long sink = 0;
     while (std::chrono::steady_clock::now() < until) {
         sink = sink + 1U;
+    }
+}
+
+// --- The re-measure probes
+// ------------------------------------------------------------------------
+//
+// An overrun is re-measured by running the case again (cy/test/test.h), and these are the shapes
+// that rule has to tell apart. Each prints a line per run, so the driver can count them.
+
+namespace {
+
+/// Spends `milliseconds` of this process's CPU, which is this thread's: the sampler sleeps.
+void spend_cpu(double milliseconds) {
+    const std::clock_t until =
+        std::clock() + static_cast<std::clock_t>(milliseconds * CLOCKS_PER_SEC / 1000.0);
+    volatile unsigned long long sink = 0;
+    while (std::clock() < until) {
+        sink = sink + 1U;
+    }
+}
+
+/// How many times the probe that calls it has run in this process, counting this one.
+int ran(int& runs, const char* probe) {
+    ++runs;
+    std::fprintf(stderr, "%s: run %d\n", probe, runs);
+    return runs;
+}
+
+}  // namespace
+
+CY_TEST_CASE("probe: a case that is slow only on its first run") {
+    // The noise on a shared runner, made deterministic: five times the unit budget once, then
+    // nothing. Judged on the fastest run it is within budget; judged on the first, over it.
+    static int runs = 0;
+    if (ran(runs, "slow-once") == 1) {
+        spend_cpu(5.0);
+    }
+}
+
+CY_TEST_CASE("probe: a case that is slow on every run") {
+    // A regression: over budget however often it runs.
+    static int runs = 0;
+    (void)ran(runs, "slow-always");
+    spend_cpu(5.0);
+}
+
+CY_TEST_CASE("probe: a subcase that is slow only on its first run") {
+    // doctest walks subcases by re-entering the case, so a case with one is never run again.
+    static int runs = 0;
+    CY_TEST_SUBCASE("the only subcase") {
+        if (ran(runs, "slow-once-subcase") == 1) {
+            spend_cpu(5.0);
+        }
+    }
+}
+
+CY_TEST_CASE("probe: a case that fails a check and is slow only on its first run") {
+    // A failed case is failed already; it is never run again to tidy its budget.
+    static int runs = 0;
+    CY_CHECK_EQ(1, 2);
+    if (ran(runs, "slow-once-failed") == 1) {
+        spend_cpu(5.0);
     }
 }

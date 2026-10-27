@@ -9,7 +9,8 @@ only directory permitted to name doctest.
 | `include/cy/test/fixtures.h` | The injectable fixtures: a deterministic clock, a seeded generator, a temporary directory. |
 | `src/main.cpp` | doctest's `main`, so no test file carries one. It pages the executable in before the first case: see below. |
 | `src/image_warmup.cpp` | That warm-up: one read per page of the test executable's own segments, so the first case is not charged for loading the binary. |
-| `src/budget.cpp` | The per-test budget check: the CPU clock, the wall-clock stall ceiling, and the contention clock that separates the two. |
+| `src/budget.cpp` | The per-test budget check: the CPU clock, the wall-clock stall ceiling, the contention clock that separates the two, and the re-measuring of an overrun. |
+| `src/case_state.h` | What doctest knows about the running case — failed checks, whether it entered a subcase — which `main.cpp` reads for the budget guard. |
 | `src/host_blocking.cpp` | The fourth clock: a sampler that sees the case's thread in an uninterruptible wait. A diagnostic in the stall message, never an excuse. |
 | `include/cy/test/quiet_host.h`, `src/quiet_host_marker.cpp` | Whether this run is inside a verified `cy_quiet_host`, and so whether the stall ceiling fails a case or only reports it. |
 | `src/fixtures.cpp` | The filesystem half of the fixtures. |
@@ -111,7 +112,7 @@ inside the wrapper, as `m0:test` runs it; the unenforced half and the forgeries 
 
 | Clock | Reads | Fails a case when |
 |---|---|---|
-| CPU | `CLOCK_THREAD_CPUTIME_ID` | the case spends more than its kind's budget, scaled to this machine |
+| CPU | `CLOCK_THREAD_CPUTIME_ID` | the case spends more than its kind's budget, scaled to this machine, on the fastest of up to five runs |
 | Wall | `steady_clock` | the case's own time over the window exceeds a hundred times that budget, **and** the run is inside a verified `cy_quiet_host`; elsewhere reported, not failed |
 | Contention | `/proc/thread-self/schedstat` | never — it is subtracted, and `budget_measures_contention()` says whether it exists |
 | Host blocking | `/proc/self/task/<tid>/stat`, sampled | never — it is reported, and `budget_measures_host_blocking()` says whether it exists |
@@ -130,6 +131,51 @@ printed: the vfork case, the vfork case beside its own readers, the vfork case b
 **orphaned** readers and the held mutex are `stalled:` — failed inside a verified wrapper,
 reported and passed outside one — the spin fails as `over budget:` in both, and none is ever
 `contended:`.
+
+## An overrun is re-measured before it is believed
+
+One commit, 6f13e8db, passed its push CI and then failed four nightly runs on different jobs. Behind
+the ones that were budgets: on the hosted macOS runner `unit.rhi` spent 1.058 ms against 1 ms,
+`unit.gameplay_core` 1.586 ms against 1.068 ms and `unit.render_lights_gpu` 1.817 ms against 1 ms;
+on the Debug `profiles` leg `unit.render_gi` spent 4.110 ms against 4 ms. Each passed on the runs
+either side of it. CPU time is the case's own on an idle host, but not on a shared virtual machine:
+a neighbour's cache and memory traffic, an SMT sibling and the hypervisor all add cycles to the
+case's thread, and the calibration cannot see them, because its loop runs in registers.
+
+Three repairs were possible, and the harness's own principles chose between them:
+
+| Option | Why not, or why |
+|---|---|
+| Calibrate each runner harder, against a memory-bound reference | The calibration already exists and measures the machine at process start; noise is a burst during one case, not a property of the runner, and no reference taken earlier sees it. |
+| Move the strict budgets to one performance job, with a generous factor everywhere else | `testing-and-quality` makes the budget a design guard that every leg enforces — "the CPU budget is enforced on every host" above — and a factor large enough for the worst burst is a raised number by another name. |
+| **Judge the fastest of several runs** | **Chosen.** Noise only ever adds, so the fastest run is the case's own cost; a regression is over budget on every run, and a burst is not. It is what the spec asks for — "a stated tolerance for machine variance", and a case over budget "only under load" reported rather than failed — and the shape `integration.vfx` already used for its own scaling windows on the same runner. The budget itself is unchanged. |
+
+So `CY_TEST_CASE` hands its body to the guard, and an over-budget run is followed by up to four
+more (`CY_TEST_BUDGET_REPEATS`, default 4; 0 restores judging the first run alone). The case
+passes when one of them is within budget, and `cy::test: re-measured:` on stderr names both
+figures; a case still over fails as `over budget:` "on the fastest of 5 runs", with the first run's
+figure beside it. A case that appears as `re-measured:` on every run is marginal, and moving it up
+a suite is still the fix.
+
+A case is never run again when a second run could hide or garble something:
+
+- **it failed a check** — it has failed, and a second run would only add output;
+- **it entered a subcase** — doctest walks subcases by re-entering the case, and a run it did not
+  start would break the walk; such a case is judged on its one run, as before;
+- **the process has spent its allowance** — twenty seconds of CPU on re-runs, a third of the unit
+  tier's CTest timeout, so that a build in which every case is over (a wrong scale) still fails as
+  `over budget:` rather than as a timeout.
+
+A re-run repeats the body's side effects, and that is safe for the same reason a case is safe to
+run alone: each case builds its own fixtures. A case whose first call pays a one-off cost — a
+lazily built table, the first touch of a page — is judged on its later runs, which is the position
+the image warm-up below already takes: a cost the process pays once is not the case's.
+
+Proven by `integration.harness`'s re-measure cases, which run four probes in `stall_probe.cpp`
+through the real guard: a case five times over its budget only on its first run passes after one
+re-run, and fails with `CY_TEST_BUDGET_REPEATS=0` (the behaviour before); a case over on every run
+fails on the fastest of five; a case with a subcase and a case with a failed check each run once.
+`unit.harness` checks the rule (`may_remeasure`) as arithmetic.
 
 ## The first case does not pay for loading the binary
 

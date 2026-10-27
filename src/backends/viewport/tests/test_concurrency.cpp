@@ -67,33 +67,106 @@ CY_TEST_CASE("a concurrent writer never hands a reader half a frame") {
     CY_CHECK_EQ(torn, 0ULL);
 }
 
+namespace {
+
+constexpr u32 kContended = 2;
+
+/// Who is inside the contended slot right now, and whether both ever were at once.
+struct Occupancy {
+    std::atomic<u32> inside{0};
+    std::atomic<u64> both_inside{0};
+
+    void enter() noexcept {
+        if (inside.fetch_add(1, std::memory_order_seq_cst) != 0) {
+            both_inside.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    void leave() noexcept { inside.fetch_sub(1, std::memory_order_seq_cst); }
+};
+
+/// The engine's half of the protocol, once: declare the slot, then look at the claim. True when it
+/// found the slot free and wrote.
+bool engine_reserves(AnnouncementPage& page, Occupancy& occupancy) noexcept {
+    page.set_writing(true, kContended);
+    const bool free = held_slot(page.held()) != kContended;
+    if (free) {
+        occupancy.enter();
+        occupancy.leave();
+    }
+    page.set_writing(false, 0);
+    return free;
+}
+
+/// The editor's half, once: claim the slot, then look at the engine's intent. True when it found
+/// the engine elsewhere and read. `writing` holds the slot plus one.
+bool editor_claims(AnnouncementPage& page, u64 frame_id, Occupancy& occupancy) noexcept {
+    page.set_held_for_test(held_pack(frame_id, kContended));
+    const bool free = page.writing_for_test() != kContended + 1U;
+    if (free) {
+        occupancy.enter();
+        occupancy.leave();
+    }
+    page.set_held_for_test(0);
+    return free;
+}
+
+}  // namespace
+
 CY_TEST_CASE("the two-flag reservation never lets both sides into one slot") {
     // The classic two-flag protocol, and its correctness comes from SeqCst on both sides: the
     // engine stores its intent then reads `held`; the editor stores `held` then reads the intent.
-    // In any total order at least one of the two reads sees the other's store.
+    // In any total order at least one of the two reads sees the other's store, so `both_inside`
+    // stays zero however the two threads interleave.
+    //
+    // WHAT IS COUNTED IS DECIDED BY THE PROTOCOL, NOT BY THE SCHEDULER. This case used to assert
+    // that the engine found the slot free at least once in 50 000 racing tries, which depends on
+    // when the scheduler runs each thread: the hosted macOS runner ran the engine's whole loop
+    // while the editor held the slot and failed `wrote_blind > 0` with nothing wrong. Now both
+    // threads start together, race for as long as the editor claims, and each side then makes one
+    // more attempt after the other has finished — which the protocol says must succeed.
     AnnouncementPage page;
     CY_REQUIRE(page.create());
-    constexpr u32 kContended = 2;
-    std::atomic<u64> wrote_blind{0};
-    std::thread engine([&page, &wrote_blind] {
-        for (u32 index = 0; index < 50'000; ++index) {
-            page.set_writing(true, kContended);
-            if (held_slot(page.held()) != kContended) {
-                wrote_blind.fetch_add(1, std::memory_order_relaxed);
-            }
-            page.set_writing(false, 0);
+    Occupancy occupancy;
+    std::atomic<bool> go{false};
+    std::atomic<bool> editor_done{false};
+    u64 wrote = 0;
+    std::thread engine([&] {
+        while (!go.load(std::memory_order_acquire)) {
+        }
+        while (!editor_done.load(std::memory_order_acquire)) {
+            wrote += engine_reserves(page, occupancy) ? 1U : 0U;
         }
     });
-    u64 claimed_blind = 0;
+    go.store(true, std::memory_order_release);
+    u64 claimed = 0;
     for (u64 frame_id = 1; frame_id < 50'000; ++frame_id) {
-        page.set_held_for_test(held_pack(frame_id, kContended));
-        // The editor's half of the same protocol; `AnnouncementPage` has no reader for `writing`
-        // because the engine never needs one, so the claim is simply released again.
-        claimed_blind += 1;
-        page.set_held_for_test(0);
+        claimed += editor_claims(page, frame_id, occupancy) ? 1U : 0U;
     }
+    editor_done.store(true, std::memory_order_release);
     engine.join();
-    CY_CHECK(wrote_blind.load() > 0);
-    CY_CHECK(claimed_blind > 0);
+
+    // Each side alone: nothing contends, so each must get in.
+    CY_CHECK(engine_reserves(page, occupancy));
+    CY_CHECK(editor_claims(page, 50'000, occupancy));
+    CY_CHECK_EQ(occupancy.both_inside.load(), 0ULL);
+    CY_TEST_MESSAGE("raced: the engine wrote " << wrote << " times, the editor read " << claimed
+                                               << " times");
     CY_CHECK_EQ(page.held(), 0ULL);
+}
+
+CY_TEST_CASE("an engine that only ever found the slot held still writes once it is released") {
+    // The schedule the hosted macOS runner produced, made deterministic: the editor holds the slot
+    // for every one of the engine's attempts. None may write; the first after the release must.
+    AnnouncementPage page;
+    CY_REQUIRE(page.create());
+    Occupancy occupancy;
+    page.set_held_for_test(held_pack(1, kContended));
+    u64 wrote = 0;
+    for (u32 attempt = 0; attempt < 1'000; ++attempt) {
+        wrote += engine_reserves(page, occupancy) ? 1U : 0U;
+    }
+    CY_CHECK_EQ(wrote, 0ULL);
+    page.set_held_for_test(0);
+    CY_CHECK(engine_reserves(page, occupancy));
+    CY_CHECK_EQ(occupancy.both_inside.load(), 0ULL);
 }

@@ -6,6 +6,7 @@
 #include <cy/ui/paint.h>
 
 #include <cmath>
+#include <cstring>
 #include <string_view>
 
 using namespace cy;
@@ -65,6 +66,70 @@ CY_TEST_CASE("ui_toolkit: every widget kind is made, named for its type, and lai
         CY_TEST_INFO(std::string_view(widget_kind_name(kind)));
         CY_CHECK_EQ(kit.rect(child).height > 0.0F, sized);
     }
+}
+
+namespace {
+
+/// Overwrites every block before freeing it, so that a read through a reference into storage an
+/// `Array` reallocated away sees garbage on every build, not only under AddressSanitizer.
+class ScribblingAllocator final : public Allocator {
+public:
+    ScribblingAllocator() noexcept : Allocator(MemoryDomain::Engine, "ui-toolkit-test-scribbler") {}
+
+protected:
+    [[nodiscard]] void* do_allocate(usize size, usize alignment) noexcept override {
+        return allocator().allocate(size, alignment);
+    }
+    [[nodiscard]] void* do_reallocate(void* pointer, usize old_size, usize new_size,
+                                      usize alignment) noexcept override {
+        return reallocate_by_copy(pointer, old_size, new_size, alignment);
+    }
+    void do_deallocate(void* pointer, usize size, usize alignment) noexcept override {
+        std::memset(pointer, 0xA5, size);
+        allocator().deallocate(pointer, size, alignment);
+    }
+};
+
+}  // namespace
+
+CY_TEST_CASE(
+    "ui_toolkit: a radio group made as a tab page gets its tab when its radios move the "
+    "widget records") {
+    // THE NIGHTLY ASan LEG'S heap-use-after-free. `create` held a reference to the new widget's
+    // record across `build`, which makes a radio group's radios and so can reallocate every record,
+    // then read the parent through it. Under a parent that does nothing on attach the stale read
+    // went unseen; under tabs it decides whether the page gets a tab.
+    ScribblingAllocator scribbler;
+    ElementStore store{allocator()};
+    cy::text::TextServer server;
+    TextPainter text{allocator()};
+    Toolkit toolkit{scribbler, store, text};
+    cy::text::TextServerConfig config;
+    config.atlas.initial_extent = 256;
+    config.atlas.maximum_extent = 256;
+    CY_REQUIRE(server.start(config).has_value());
+    CY_REQUIRE(text.start(server, builtin_font(), 1).has_value());
+    CY_REQUIRE(toolkit.start().has_value());
+
+    WidgetDesc tabs_desc;
+    tabs_desc.kind = WidgetKind::Tabs;
+    const auto tabs = toolkit.create(kNoElement, tabs_desc);
+    CY_REQUIRE(tabs.has_value());
+    // Enough radios that the record array grows while the group is being built.
+    constexpr u32 kItems = 48;
+    std::string_view items[kItems];
+    for (std::string_view& item : items) {
+        item = "Option";
+    }
+    WidgetDesc group;
+    group.kind = WidgetKind::RadioGroup;
+    group.items = Span<const std::string_view>(items, kItems);
+    const u32 before = toolkit.widget_count();
+    const auto page = toolkit.create(*tabs, group);
+    CY_REQUIRE(page.has_value());
+    CY_CHECK_EQ(toolkit.parent(*page), *tabs);
+    // The group, one radio per item, and the tab its parent made for it.
+    CY_CHECK_EQ(toolkit.widget_count(), before + 1U + kItems + 1U);
 }
 
 CY_TEST_CASE("ui_toolkit: a button is a box around its label, sized by the theme and its text") {

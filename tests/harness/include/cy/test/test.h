@@ -138,6 +138,15 @@ inline constexpr unsigned long long kStallMultiplier = 100;
 /// of suites failing each run while every one of them passed alone. `budget.cpp` carries the
 /// per-suite measurement and the constant. The tier's real number is enforced unchanged in the
 /// three configurations compiled the way a shipped game is, and `four-profiles` runs all four.
+///
+/// AN OVERRUN IS RE-MEASURED BEFORE IT IS BELIEVED, by running the case again. CPU time on a shared
+/// runner is not the case's alone: a noisy neighbour's cache and memory traffic, an SMT sibling and
+/// a hypervisor all add cycles to it, and the reference workload cannot see them, because it runs
+/// in registers. Noise only ever adds, so the FASTEST of up to five runs is the case's own cost,
+/// and that is what the budget is held to: a real regression is over in every run, a noisy one is
+/// not. `remeasure` is the half CY_TEST_CASE calls once the body has returned; `budget_repeats()`
+/// says when it may run the body again, and the README has why this is the tolerance
+/// `testing-and-quality` asks for rather than a raised number.
 class BudgetGuard {
 public:
     BudgetGuard(const char* name, unsigned long long budget_ns, const char* file, int line);
@@ -146,7 +155,28 @@ public:
     BudgetGuard(const BudgetGuard&) = delete;
     BudgetGuard& operator=(const BudgetGuard&) = delete;
 
+    /// Stops the clocks for the run that just returned and, if that run was over budget and the
+    /// case may be run again (see `may_remeasure`), runs `body` up to `budget_repeats()` more
+    /// times, keeping the fastest. Not reached when the body threw; the destructor then judges the
+    /// one run.
+    void remeasure(void (*body)());
+
+    /// One run of a case, as the four clocks saw it.
+    struct Sample {
+        unsigned long long cpu_ns = 0;
+        unsigned long long wall_ns = 0;
+        unsigned long long contended_ns = 0;
+        unsigned long long blocked_ns = 0;
+        bool host_sampled = false;
+    };
+
 private:
+    /// Reads the clocks against the guard's start, and ends its host-blocking session.
+    [[nodiscard]] Sample stop() noexcept;
+    /// The budget the case is held to after `cpu_ns`: the calibrated one, or a fresh calibration's
+    /// when the first looks too tight. See `second_opinion_scale` in budget.cpp.
+    [[nodiscard]] unsigned long long budget_after(unsigned long long cpu_ns) const;
+
     const char* name_;
     const char* file_;
     int line_;
@@ -163,7 +193,31 @@ private:
     unsigned long long started_blocked_ns_;
     unsigned long long started_cpu_ns_;
     unsigned long long started_wall_ns_;
+    /// Set by `remeasure`: the run the verdict is about, and what the first run cost.
+    bool measured_ = false;
+    Sample sample_{};
+    unsigned long long judged_budget_ns_ = 0;
+    unsigned long long first_cpu_ns_ = 0;
+    unsigned runs_ = 1;
 };
+
+/// How many more times an over-budget case may be run before its overrun is believed: four, so
+/// the verdict is on the fastest of five, or `CY_TEST_BUDGET_REPEATS` (0 judges the first run
+/// alone, which is how a regression is shown red against the old behaviour).
+unsigned budget_repeats() noexcept;
+
+/// Whether a case whose run cost `cpu_ns` may be run again. A pure function, so the rule is tested
+/// without a case that has to be slow: never when the run failed a check (the overrun is beside the
+/// point, and a second run could only add noise to the report), never inside a subcase (doctest
+/// walks subcases by re-entering the case, and a run it did not start would break the walk), and
+/// never when the process's re-measuring allowance — twenty seconds of CPU, a third of the unit
+/// tier's CTest timeout — could not pay for one more run of this one.
+bool may_remeasure(unsigned long long cpu_ns, int failed_checks, bool entered_subcase,
+                   unsigned long long allowance_left_ns) noexcept;
+
+/// How many cases this binary passed only because a re-run was within budget. Each is also
+/// reported on stderr with both figures, so that a case which needs it every run is visible.
+unsigned long long remeasured_cases() noexcept;
 
 /// The scale applied to every budget, resolved once from the environment. Exposed so that a test of
 /// the harness can state what it is running under rather than guess.
@@ -380,6 +434,7 @@ struct StringMaker<::cy::test::Near> {
         ::cy::test::BudgetGuard cy_test_budget_guard_{name, CY_TEST_BUDGET_NS, __FILE__, \
                                                       __LINE__};                         \
         fn();                                                                            \
+        cy_test_budget_guard_.remeasure(fn);                                             \
     }                                                                                    \
     static void fn()
 

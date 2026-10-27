@@ -35,8 +35,28 @@ its budget but holds the suite for more than **a hundred times** it is reported 
 than as slow, because that is what waiting on a sleep, a lock, a read or a joined thread looks like
 — and `testing-and-quality` puts all four in `integration/` or above.
 
+**An overrun is re-measured before it is believed.** CPU time on a shared CI runner still carries a
+neighbour's cache traffic, so a case over its budget is run up to four more times and judged on the
+fastest run: noise only ever adds, and a regression is over every time. A case that passes this way
+prints `cy::test: re-measured:` with both figures; one that is still over fails "on the fastest of 5
+runs". A case that failed a check, or that has subcases, is judged on its one run.
+`CY_TEST_BUDGET_REPEATS` sets the count, and `0` judges the first run alone — use it to see a
+marginal case fail. A case that is `re-measured:` on every run belongs in the next suite up.
+`tests/harness/README.md` has the evidence and why this, rather than a larger budget or a separate
+performance job, is the tolerance `testing-and-quality` asks for.
+
 `CY_TEST_BUDGET_SCALE` relaxes both limits for one run — it defaults to 20 under a sanitizer, where
 the slowdown is the tool working — and `CY_TEST_BUDGET_SCALE=0` switches them off.
+
+**Timing a test asserts itself follows the same rules.** A figure a case measures and checks — a
+per-unit cost, a tick time — is CPU time, is the fastest of several windows, and when it compares
+two measurements, alternates them so that one burst of noise lands on both (`integration.vfx`'s
+scaling case). An absolute figure is relaxed by `cy::test::kSanitizedAllowance` in a sanitized
+build. A case that races threads asserts what the protocol guarantees, never how the scheduler
+happened to interleave them: `integration.viewport_publisher` used to require that the engine find
+the slot free at least once in 50 000 racing tries, and the macOS runner ran the engine's whole loop
+while the editor held it; it now checks that the two sides were never inside together, and that each
+gets in once the other has finished.
 
 ## Writing a test
 

@@ -99,6 +99,32 @@ CY_TEST_CASE("harness: the budget scale is whatever the environment asked for, z
     }
 }
 
+CY_TEST_CASE("harness: an over-budget case is run again only when that cannot hide a failure") {
+    // The rule `BudgetGuard::remeasure` applies before it runs a case a second time, as arithmetic.
+    // `integration.harness` runs the real guard over the probes that need a slow case.
+    constexpr unsigned long long kMillisecond = 1'000'000ULL;
+    constexpr unsigned long long kPlenty = 20'000ULL * kMillisecond;
+    CY_CHECK(cy::test::may_remeasure(3 * kMillisecond, 0, false, kPlenty));
+    // A case that failed a check has failed, whatever it cost.
+    CY_CHECK_FALSE(cy::test::may_remeasure(3 * kMillisecond, 1, false, kPlenty));
+    // doctest re-enters a case to walk its subcases, and a run it did not start breaks that walk.
+    CY_CHECK_FALSE(cy::test::may_remeasure(3 * kMillisecond, 0, true, kPlenty));
+    // The process's allowance must pay for one more run of this one.
+    CY_CHECK(cy::test::may_remeasure(3 * kMillisecond, 0, false, 3 * kMillisecond));
+    CY_CHECK_FALSE(cy::test::may_remeasure(3 * kMillisecond, 0, false, (3 * kMillisecond) - 1));
+    CY_CHECK_FALSE(cy::test::may_remeasure(1, 0, false, 0));
+}
+
+CY_TEST_CASE(
+    "harness: an overrun is believed after four more runs, or what the environment asked") {
+    const char* requested = std::getenv("CY_TEST_BUDGET_REPEATS");
+    if (requested == nullptr || *requested == '\0') {
+        CY_CHECK_EQ(cy::test::budget_repeats(), 4U);
+        return;
+    }
+    CY_CHECK_LE(cy::test::budget_repeats(), 100U);
+}
+
 CY_TEST_CASE("harness: the suite's budget is the one the taxonomy gives its kind") {
     // A unit suite, so one millisecond. This restates tests/CMakeLists.txt on purpose: the budget
     // reaches the binary as a compiled-in definition, and a suite declared outside cy_add_test()

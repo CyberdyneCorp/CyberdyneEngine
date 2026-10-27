@@ -319,13 +319,31 @@ build-editor-format:
 #
 # So the version comes from `rust-toolchain.toml`, which is the file rustup itself reads, and
 # `crates/cy-editor-app/tests/toolchain.rs` fails if it and `editor/Cargo.toml` ever disagree.
+#
+# AN INSTALL THAT DID NOT TAKE IS REMOVED AND MADE AGAIN, up to three times. A nightly shard's rustup
+# reported the toolchain "installed - (error reading rustc version)" and then "'cargo' is not
+# installed" (run 40266516833): a download that ended short leaves a toolchain rustup believes is
+# there, and every later install call answers "unchanged". Running `rustc` and `cargo` through it is
+# the only check that sees that.
 build-editor-toolchain:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{root}}"
     version="$(just _editor-toolchain)"
     echo "==> toolchain   ${version}, from rust-toolchain.toml"
-    rustup toolchain install "${version}" --profile minimal --component rustfmt --component clippy
+    for attempt in 1 2 3; do
+        rustup toolchain install "${version}" --profile minimal --component rustfmt --component clippy
+        if rustup run "${version}" rustc --version >/dev/null 2>&1 &&
+           rustup run "${version}" cargo --version >/dev/null 2>&1; then
+            break
+        fi
+        if [ "${attempt}" = 3 ]; then
+            echo "build-editor-toolchain: ${version} is installed but rustc or cargo does not run, three times" >&2
+            exit 1
+        fi
+        echo "==> toolchain   ${version} does not run (attempt ${attempt}); removing it and installing again" >&2
+        rustup toolchain uninstall "${version}"
+    done
     rustup default "${version}"
     cargo --version
     rustc --version

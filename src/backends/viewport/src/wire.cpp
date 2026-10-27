@@ -182,6 +182,10 @@ void AnnouncementPage::set_held_for_test(u64 packed) noexcept {
     }
 }
 
+u64 AnnouncementPage::writing_for_test() const noexcept {
+    return (state_ == nullptr) ? 0U : state_->writing.load(std::memory_order_seq_cst);
+}
+
 // --- Ring ---------------------------------------------------------------------------------------
 
 Status Ring::resize(u32 count) noexcept {

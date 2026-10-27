@@ -10,11 +10,28 @@
 //
 // The one thing added to doctest's main is `warm_process_image()`, before any case runs: paging in
 // the executable is the process's cost, and charged to whichever case ran first it took a case
-// over its budget on the macOS runner. See cy/test/test.h.
+// over its budget on the macOS runner. See cy/test/test.h. The other is `current_case_state()`,
+// which the budget guard asks before it runs an over-budget case again.
 
 #define DOCTEST_CONFIG_IMPLEMENT
 
 #include <cy/test/test.h>
+
+#include "case_state.h"
+
+namespace cy::test::detail {
+
+// doctest's own bookkeeping, which nothing outside its implementation can name. Both fields are
+// reset by doctest itself: the failure count when a case starts, `reachedLeaf` before each pass.
+CaseState current_case_state() noexcept {
+    const doctest::detail::ContextState* state = doctest::detail::g_cs;
+    if (state == nullptr) {
+        return {};
+    }
+    return {static_cast<int>(state->numAssertsFailedCurrentTest_atomic), state->reachedLeaf};
+}
+
+}  // namespace cy::test::detail
 
 int main(int argc, char** argv) {
     (void)cy::test::warm_process_image();

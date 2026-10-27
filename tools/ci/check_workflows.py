@@ -612,6 +612,12 @@ def swift_drift(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str]:
 BUILD_JOB = "build"
 PACK = "just ci-build-tree-pack"
 UNPACK = "just ci-build-tree-unpack"
+#: A download of the tree can end short and pass (nightly runs 40059896233, 40159825948 and
+#: 40266516833 lost ten jobs to it), so a job checks what arrived and downloads it again when it is
+#: not what the build job packed, before it unpacks.
+VERIFY = "just ci-build-tree-verify"
+#: And fetches it again by another transport: a second `actions/download-artifact` ended short too.
+FETCH = "just ci-build-tree-fetch"
 TREE_ARTEFACT = "build-tree-"
 STEP_START = re.compile(r"^      - ")
 NEEDS_KEY = re.compile(r"^    needs:\s*(?P<inline>.*?)\s*$")
@@ -696,6 +702,14 @@ def build_tree_handoff(root: pathlib.Path, workflows: list[pathlib.Path]) -> lis
             if not 0 <= downloaded < unpacked:
                 problems.append(f"{path.name}:{line} job '{job}' runs `{UNPACK}` without first "
                                 f"downloading a `{TREE_ARTEFACT}` artefact")
+            verified = _first(steps, lambda step: VERIFY in step)
+            again = [index for index, step in enumerate(steps)
+                     if verified < index < unpacked and FETCH in step]
+            if not (downloaded < verified < unpacked and again):
+                problems.append(f"{path.name}:{line} job '{job}' unpacks the tree without "
+                                f"`{VERIFY}` after its download and `{FETCH}` after that, "
+                                "so a download that ended short fails the job instead of being "
+                                "fetched again")
             late = [index for index, step in enumerate(steps)
                     if index > unpacked and (CACHE_ACTION.search(step)
                                              or EDITOR_BUILD.search(step))]
@@ -1299,6 +1313,9 @@ def selftest(root: pathlib.Path) -> int:
         download = ("      - uses: actions/download-artifact@v5\n        with:\n"
                     "          name: build-tree-x\n")
         unpack = "      - run: just ci-build-tree-unpack\n"
+        verify = ("      - id: build-tree\n        run: just ci-build-tree-verify\n"
+                  "      - if: steps.build-tree.outputs.intact != 'true'\n"
+                  "        run: just ci-build-tree-fetch build-tree-x\n")
         cache = "      - uses: actions/cache@v5\n        with:\n          path: build/dev\n"
         editor = "      - run: just build-editor\n"
 
@@ -1320,9 +1337,13 @@ def selftest(root: pathlib.Path) -> int:
              "a test job that rebuilds rather than unpacks"),
             (pack, unpack, "without first downloading",
              "an unpack with no artefact downloaded"),
-            (pack, download + unpack + editor, "after `just ci-build-tree-unpack`",
+            (pack, download + unpack, "a download that ended short",
+             "an unpack of a download nobody verified"),
+            (pack, download + verify.split("      - if:")[0] + unpack, "a download that ended short",
+             "a verified download with no fetch to fall back on"),
+            (pack, download + verify + unpack + editor, "after `just ci-build-tree-unpack`",
              "an editor build after the sources were dated back"),
-            (pack, download + unpack + cache.replace("build/dev", "build/editor"),
+            (pack, download + verify + unpack + cache.replace("build/dev", "build/editor"),
              "after `just ci-build-tree-unpack`",
              "a cache restored after the sources were dated back"),
         )
@@ -1334,7 +1355,7 @@ def selftest(root: pathlib.Path) -> int:
                 failed += 1
                 print(f"fail {description} was accepted: {found or ['nothing']}",
                       file=sys.stderr)
-        found = handoff_of(pack, editor + download + unpack)
+        found = handoff_of(pack, editor + download + verify + unpack)
         if found:
             failed += 1
             print(f"fail the hand-off itself was rejected: {found}", file=sys.stderr)

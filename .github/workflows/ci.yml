@@ -284,7 +284,9 @@ jobs:
       - uses: actions/upload-artifact@v5
         with:
           name: build-tree-${{ matrix.label }}
-          path: build-tree.tar.zst
+          path: |
+            build-tree.tar.zst
+            build-tree.tar.zst.digest
           retention-days: 1
           compression-level: 0
           if-no-files-found: error
@@ -383,6 +385,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-${{ matrix.label }}
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-${{ matrix.label }}
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       - name: Unit, integration and smoke
@@ -505,11 +517,27 @@ jobs:
   # `continue-on-error` is deliberately absent. A nightly job that is allowed to fail is a nightly
   # job nobody reads; if this is red, the sanitizer found something and someone has to look.
   sanitize-nightly:
-    name: every suite under every sanitizer (nightly)
+    name: every suite under ${{ matrix.name }} (nightly)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    # Three instrumented builds and the whole test set through each. The default six hours would let
-    # a hung suite hold a runner for a shift; the graduated recipes' own budgets are minutes.
+    # ONE SANITIZER A JOB. The three instrumented builds and test sets ran as steps of one job until
+    # October 2026 and had outgrown its 120 minutes: TSan 46 min, ASan+UBSan 49 min, and UBSan alone
+    # cancelled at the limit (run 40488974451) — five of the ten nightlies before it were cancelled
+    # the same way, reported as nothing more specific than "cancelled". Each tool is now a job with
+    # the limit to itself, and a failure names the tool in the job list. `fail-fast: false`, so one
+    # tool's finding does not hide another's.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: ThreadSanitizer, sanitizer: thread}
+          - {name: AddressSanitizer and UndefinedBehaviorSanitizer, sanitizer: 'address,undefined'}
+          # UBSan alone as well as combined: ASan changes allocation layout, and an alignment or
+          # object-lifetime finding that only appears without it is exactly the kind the combined
+          # run can hide.
+          - {name: UndefinedBehaviorSanitizer alone, sanitizer: undefined}
+    # One instrumented build and the whole test set through it. The default six hours would let a
+    # hung suite hold a runner for a shift; the graduated recipes' own budgets are minutes.
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
@@ -524,17 +552,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       # Each sanitizer gets its own tree, which the recipe arranges; TSan cannot be combined with
-      # ASan, so this is three builds rather than two. They are separate steps so that a failure
-      # names the tool that found it in the step list rather than only in the log.
-      - name: Every suite under ThreadSanitizer
-        run: just test-sanitize --sanitizer thread --tests .
-      - name: Every suite under AddressSanitizer and UndefinedBehaviorSanitizer
-        run: just test-sanitize --sanitizer address,undefined --tests .
-      # UBSan alone as well as combined: ASan changes allocation layout, and an alignment or
-      # object-lifetime finding that only appears without it is exactly the kind the combined run
-      # can hide.
-      - name: Every suite under UndefinedBehaviorSanitizer alone
-        run: just test-sanitize --sanitizer undefined --tests .
+      # ASan, so this is three builds rather than two.
+      - name: Every suite under ${{ matrix.name }}
+        run: just test-sanitize --sanitizer ${{ matrix.sanitizer }} --tests .
 
   # --- The world: the ECS, the node façade, the cook, and the state hash ---------------------------
   #
@@ -573,6 +593,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # A structural change attempted mid-iteration is refused and counted, in every profile — a
@@ -644,6 +674,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # The milestone's whole point: a pass declares reads and writes, and the graph derives the
@@ -729,6 +769,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # The compatibility obligation, and it needs no build: it is a comparison between the header
@@ -862,6 +912,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # The importer's purity and the cache's honesty, neither of which a functional test notices
@@ -926,6 +986,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # Cell identity, spatial binding, the ECS-native cook, layers, HLOD and the overlay that
@@ -1024,6 +1094,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       - name: An agent composes, authors, is refused, and is told what it spent
@@ -1771,6 +1851,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # m11d5: `milestone-m11d5` reached `state = "green"` in gates.toml in the same commit that moved
@@ -1855,6 +1945,16 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-${{ matrix.label }}
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Fetched
+      # again through the REST API when what arrived is not what was packed.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-${{ matrix.label }}
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       - name: The exit criteria pinned to this system, evaluated once each

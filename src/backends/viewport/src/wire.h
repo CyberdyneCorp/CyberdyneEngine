@@ -187,6 +187,11 @@ public:
     /// engine never writes it.
     void set_held_for_test(u64 packed) noexcept;
 
+    /// The engine's declared intent, as the editor reads it: the slot plus one, or zero. **Tests
+    /// only** — the engine never reads its own word, and the editor reads it across the process
+    /// boundary.
+    [[nodiscard]] u64 writing_for_test() const noexcept;
+
 private:
     int descriptor_ = -1;
     SharedState* state_ = nullptr;
