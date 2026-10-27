@@ -45,7 +45,7 @@ direction without sliding feet, feet that stand on stairs and slopes, and an aim
   bodies and triggers skipped) and `TerrainGroundProbe` (a terrain query, holes refused).
 - **Cooked programs** gain version 2, appending the five tables; a program without them stays
   version 1, byte for byte.
-- **ABI 1.13** appends `animation_aim_at` and `animation_foot_placement` (`CyFootPlacement`);
+- **ABI 1.14** appends `animation_aim_at` and `animation_foot_placement` (`CyFootPlacement`);
   CyberdyneKit adds `Animator.locomotion(velocity:facing:)`, `setLocomotion`, `aim(_:at:)` and
   `footPlacement`; the Swift overlay and the Rust SDK are regenerated.
 - **Editor.** The engine's animation catalogue offers the four nodes with their properties (vector

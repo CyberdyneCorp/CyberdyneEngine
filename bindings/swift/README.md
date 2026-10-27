@@ -361,7 +361,7 @@ Tested through `FakeEngine` in `SystemEngineTests.swift`, `TreeCallbackTests.swi
 * **`AnimationName`** — a state or event name as it crosses: `CY_NAME_HASH`, FNV-1a 64 of the text,
   comparable with a string literal. No engine pointer escapes a game entry, so the text does not.
 * **`RootMotionMode`** and **`AnimationTier`** are generated from `cy_abi.h`.
-* **ABI 1.13 (issue #92)** — `Animator.locomotion(velocity:facing:)` turns a velocity into the
+* **ABI 1.14 (issue #92)** — `Animator.locomotion(velocity:facing:)` turns a velocity into the
   speed and direction (degrees from forward, positive to the right) a locomotion blend space reads,
   `setLocomotion(speed:direction:)` sets both from a behaviour, `aim(_:at:)` points the program's
   aim at a world point (`animation_aim_at`, fixed update), and `footPlacement(_:)` returns a

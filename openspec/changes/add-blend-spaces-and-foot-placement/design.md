@@ -51,10 +51,10 @@ nothing for empty tables; the cooked record stays version 1). A `pose.foot_ik` a
 tier that skips modifiers, or with no ground copies its input: integration.animation_system compares
 the published matrices of the three against a program without the node, byte for byte.
 
-## ABI 1.13
+## ABI 1.14
 
 `animation_aim_at` takes a world point into model space through the entity's propagated
 `WorldTransform`, checks all three target parameters exist before writing any, and is simulation
 (`[N F]`). `animation_foot_placement` reports a solve (`CyFootPlacement`, 68 bytes) and is
 presentation (`[N U]`). Both are non-pure virtuals on `AnimationBackend`, so a backend written
-against 1.12 answers `UNAVAILABLE`.
+against 1.13 answers `UNAVAILABLE`.

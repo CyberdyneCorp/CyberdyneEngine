@@ -642,7 +642,7 @@ In a graph, `pose.foot_ik` names the joints; `AnimationRig::bind` resolves them
 (`unresolved_joints()` counts names the skeleton lacks, whose instructions pass the pose through),
 and `set_foot_placement(index, setup)` replaces a setup. `AnimationSystem::foot_placement(entity)`
 returns the last solve's `FootPlacementReport` (hips, per-foot offset, ground, normal, reached), and
-ABI 1.13's `animation_foot_placement` returns it to a game.
+ABI 1.14's `animation_foot_placement` returns it to a game.
 
 Measured on the course of `samples/09b-animated-character --course` (Mixamo walk, six 16 cm steps, a
 12° ramp): the standing foot's sole is 12.9 mm from the ground on average over the stairs, the
@@ -846,7 +846,7 @@ engine pointer escapes a game entry. The phases follow the rule the other game s
 character does is `N F`, the frame's events and a joint's pose are `N U`, everything else is read
 anywhere. `src/abi/README.md` has the per-entry table; `docs/guides/swift.md` the Swift side.
 
-**ABI 1.13 (issue #92)** adds the two entries a blend space, foot placement and an aim need beyond
+**ABI 1.14 (issue #92)** adds the two entries a blend space, foot placement and an aim need beyond
 `animation_set_float`:
 
 ```swift

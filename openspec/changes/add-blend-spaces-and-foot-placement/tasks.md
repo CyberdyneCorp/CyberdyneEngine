@@ -12,7 +12,7 @@
       integration.animation_system cases (slope, off byte-identical, workers).
 - [x] `cy::animation-ground` with integration.animation_ground.
 - [x] Cooked program version 2; integration.animation_assets case.
-- [x] ABI 1.13 (`animation_aim_at`, `animation_foot_placement`), thunks, adapter, baseline, Swift
+- [x] ABI 1.14 (`animation_aim_at`, `animation_foot_placement`), thunks, adapter, baseline, Swift
       overlay, Rust SDK; unit.abi, integration.game_backend_animation, CyberdyneKit tests.
 - [x] Editor catalogue, vector literals, preview ground; editor backend and Rust tests.
 - [x] `--course` in samples/09b-animated-character and `just capture-foot-placement`; images and
