@@ -48,6 +48,15 @@ public:
                                                    CyRootMotionMode mode) noexcept = 0;
     [[nodiscard]] virtual CyResult joint_pose(CyEntity entity, const char* joint,
                                               CyPose& out) const noexcept = 0;
+
+    // --- ABI 1.14. Not pure: a backend written against 1.13 answers UNAVAILABLE. ---
+
+    /// `animation_aim_at`: `point` is finite and in the world; `target` is not null.
+    [[nodiscard]] virtual CyResult aim_at(CyEntity entity, const char* target,
+                                          const f32 (&point)[3]) noexcept;
+    /// `animation_foot_placement`. `out` is whole; the thunk writes the caller's prefix.
+    [[nodiscard]] virtual CyResult foot_placement(CyEntity entity, u32 index,
+                                                  CyFootPlacement& out) const noexcept;
 };
 
 }  // namespace cy::abi::game

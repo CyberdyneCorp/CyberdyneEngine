@@ -74,6 +74,11 @@ public:
     CyResult take_root_motion(CyEntity entity, CyRootMotion& out) noexcept override;
     CyResult set_root_motion(CyEntity entity, CyRootMotionMode mode) noexcept override;
     CyResult joint_pose(CyEntity entity, const char* joint, CyPose& out) const noexcept override;
+    /// ABI 1.14: the world point taken into the entity's model space through its placement, and
+    /// written to the aim's three target parameters.
+    CyResult aim_at(CyEntity entity, const char* target, const f32 (&point)[3]) noexcept override;
+    CyResult foot_placement(CyEntity entity, u32 index,
+                            CyFootPlacement& out) const noexcept override;
 
     /// The entities whose root motion drives a character, in entity order.
     [[nodiscard]] Span<const CyEntity> character_driven() const noexcept { return driven_.span(); }

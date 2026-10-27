@@ -427,6 +427,11 @@ ENTRIES: dict[str, Entry] = {
                                  doc="Set a camera's weapon view: its layers, lens and shadows."),
     "viewmodel_get": Entry(("engine", "camera", "into"), result="fallible",
                            doc="A camera's weapon view as it was set."),
+    # 1.14: foot placement and aim
+    "animation_aim_at": Entry(("engine", "entity", "target", "point"), result="fallible",
+                              doc="Point a character's aim at a place in the world."),
+    "animation_foot_placement": Entry(("engine", "entity", "index", "into"), result="fallible",
+                                      doc="What a character's foot placement stood on."),
 }
 
 RESULT_KINDS = frozenset({"value", "fallible"})

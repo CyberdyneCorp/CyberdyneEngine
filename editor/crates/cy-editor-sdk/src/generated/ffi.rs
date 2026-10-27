@@ -1424,6 +1424,24 @@ pub struct CyViewmodelDesc {
     pub reserved: u32,
 }
 
+/// `CyFootPlacement` — 68 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyFootPlacement {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `float` at byte 8.
+    pub pelvis: f32,
+    /// `float[2]` at byte 12.
+    pub offset: [f32; 2],
+    /// `float[6]` at byte 20.
+    pub ground: [f32; 6],
+    /// `float[6]` at byte 44.
+    pub normal: [f32; 6],
+}
+
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -1438,7 +1456,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 1512 bytes, 8-byte aligned.
+/// `CyInterface` — 1528 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -2020,6 +2038,13 @@ pub struct CyInterface {
     /// `CyResult(*)(CyEngine, CyCamera, CyViewmodelDesc*)` at byte 1504.
     pub viewmodel_get:
         Option<unsafe extern "C" fn(CyEngine, CyCamera, *mut CyViewmodelDesc) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const char*, const float*)` at byte 1512.
+    pub animation_aim_at: Option<
+        unsafe extern "C" fn(CyEngine, CyEntity, *const ::std::ffi::c_char, *const f32) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyEntity, uint32_t, CyFootPlacement*)` at byte 1520.
+    pub animation_foot_placement:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, u32, *mut CyFootPlacement) -> i32>,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -2249,5 +2274,7 @@ impl CyInterface {
         first_person_release: None,
         viewmodel_configure: None,
         viewmodel_get: None,
+        animation_aim_at: None,
+        animation_foot_placement: None,
     };
 }

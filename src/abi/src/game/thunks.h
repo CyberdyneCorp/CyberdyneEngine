@@ -221,4 +221,10 @@ CyResult first_person_release(CyEngine engine, CyCamera camera);
 CyResult viewmodel_configure(CyEngine engine, CyCamera camera, const CyViewmodelDesc* desc);
 CyResult viewmodel_get(CyEngine engine, CyCamera camera, CyViewmodelDesc* out_desc);
 
+// --- 1.14: foot placement and aim
+CyResult animation_aim_at(CyEngine engine, CyEntity entity, const char* target,
+                          const float* point_xyz);
+CyResult animation_foot_placement(CyEngine engine, CyEntity entity, uint32_t index,
+                                  CyFootPlacement* out_placement);
+
 }  // namespace cy::abi::game

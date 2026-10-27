@@ -17,6 +17,11 @@
 // alone. The frame's events and a joint's pose are presentation, read in `onUpdate`. Everything
 // else answers in every phase.
 //
+// BLEND SPACES, AIM AND FEET (ABI 1.14). A locomotion blend space's axes are parameters, set from a
+// behaviour every fixed update (`setLocomotion`, with `Animator.locomotion(velocity:facing:)` to
+// derive them); an aim points at a world position (`aim(_:at:)`); and `footPlacement` reports what
+// the feet stood on.
+//
 // NAMES. A state or an event comes back as an `AnimationName`: the 64-bit FNV-1a hash of its text,
 // `CY_NAME_HASH`, which compares against a string literal directly — `state.state == "walk"`.
 
@@ -260,6 +265,145 @@ public struct Animator: Hashable, Sendable {
             try engine.animationJointPose(entity: entity.bits, joint: $0, into: &raw)
         }
         return Pose(raw)
+    }
+}
+
+// --- ABI 1.14: blend spaces driven from a behaviour, aim and foot placement ----------------------
+
+extension Animator {
+    /// The two axes a locomotion blend space reads, from a velocity: how fast the character moves
+    /// over the ground (`speed`, metres a second, the vertical ignored) and which way relative to
+    /// where it faces (`direction`, degrees: 0 ahead along −Z, 90 to its right along +X, ±180
+    /// behind). `facing` is the character's rotation in the world.
+    public static func locomotion(velocity: Vec3, facing: Quat) -> (speed: Float, direction: Float)
+    {
+        // The velocity in the character's own frame: the inverse of `facing` applied to it.
+        let q = Quat(x: -facing.x, y: -facing.y, z: -facing.z, w: facing.w)
+        let t = Vec3(
+            x: 2 * (q.y * velocity.z - q.z * velocity.y),
+            y: 2 * (q.z * velocity.x - q.x * velocity.z),
+            z: 2 * (q.x * velocity.y - q.y * velocity.x))
+        let local = Vec3(
+            x: velocity.x + q.w * t.x + (q.y * t.z - q.z * t.y),
+            y: velocity.y + q.w * t.y + (q.z * t.x - q.x * t.z),
+            z: velocity.z + q.w * t.z + (q.x * t.y - q.y * t.x))
+        let speed = (local.x * local.x + local.z * local.z).squareRoot()
+        if speed < 1e-4 {
+            return (0, 0)
+        }
+        let direction = Animator.atan2(local.x, -local.z) * 180 / Float.pi
+        return (speed, direction)
+    }
+
+    /// The angle of (x, y) from +y towards +x, in radians: Cephes' `atanf` with its range
+    /// reduction, accurate to a few ulps. CyberdyneKit imports no Foundation, so it has no libm.
+    static func atan2(_ x: Float, _ y: Float) -> Float {
+        if y == 0 {
+            return x > 0 ? Float.pi / 2 : (x < 0 ? -Float.pi / 2 : 0)
+        }
+        func atan(_ value: Float) -> Float {
+            let sign: Float = value < 0 ? -1 : 1
+            var t = abs(value)
+            var base: Float = 0
+            if t > 2.414_213_6 {
+                base = Float.pi / 2
+                t = -1 / t
+            } else if t > 0.414_213_57 {
+                base = Float.pi / 4
+                t = (t - 1) / (t + 1)
+            }
+            let z = t * t
+            let polynomial =
+                (((8.053_744_5e-2 * z - 1.387_768_6e-1) * z + 1.997_771_1e-1) * z
+                    - 3.333_294_9e-1) * z * t + t
+            return sign * (base + polynomial)
+        }
+        let angle = atan(x / y)
+        if y > 0 {
+            return angle
+        }
+        return x >= 0 ? angle + Float.pi : angle - Float.pi
+    }
+
+    /// Set a locomotion blend space's two axes at once — from a behaviour, each fixed update. The
+    /// parameter names are the blend space node's `x_parameter` and `y_parameter`.
+    public func setLocomotion(
+        speed: Float, direction: Float, speedParameter: String = "speed",
+        directionParameter: String = "direction"
+    ) throws {
+        try set(speedParameter, to: speed)
+        try set(directionParameter, to: direction)
+    }
+
+    /// Point the program's aim (its `pose.aim` node, whose `target_parameter` is `target`) at a
+    /// place in the world. The engine takes it into the character's own space. Simulation:
+    /// `onFixedUpdate` or initialisation. The aim's weight is its own parameter.
+    public func aim(_ target: String = "aim", at point: Vec3) throws {
+        let engine = try GameServices.engine()
+        let values = [point.x, point.y, point.z]
+        try target.withCString { name in
+            try values.withUnsafeBufferPointer {
+                try engine.animationAimAt(entity: entity.bits, target: name, point: $0.baseAddress)
+            }
+        }
+    }
+
+    /// What the program's foot placement `index` did when the pose was last evaluated.
+    /// Presentation: `onUpdate`.
+    public func footPlacement(_ index: UInt32 = 0) throws -> FootPlacement {
+        var raw = CyFootPlacement()
+        raw.struct_size = UInt32(MemoryLayout<CyFootPlacement>.size)
+        try GameServices.engine().animationFootPlacement(
+            entity: entity.bits, index: index, into: &raw)
+        return FootPlacement(raw)
+    }
+}
+
+/// What a character's foot placement stood on: `Animator.footPlacement`.
+public struct FootPlacement: Equatable, Sendable {
+    /// One foot.
+    public struct Foot: Equatable, Sendable {
+        /// Ground was found under it.
+        public var onGround: Bool
+        /// Its leg could reach the ground.
+        public var reached: Bool
+        /// Metres it moved along the character's up.
+        public var offset: Float
+        /// The ground under it, in the world.
+        public var ground: Vec3
+        /// The ground's normal there, unit, in the world.
+        public var normal: Vec3
+    }
+
+    /// The last evaluation placed the feet: false while the placement is faded out or there is no
+    /// ground.
+    public var solved: Bool
+    /// Metres the hips moved along the character's up; negative is down.
+    public var pelvis: Float
+    /// The left foot.
+    public var left: Foot
+    /// The right foot.
+    public var right: Foot
+
+    init(_ raw: CyFootPlacement) {
+        solved = raw.flags & CY_FOOT_PLACEMENT_SOLVED != 0
+        pelvis = raw.pelvis
+        let ground = [
+            raw.ground.0, raw.ground.1, raw.ground.2, raw.ground.3, raw.ground.4, raw.ground.5,
+        ]
+        let normal = [
+            raw.normal.0, raw.normal.1, raw.normal.2, raw.normal.3, raw.normal.4, raw.normal.5,
+        ]
+        left = Foot(
+            onGround: raw.flags & CY_FOOT_PLACEMENT_LEFT_GROUND != 0,
+            reached: raw.flags & CY_FOOT_PLACEMENT_LEFT_REACHED != 0, offset: raw.offset.0,
+            ground: Vec3(x: ground[0], y: ground[1], z: ground[2]),
+            normal: Vec3(x: normal[0], y: normal[1], z: normal[2]))
+        right = Foot(
+            onGround: raw.flags & CY_FOOT_PLACEMENT_RIGHT_GROUND != 0,
+            reached: raw.flags & CY_FOOT_PLACEMENT_RIGHT_REACHED != 0, offset: raw.offset.1,
+            ground: Vec3(x: ground[3], y: ground[4], z: ground[5]),
+            normal: Vec3(x: normal[3], y: normal[4], z: normal[5]))
     }
 }
 

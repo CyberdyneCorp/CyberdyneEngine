@@ -353,6 +353,26 @@ every range and flag, `struct_size` both ways; `test_layout.cpp`: the 1.13 layou
 shape) and `integration.game_backend_first_person` (the real behaviours through the table). See
 [the guide](../../docs/guides/first-person-weapon-view.md).
 
+## What ABI 1.14 adds, and why
+
+Issue #92: a character's foot placement and aim. A blend space needs nothing new — its axes are
+program parameters a behaviour sets with `animation_set_float` — but an aim's target is a point in
+the character's MODEL space, which a game does not have, and what the feet stood on is a frame's
+answer. 1.14 appends two entries through non-pure virtuals `cy/abi/game/animation.h` appends, which
+answer UNAVAILABLE for a backend written against 1.13.
+
+| Entries | Phases | Notes |
+|---|---|---|
+| `animation_aim_at` | N F | a world point (`const float*`, three finite floats) taken into model space through the entity's placement as the scene last propagated it, written to the program's `<target>.x`, `.y`, `.z`. NOT_FOUND for no animator or a program without all three, having written none; INVALID_ARGUMENT for a non-finite point |
+| `animation_foot_placement` | N U | `CyFootPlacement` (68 bytes): `CY_FOOT_PLACEMENT_SOLVED`, `_LEFT_GROUND`, `_RIGHT_GROUND`, `_LEFT_REACHED`, `_RIGHT_REACHED`; the hips' and each foot's offset along the character's up; each foot's ground point and normal in the world. `index` is the program's foot placement in graph order; NOT_FOUND past the last |
+
+The ground itself is the host's: `AnimationSystem::set_ground_probe` with a
+`cy::animation::PhysicsGroundProbe` or `TerrainGroundProbe` (`src/animation/ground/`). Tests:
+`unit.abi` (`test_game_animation.cpp`: the phases, the refusals before the backend, `struct_size`
+both ways, a 1.13 backend answering UNAVAILABLE; `test_layout.cpp`: the 1.14 layout; the 1.14 table
+shape) and `integration.game_backend_animation` ('animation abi: an aim takes a world point into the
+character, and feet report': a character two metres out and turned a quarter, on a step).
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved

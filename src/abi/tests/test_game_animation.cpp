@@ -100,6 +100,44 @@ public:
         out.rotation[3] = 1.0F;
         return CY_RESULT_OK;
     }
+    u32 aims = 0;
+    f32 last_point[3] = {};
+    CyResult aim_at(CyEntity, const char*, const f32 (&point)[3]) noexcept override {
+        ++aims;
+        for (u32 axis = 0; axis < 3; ++axis) {
+            last_point[axis] = point[axis];
+        }
+        return CY_RESULT_OK;
+    }
+    CyResult foot_placement(CyEntity, u32 index, CyFootPlacement& out) const noexcept override {
+        if (index != 0) {
+            return cy::abi::report(CY_RESULT_NOT_FOUND, "no such foot placement");
+        }
+        out.flags = CY_FOOT_PLACEMENT_SOLVED | CY_FOOT_PLACEMENT_LEFT_GROUND;
+        out.pelvis = -0.12F;
+        out.normal[5] = 1.0F;
+        return CY_RESULT_OK;
+    }
+};
+
+/// A backend written against 1.13, before aim and foot placement existed.
+class Older final : public cy::abi::game::AnimationBackend {
+public:
+    CyResult attach(CyEntity, const CyAnimatorDesc&) noexcept override { return CY_RESULT_OK; }
+    CyResult detach(CyEntity) noexcept override { return CY_RESULT_OK; }
+    CyResult play(CyEntity, const char*, f32) noexcept override { return CY_RESULT_OK; }
+    CyResult stop(CyEntity, f32) noexcept override { return CY_RESULT_OK; }
+    CyResult set_parameter(CyEntity, const char*, f32) noexcept override { return CY_RESULT_OK; }
+    CyResult fire_trigger(CyEntity, const char*) noexcept override { return CY_RESULT_OK; }
+    CyResult parameter(CyEntity, const char*, f32&) const noexcept override { return CY_RESULT_OK; }
+    CyResult state(CyEntity, CyAnimatorState&) const noexcept override { return CY_RESULT_OK; }
+    cy::Span<const CyAnimationEvent> events() const noexcept override { return {}; }
+    CyResult root_motion(CyEntity, CyRootMotion&) const noexcept override { return CY_RESULT_OK; }
+    CyResult take_root_motion(CyEntity, CyRootMotion&) noexcept override { return CY_RESULT_OK; }
+    CyResult set_root_motion(CyEntity, CyRootMotionMode) noexcept override { return CY_RESULT_OK; }
+    CyResult joint_pose(CyEntity, const char*, CyPose&) const noexcept override {
+        return CY_RESULT_OK;
+    }
 };
 
 struct Fixture {
@@ -311,4 +349,72 @@ CY_TEST_CASE("animation: attaching and detaching move the world's epoch") {
     CY_REQUIRE_EQ(table().animation_detach(fixture.engine(), 4), CY_RESULT_OK);
     CY_CHECK_EQ(world.epoch, before + 2);
     fixture.host.bind_world(nullptr);
+}
+
+CY_TEST_CASE("animation: an aim is simulation, a foot placement is the frame's, and both check") {
+    Fixture fixture;
+    const CyInterface& iface = table();
+    const float point[3] = {1.0F, 1.6F, 4.0F};
+    CyFootPlacement placement{};
+    placement.struct_size = sizeof(placement);
+
+    {
+        const cy::abi::game::PhaseScope frame(fixture.host.game.clock, CY_PHASE_FRAME_UPDATE);
+        CY_CHECK_EQ(iface.animation_aim_at(fixture.engine(), 4, "look", point),
+                    CY_RESULT_PERMISSION_DENIED);
+        CY_CHECK_EQ(iface.animation_foot_placement(fixture.engine(), 4, 0, &placement),
+                    CY_RESULT_OK);
+        CY_CHECK_EQ(placement.flags, CY_FOOT_PLACEMENT_SOLVED | CY_FOOT_PLACEMENT_LEFT_GROUND);
+        CY_CHECK_EQ(placement.pelvis, -0.12F);
+        CY_CHECK_EQ(placement.normal[5], 1.0F);
+        CY_CHECK_EQ(iface.animation_foot_placement(fixture.engine(), 4, 1, &placement),
+                    CY_RESULT_NOT_FOUND);
+    }
+    {
+        const cy::abi::game::PhaseScope fixed(fixture.host.game.clock, CY_PHASE_FIXED_UPDATE);
+        CY_CHECK_EQ(iface.animation_aim_at(fixture.engine(), 4, "look", point), CY_RESULT_OK);
+        CY_CHECK_EQ(fixture.animation.last_point[2], 4.0F);
+        CY_CHECK_EQ(iface.animation_foot_placement(fixture.engine(), 4, 0, &placement),
+                    CY_RESULT_PERMISSION_DENIED);
+    }
+
+    // Refused before the backend sees them.
+    const float bad[3] = {1.0F, std::numeric_limits<f32>::infinity(), 0.0F};
+    CY_CHECK_EQ(iface.animation_aim_at(fixture.engine(), 4, "look", bad),
+                CY_RESULT_INVALID_ARGUMENT);
+    CY_CHECK_EQ(iface.animation_aim_at(fixture.engine(), 4, nullptr, point),
+                CY_RESULT_INVALID_ARGUMENT);
+    CY_CHECK_EQ(iface.animation_aim_at(fixture.engine(), 4, "look", nullptr),
+                CY_RESULT_INVALID_ARGUMENT);
+    CY_CHECK_EQ(iface.animation_aim_at(fixture.engine(), CY_ENTITY_NULL, "look", point),
+                CY_RESULT_INVALID_ARGUMENT);
+    CY_CHECK_EQ(fixture.animation.aims, 1U);
+    CyFootPlacement shrunk{};
+    shrunk.struct_size = 2;
+    CY_CHECK_EQ(iface.animation_foot_placement(fixture.engine(), 4, 0, &shrunk),
+                CY_RESULT_INVALID_ARGUMENT);
+    CY_CHECK_EQ(iface.animation_foot_placement(fixture.engine(), 4, 0, nullptr),
+                CY_RESULT_INVALID_ARGUMENT);
+
+    // A caller compiled against a shorter struct gets its prefix and nothing past it.
+    struct {
+        CyFootPlacement prefix;
+        u32 guard;
+    } older{};
+    older.prefix.struct_size = static_cast<u32>(offsetof(CyFootPlacement, offset));
+    older.prefix.offset[0] = 9.0F;
+    older.guard = 0xABCDU;
+    CY_CHECK_EQ(iface.animation_foot_placement(fixture.engine(), 4, 0, &older.prefix),
+                CY_RESULT_OK);
+    CY_CHECK_EQ(older.prefix.pelvis, -0.12F);
+    CY_CHECK_EQ(older.prefix.offset[0], 9.0F);
+    CY_CHECK_EQ(older.guard, 0xABCDU);
+
+    // A backend that predates 1.14 answers UNAVAILABLE rather than failing to link.
+    Older older_backend;
+    fixture.host.game.animation = &older_backend;
+    CY_CHECK_EQ(iface.animation_aim_at(fixture.engine(), 4, "look", point), CY_RESULT_UNAVAILABLE);
+    CY_CHECK_EQ(iface.animation_foot_placement(fixture.engine(), 4, 0, &placement),
+                CY_RESULT_UNAVAILABLE);
+    cy::abi::clear_last_error();
 }

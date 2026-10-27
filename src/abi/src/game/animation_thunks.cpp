@@ -339,4 +339,64 @@ CyResult animation_joint_pose(CyEngine engine, CyEntity entity, const char* join
     return CY_RESULT_OK;
 }
 
+// --- 1.14 ----------------------------------------------------------------------------------------
+
+CyResult AnimationBackend::aim_at(CyEntity /*entity*/, const char* /*target*/,
+                                  const f32 (& /*point*/)[3]) noexcept {
+    return report(CY_RESULT_UNAVAILABLE, "this animation backend predates animation_aim_at");
+}
+
+CyResult AnimationBackend::foot_placement(CyEntity /*entity*/, u32 /*index*/,
+                                          CyFootPlacement& /*out*/) const noexcept {
+    return report(CY_RESULT_UNAVAILABLE,
+                  "this animation backend predates animation_foot_placement");
+}
+
+CyResult animation_aim_at(CyEngine engine, CyEntity entity, const char* target,
+                          const float* point_xyz) {
+    AnimationBackend* backend = enter(engine, kSimulationPhases, "animation_aim_at");
+    if (backend == nullptr) {
+        return last_error_code();
+    }
+    if (const CyResult checked =
+            need(entity, target, "animation_aim_at needs an entity and the aim's target");
+        checked != CY_RESULT_OK) {
+        return checked;
+    }
+    if (point_xyz == nullptr) {
+        return report(CY_RESULT_INVALID_ARGUMENT, "animation_aim_at needs a point");
+    }
+    const f32 point[3] = {point_xyz[0], point_xyz[1], point_xyz[2]};
+    for (const f32 component : point) {
+        if (!std::isfinite(component)) {
+            return report(CY_RESULT_INVALID_ARGUMENT, "an aim point is finite");
+        }
+    }
+    return finish(backend->aim_at(entity, target, point));
+}
+
+CyResult animation_foot_placement(CyEngine engine, CyEntity entity, uint32_t index,
+                                  CyFootPlacement* out_placement) {
+    AnimationBackend* backend = enter(engine, kPresentationPhases, "animation_foot_placement");
+    if (backend == nullptr) {
+        return last_error_code();
+    }
+    if (const CyResult checked =
+            need(entity, out_placement, "animation_foot_placement needs an entity and an output");
+        checked != CY_RESULT_OK) {
+        return checked;
+    }
+    if (agreed_size<CyFootPlacement>(out_placement->struct_size) == 0U) {
+        return report(CY_RESULT_INVALID_ARGUMENT,
+                      "a CyFootPlacement's struct_size is smaller than its first member");
+    }
+    CyFootPlacement whole{};
+    whole.struct_size = static_cast<u32>(sizeof(CyFootPlacement));
+    if (const CyResult result = backend->foot_placement(entity, index, whole);
+        result != CY_RESULT_OK) {
+        return result;
+    }
+    return hand_back(*out_placement, whole);
+}
+
 }  // namespace cy::abi::game

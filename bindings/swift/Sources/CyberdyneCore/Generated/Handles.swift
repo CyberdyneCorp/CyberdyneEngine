@@ -738,6 +738,16 @@ public struct Engine: @unchecked Sendable {
     public func viewmodelGet(camera: CyCamera, into: UnsafeMutablePointer<CyViewmodelDesc>?) throws {
         try interface.viewmodelGet(engine: raw, camera: camera, into: into)
     }
+
+    @inlinable
+    public func animationAimAt(entity: CyEntity, target: UnsafePointer<CChar>?, point: UnsafePointer<Float>?) throws {
+        try interface.animationAimAt(engine: raw, entity: entity, target: target, point: point)
+    }
+
+    @inlinable
+    public func animationFootPlacement(entity: CyEntity, index: UInt32, into: UnsafeMutablePointer<CyFootPlacement>?) throws {
+        try interface.animationFootPlacement(engine: raw, entity: entity, index: index, into: into)
+    }
 }
 
 public struct World: @unchecked Sendable {

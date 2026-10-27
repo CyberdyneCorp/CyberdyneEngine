@@ -2400,6 +2400,39 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
+    size_of::<ffi::CyFootPlacement>() == 68,
+    "CyFootPlacement is not 68 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyFootPlacement>() == 4,
+    "CyFootPlacement is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFootPlacement, struct_size) == 0,
+    "CyFootPlacement::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFootPlacement, flags) == 4,
+    "CyFootPlacement::flags is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFootPlacement, pelvis) == 8,
+    "CyFootPlacement::pelvis is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFootPlacement, offset) == 12,
+    "CyFootPlacement::offset is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFootPlacement, ground) == 20,
+    "CyFootPlacement::ground is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFootPlacement, normal) == 44,
+    "CyFootPlacement::normal is not at byte 44"
+);
+
+const _: () = assert!(
     size_of::<ffi::CyInterfaceHeader>() == 16,
     "CyInterfaceHeader is not 16 bytes; the ABI description and rustc disagree"
 );
@@ -2425,8 +2458,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 1512,
-    "CyInterface is not 1512 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 1528,
+    "CyInterface is not 1528 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -3184,6 +3217,14 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, viewmodel_get) == 1504,
     "CyInterface::viewmodel_get is not at byte 1504"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_aim_at) == 1512,
+    "CyInterface::animation_aim_at is not at byte 1512"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_foot_placement) == 1520,
+    "CyInterface::animation_foot_placement is not at byte 1520"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -3230,7 +3271,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        187,
+        189,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }
