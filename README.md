@@ -80,6 +80,54 @@ recording to readback on an RTX 5060 (Vulkan), within the 16.7 ms budget `smoke.
 
 ---
 
+## Game demos
+
+Two small games written in Swift against the C ABI, each drawn by the engine's own frame with
+shadows, ambient occlusion, the device GI and the temporal upscaler. The game decides everything;
+the C++ host builds the level, binds the engine's adapters and draws.
+
+### First person
+
+**`samples/15-first-person`** is a shooter in a small arena: a character that walks, sprints, jumps
+and crouches, a first-person camera with recoil and a weapon view, hitscan shots by physics raycast,
+crates pushed by impulses and targets driven by the engine's AI.
+
+![The first shot on a target: the flash, the burst at the barrel and the sparks on its chest](docs/design/images/first-person-shot.png)
+
+*A shot on a target: the muzzle flash, the burst at the barrel and the sparks on its chest, played
+through ABI 1.15's effects and decals. 6.19 ms a frame at 1080p with the Quality upscaler on an RTX
+5060 (Vulkan), against the 16.7 ms `smoke.first_person_render` asserts.
+[Watch the 12 s session](docs/design/videos/first-person-demo.mp4).*
+
+| | | |
+|:---:|:---:|:---:|
+| ![A crate a shot threw](docs/design/images/first-person-crate.png) | ![The floor struck: a scorch mark, and sparks bouncing](docs/design/images/first-person-floor-sparks.png) | ![Down the sights on a target](docs/design/images/first-person-sights.png) |
+| **Impulses** — a crate a shot threw, through the physics world | **What a shot leaves** — a scorch mark, and sparks bouncing on the floor | **Sights** — the weapon view raised onto a target |
+
+→ [**First-person demo guide**](docs/guides/first-person-demo.md) · [weapon view guide](docs/guides/first-person-weapon-view.md)
+
+### Third person
+
+**`samples/14-third-person`** is a hero on a cooked hillside: locomotion through a synchronised blend
+space with its feet placed on the ground the physics world reports, stairs, slopes and jumps, a
+camera rig whose collision node keeps it in front of walls, and footsteps heard on stone and grass.
+
+![The run: on the stairs, a jump on the platform, the camera pulled in by the north wall, down the ramp, a jump onto the hill, and the view back down](docs/design/images/third-person-run.png)
+
+*The run at 1920x1080: the stairs, a jump on the platform, the camera pulled in by the north wall,
+down the ramp, a jump onto the hill and the view back down. 7.9 ms a frame on average on an RTX 5060
+(Vulkan), within the 16.7 ms `smoke.third_person_render` asserts.
+[Watch the run](docs/design/videos/third-person.mp4), with the game's own sound.*
+
+| | | |
+|:---:|:---:|:---:|
+| ![The stairs with no features, with shadows, with AO and GI, and with the upscaler](docs/design/images/third-person-features.png) | ![The camera pulled in by the north wall](docs/design/images/third-person-wall.png) | ![Down the ramp towards the hill](docs/design/images/third-person-ramp.png) |
+| **Feature by feature** — none, shadows, AO and GI, then the upscaler | **Camera collision** — the rig pulled in by a wall | **Slopes** — down the ramp, feet on the ground |
+
+→ [**Third-person demo guide**](docs/guides/third-person-demo.md) · [`content/third-person/`](content/third-person/README.md)
+
+---
+
 ## Gallery
 
 Every image below is a frame the engine rendered and read back, committed under
@@ -142,7 +190,7 @@ every requirement is. The table groups what is in the tree now.
 | **Environment** | Physical sky and atmosphere, terrain, water, foliage, weather and wind over one field substrate; procedural generation | [`src/environment/`](src/environment/README.md) · [`src/pcg/`](src/pcg/README.md) |
 | **Simulation** | Animation with GPU skinning, drawn in the engine's frame and driven from Swift; deterministic fixed-point math and a fixed-point mover for lockstep units; AI, navigation, physics (Jolt), audio (miniaudio), abilities, cameras, cinematics | [`src/animation/`](src/animation/README.md) · [`src/core/detmath/`](src/core/detmath/README.md) · [`src/movement/`](src/movement/README.md) · [`src/physics/`](src/physics/README.md) |
 | **Integrity** | Deterministic simulation, replay and rollback, networking and replication, saves; a deterministic fog of war grid with shared vision and ghosts | [`src/replay/`](src/replay/) · [`src/networking/`](src/networking/README.md) · [`src/save/`](src/save/) · [fog of war guide](docs/guides/fog-of-war.md) |
-| **Gameplay** | Swift behaviours and systems over a versioned C ABI, now 1.14 (game services, the interface, animation with blend spaces and foot placement, fixed-point math, GI, fog of war, lights for a moment, the widget toolkit, the first-person camera), with hot reload; visual scripting compiled by the engine, with a breakpoint debugger and reload during Play; the gameplay framework (Complete) | [`bindings/swift/`](bindings/swift/README.md) · [`src/abi/`](src/abi/README.md) · [visual scripting](docs/guides/visual-scripting.md) |
+| **Gameplay** | Swift behaviours and systems over a versioned C ABI, now 1.15 (game services, the interface, animation with blend spaces and foot placement, fixed-point math, GI, fog of war, lights for a moment, the widget toolkit, the first-person camera, effects and decals), with hot reload; visual scripting compiled by the engine, with a breakpoint debugger and reload during Play; the gameplay framework (Complete) | [`bindings/swift/`](bindings/swift/README.md) · [`src/abi/`](src/abi/README.md) · [visual scripting](docs/guides/visual-scripting.md) |
 | **Editor** | Rust application: documents and transactions, live viewport and gizmos, FBX import; material, VFX and gameplay graphs; terrain, physics, navigation, lighting and lightmap, audio and animation tools; an MCP agent interface | [`editor/`](editor/README.md) · [`editor-agent-interface`](openspec/specs/editor-agent-interface/spec.md) |
 | **Platforms** | SDL3 desktop, a native Linux backend, headless, iOS, and a stub that shares no desktop assumption | [`platform/`](platform/README.md) |
 | **Workflow** | One `justfile`, the same recipes CI runs; diagnostics, traces and crash artefacts (Complete) | [`just/`](just/README.md) · [`diagnostics-profiling-and-crash`](openspec/specs/diagnostics-profiling-and-crash/spec.md) |
