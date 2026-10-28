@@ -1,4 +1,4 @@
-# samples/13-rts-api — an RTS unit, written in Swift, through ABI 1.3, 1.5, 1.6, 1.7 and 1.8
+# samples/13-rts-api — an RTS unit, written in Swift, through ABI 1.3, 1.5, 1.6, 1.7, 1.8 and 1.16
 
 The end-to-end proof of `add-swift-game-api`. A Swift behaviour runs a small RTS: a camera the
 keyboard and the screen edges pan, a unit picked under the pointer, sent to a clicked ground point,
@@ -172,6 +172,61 @@ the eye's height and the sun are exactly what they were (`integration.render_ass
 sky's irradiance is reused while the atmosphere, the eye and the sun hold'); every frame of every
 caller pays it once, and the frame it shades with is the one it would have integrated, bit for bit.
 
+## The battle (ABI 1.16)
+
+`--battle` fights a battle on the company's field instead of patrolling it: blue's ten swordsmen,
+ten archers and four catapults against red's eight swordsmen and eight archers, before red's
+watchtower and barracks. The host places `/Level/Battlefield`, by which the game knows to fight, and
+everything else is the game's (`game/Battle.swift`): it spawns a soldier for every unit — the node
+blue's fog of war places its vision by — enlists and arms it (`Lockstep.arm`), places red's buildings
+(`Lockstep.fortify`), and gives the plan's thirteen orders from a fixed step: both armies attack-move
+at each other on tick 0; on tick 540 blue's soldiers push on while its catapults turn on the
+watchtower; on tick 720 the soldiers join them; on tick 960 all of blue goes for the barracks. Every
+number is a `Fixed` or an integer, and the session decides the battle (`lockstep_combat.h`).
+
+Every frame the game reads what the ticks did (`Lockstep.events(from:)`, a cursor kept) and, where
+blue's fog lets blue see the place, plays it: launch puffs and a bowstring or a catapult's thump,
+sparks and a clash for a blow, sparks that bounce off the ground for an arrow, an explosion with a
+short-lived light, smoke and a boom for a catapult shot or a falling building, a fall for a death; a
+trail on every projectile's arc, and smoke over a damaged building. The host registers the five
+effects (`host/battle_effects.*`), a pool of lights and five generated cues (`host/battle_host.*`),
+and after every tick stands each soldier's node where its unit stands.
+
+```
+just run-sample rts-api --battle                                 1200 frames, headless, then the report
+cy_sample_rts-api --battle --render <dir> --map frontier.cypak   drawn on the RTS test map
+just capture-rts-battle                                          the images and the video below
+ctest -R 'game_backend_lockstep|rts_api_sample|rts_map|rts_api_map|cross_leg'
+```
+
+![The battle from the player's camera at frames 180, 330, 960 and 1150](../../docs/design/images/rts-battle.png)
+
+[The video](../../docs/design/videos/rts-battle.mp4) is the battle from the player's camera.
+
+**The battle is the C++ twin's, bit for bit.** `host/battle.h` states the same battle and
+`run_battle()` runs it; `determinism.cross_leg` publishes its digest as `detmath-battle-digest` on all
+four CI legs, and `integration.rts_api_sample` holds the Swift-driven battle to the committed
+`310fcf0defc657b8` and to the twin's damage (3 364 points), survivors (17 blue, 1 red) and events
+(888), with both of red's buildings fallen.
+
+**The map draws it** (`host/map_render.*`): a figure for every unit, striking while it is engaged,
+facing what it strikes, falling and lying where it fell; red's buildings from the map's kit,
+darkening as they are damaged and sunk and charred once they fall; the effects' particles; the
+blasts' lights beside the sun. **The HUD's minimap becomes topographic** — the whole map baked from
+its heights, painted colours, roads and lake with a contour every metre (`map/map_minimap.*`,
+`cy::rendering-minimap`), blue's fog over it, the battle's units and buildings as icons — redrawn
+where the fog moved every sixth frame and staged into the HUD's page inside the frame
+(`UiRenderer::stage_atlas`).
+
+![The minimap at frame 1150](../../docs/design/images/rts-battle-minimap.png)
+![The Frontier's minimap, baked](../../docs/design/images/rts-topographic-minimap.png)
+
+Measured on the RTX 5060 at 1920x1080, Development, no validation layer (`smoke.rts_api_map`'s
+battle case): **a frame 11.95 ms on average** against 16.7 ms, the worst 18.1 ms; the device's half
+8.6 ms, the GI 4.2 ms of it; the game's frame 3.9 ms; up to 1 280 particles and fourteen projectiles;
+the minimap's bake 2.6 ms once and a composition 0.4 to 1 ms every sixth frame.
+[The guide](../../docs/guides/rts-combat.md) has the rest.
+
 ## What is here
 
 | | |
@@ -189,13 +244,18 @@ caller pays it once, and the frame it shades with is the one it would have integ
 | `game/Lighting.swift` | ABI 1.9: the base's volume, the beacon out and on, the light read. |
 | `host/fog.*` | ABI 1.10: the fog grid over the level, the enemy camp's places, and the placer that tells the grid where every entity with a vision stands. |
 | `game/Fog.swift` | ABI 1.10: the squad's, the barracks' and the camp's visions; what blue sees of the camp, for the minimap and the report. |
+| `game/Battle.swift` | ABI 1.16: the battle — its squads, arms, buildings and plan as `host/battle.h` states them; enlisting, arming and fortifying; the orders; the events read and drawn where blue sees; the trails and smoke. |
+| `host/battle.h` | ABI 1.16: the battle and `run_battle()`, its C++ twin, which `determinism.cross_leg` runs on every leg. |
+| `host/battle_host.*` | ABI 1.16: the battlefield node, the soldier prefab, the soldiers' nodes after every tick, the lights, the cues, and the battle's report. |
+| `host/battle_effects.*` | ABI 1.16: the five effects the game plays, authored with `StageBuilder`, and their simulation world. |
+| `map/map_minimap.*` | ABI 1.16: the map as the topographic minimap reads it — heights, painted colours, roads, water. |
 | `map/` | The RTS test map: `map_source.*` (the `.cymap` reader), `map_cook.*` (the cook) and `cook_main.cpp` (`cy_rts_map_cook`), `map_meshes.*` (the kit, built from primitives), `map_format.*` (the package's assets and their payloads), `map_load.*` (the package read back by id through the asset system). |
 | `host/map_render.*` | `--map`: the session drawn on the cooked map with the engine's frame, its shadows, ambient occlusion, GI and fog, the units skinned, and the HUD. |
 | `tests/test_rts_map.cpp` | `integration.rts_map`: two cooks byte-identical, the package loaded back by id to the content cooked, the map's terrain, layers, buildings and forest, and damaged, mistyped, newer and truncated assets and malformed sources refused. |
 | `tests/test_rts_api_map.cpp` | `smoke.rts_api_map`: the session on the map against the headless run's gameplay, its golden still (`tests/references/rts_map_420.png`), and its frame at 1080p within 16.7 ms. |
 | `tests/test_rts_api_fog.cpp` | `smoke.rts_api_fog`: the session drawn with blue's fog and without, the camp by blue's sight, and what the stage costs. |
 | `tests/test_rts_api_gi.cpp` | `smoke.rts_api_gi`: the session drawn with the GI and without, the game's calls seen in the frame, and what a frame costs. |
-| `tests/test_rts_api_sample.cpp` | `integration.rts_api_sample`, declared from this directory's `CMakeLists.txt`. |
+| `tests/test_rts_api_sample.cpp` | `integration.rts_api_sample`, declared from this directory's `CMakeLists.txt`; with the battle's digest, damage and events against its C++ twin. |
 | `tests/test_rts_api_hud_device.cpp` | `render.rts_api_hud`: the Swift HUD against `samples/13-rts-selection`'s C++ HUD, as a primitive stream and on a device, and with its button against `tests/references/rts_api_hud.png`. |
 
 ## What the game calls, and in which phase
@@ -225,6 +285,9 @@ caller pays it once, and the frame it shades with is the one it would have integ
 | hears arrivals and reports the lead unit's x as a `Fixed` field | `lockstep_unit`, `component_set_fixed` | fixed |
 | gives the squad, the barracks and the camp their sight | `fog_set_vision`, `fog_get_vision` | none (`onReady`), and fixed for a built worker |
 | reads what blue sees of the camp for the minimap and the report | `fog_sight`, `fog_status` | frame |
+| finds the battlefield, spawns, enlists and arms the soldiers, places red's buildings | `node_find`, `spawn_instantiate`, `lockstep_enlist`, `lockstep_arm`, `fog_set_vision`, `lockstep_fortify` | none (`onCreate`) |
+| gives the battle's orders, takes the fallen off the field | `lockstep_status`, `lockstep_order` (attack-move, attack), `lockstep_combatant`, `spawn_destroy` | fixed |
+| reads what the battle did and draws it where blue sees | `lockstep_events`, `lockstep_projectiles`, `lockstep_structure`, `fog_cell`, `effect_play`, `light_spawn`, `audio_play` | frame |
 
 The pointer and the camera are refused in a fixed step and spawning is refused in a frame, so a
 click is recorded in `onUpdate` and acted on in the next `onFixedUpdate`. That is the pattern

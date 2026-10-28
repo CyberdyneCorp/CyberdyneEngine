@@ -403,6 +403,38 @@ released without a stop, a full world refusing) and `integration.game_backend_de
 the box's axes from the pose, the fades' defaults, the time a mark is stamped with, eviction).
 samples/15-first-person plays both from Swift; [the guide](../../docs/guides/first-person-demo.md).
 
+## What ABI 1.16 adds, and why
+
+Combat in the lockstep path (`add-rts-combat-and-minimap`). Up to 1.15 the lockstep session (1.8)
+only moved units: a Swift RTS had no deterministic way to deal damage, fire a projectile, kill a
+unit or knock a building down, and nothing that would put a battle in the session's hash for a
+follower peer — or another architecture — to agree with. Six entries over the same
+`cy::abi::game::LockstepBackend`, implemented by `cy::game_backend::LockstepAdapter`
+(`src/game_backend/lockstep/`, the battle itself in `lockstep_combat.h`), and two order kinds. The
+backend's six new members have defaults that answer UNSUPPORTED, so a 1.8 backend still compiles and
+says what it lacks.
+
+| Entries | Phases | Notes |
+|---|---|---|
+| `lockstep_arm` | N | `CyLockstepCombatDesc` (64 bytes): team, health, armour, a melee or ranged weapon, its damage, cooldown in ticks, reach and sight (gaps between footprints, raw `CyFixed`), a ranged weapon's projectile speed and splash. Before the first tick: PERMISSION_DENIED after it; NOT_FOUND for a unit never enlisted; INVALID_ARGUMENT for no health, damage or cooldown, a negative reach, an unknown weapon, a ranged weapon with no speed or a nonzero reserved word |
+| `lockstep_fortify` | N | `CyLockstepStructureDesc` (48 bytes): a building's team, position, footprint radius, health and armour — a static target, and an obstacle the mover pushes units out of. Its index is its identity |
+| `lockstep_combatant` | N F U | `CyLockstepCombatant` (48 bytes): flags (armed, alive, engaged, chasing), health, armour, cooldown, kills, stance, target |
+| `lockstep_structure` | N F U | `CyLockstepStructure` (48 bytes): health and the rest of its spec |
+| `lockstep_events` | N F U | `CyLockstepEvent` (80 bytes, in arrays): strike, launch, impact, damage, death, destroyed — numbered from zero in the order the session made them; from a caller's cursor, oldest first, out of a bounded history (`LockstepAdapter::kEventHistory`, 4096) the adapter keeps after every tick. A null buffer with zero capacity asks for the count |
+| `lockstep_projectiles` | N F U | `CyLockstepProjectile` (80 bytes, in arrays): what is in flight, its origin, position and aim |
+| `CY_LOCKSTEP_ORDER_ATTACK_MOVE`, `CY_LOCKSTEP_ORDER_ATTACK` | F U (`lockstep_order`) | go to a point fighting what comes within sight; go for the enemy standing nearest a point (an attack-move when none stands within 3 m of it) — the same payload as a move, so an attack names a point, as a click does |
+
+The battle is decided by the session in integers and `Fixed`, and folded into the state and world
+hashes whenever anything is armed — a session nothing is armed in hashes as before, which
+`determinism.cross_leg`'s company digest holds on every leg. What a game draws is READ: events are
+presentation's input, never fed back. Tests: `unit.abi` (`test_game_lockstep_combat.cpp` against a
+fake backend: arming and fortifying configuration-only, the argument checks, `struct_size` both
+ways, the lists' sizing pattern, UNSUPPORTED and UNAVAILABLE; `test_layout.cpp`: the 1.16 layouts;
+the 1.16 table shape), `integration.game_backend_lockstep` (a real session: every number of a duel,
+a flight, a homing shot, a splash, a building, the two orders, two peers, the history outrun) and
+`determinism.cross_leg` (`detmath-battle-digest`). samples/13-rts-api's `--battle` fights one from
+Swift; [the guide](../../docs/guides/rts-combat.md).
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved

@@ -389,13 +389,16 @@ units walk, cheer and stand down from Swift (`integration.rts_api_sample`). The 
 * **`Detmath.swift`** — the transcendentals, each one `detmath_*` call: the engine's polynomial,
   never a second copy.
 * **`Lockstep.swift`** — `enlist`, `order(.move(group:to:))`, `unit`, `status`, over the host's
-  lockstep session.
+  lockstep session; and, at ABI 1.16, its battle: `arm` (`Arms`), `fortify` (`StructureDesc`),
+  `order(.attackMove(group:to:))` and `order(.attack(group:at:))`, `combatant`, `structure`,
+  `events(from:)` read from a cursor, and `projectiles` (`LockstepCombatTests.swift`).
 
 `FixedTests.swift` checks every committed line of `tools/detmath/vectors/{add,sub,mul,div,narrow16,
 angle_scale}.txt` through the Swift operators, and reproduces each of those functions' whole
 16 384-input sweep digest from `digests.txt` — the number every C++ leg is held to — with the same
 SplitMix64 draws and fold. End to end, `samples/13-rts-api`'s commander orders a lockstep company in
-fixed point, and the session ends in the digest `determinism.cross_leg` computes on all four legs.
+fixed point, and the session ends in the digest `determinism.cross_leg` computes on all four legs;
+with `--battle` it fights a battle the same way, held to `detmath-battle-digest`.
 
 ## Fog of war (ABI 1.10)
 

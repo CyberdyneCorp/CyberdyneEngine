@@ -288,6 +288,7 @@ holds the Swift-driven session to the same committed digest. In a world whose em
 | One crowd solver, two kinds of arithmetic | `integration.movement_crowd`: the `Fixed` crowd traces the `f32` crowd's paths within 3 µm, and a committed digest | the `Fixed` instantiation moves, or stops being the same algorithm |
 | Swift's arithmetic is the engine's | `FixedTests` (CyberdyneKit): every vector line, and each function's whole sweep digest | a Swift operator rounds or wraps differently |
 | A Swift game's orders, four legs | `integration.rts_api_sample` holds the Swift-driven company to `kCompanyDigest`; `determinism.cross_leg` publishes the C++ twin's `detmath-company-digest` | Swift and C++ compute a different order, or two architectures disagree |
+| A Swift game's battle, four legs | `integration.rts_api_sample` holds the Swift-driven battle to `kBattleDigest` and the twin's damage and deaths; `determinism.cross_leg` publishes `detmath-battle-digest` (ABI 1.16, [the guide](rts-combat.md)) | a hit, a flight or a death differs between Swift and C++ or between two architectures |
 | No float on a cross-platform path | `float-on-cross-platform-path` in `integration.determinism_lint` | a `CrossPlatform` or `Lockstep` target uses a float outside the conversion boundary |
 
 The four legs are linux-x86_64 and linux-arm64 (GCC 13.3), macos-arm64 (Apple Clang 16) and

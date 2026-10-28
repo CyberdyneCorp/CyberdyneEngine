@@ -40,7 +40,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`sequencing-and-cinematics`](../../openspec/specs/sequencing-and-cinematics/spec.md) | 31 |  |  |  |  |  |  |  |  |  |  |  | W |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`input-and-actions`](../../openspec/specs/input-and-actions/spec.md) | 23 |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`camera-system`](../../openspec/specs/camera-system/spec.md) | 30 |  |  |  |  | S |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
-| [`simulation-and-determinism`](../../openspec/specs/simulation-and-determinism/spec.md) | 20 |  |  | S |  | W |  |  |  |  |  |  |  | W |  | **C** |  |  |  |  |  |  |  | M11.a |
+| [`simulation-and-determinism`](../../openspec/specs/simulation-and-determinism/spec.md) | 21 |  |  | S |  | W |  |  |  |  |  |  |  | W |  | **C** |  |  |  |  |  |  |  | M11.a |
 | [`replay-and-rollback`](../../openspec/specs/replay-and-rollback/spec.md) | 21 |  |  |  |  |  |  |  |  |  |  |  |  | W |  | **C** |  |  |  |  |  |  |  | M11.a |
 | [`save-and-persistence`](../../openspec/specs/save-and-persistence/spec.md) | 20 |  |  |  |  |  |  |  | W |  |  |  |  |  |  | **C** |  |  |  |  |  |  |  | M11.a |
 | [`world-partition-and-streaming`](../../openspec/specs/world-partition-and-streaming/spec.md) | 32 |  |  |  |  |  |  |  | W |  |  |  |  |  |  | **C** |  |  |  |  |  |  |  | M11.a |
@@ -52,7 +52,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`foliage`](../../openspec/specs/foliage/spec.md) | 13 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
 | [`water`](../../openspec/specs/water/spec.md) | 17 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
 | **3 — Scripting** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| [`native-abi`](../../openspec/specs/native-abi/spec.md) | 15 |  |  |  |  | W | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | M5 |
+| [`native-abi`](../../openspec/specs/native-abi/spec.md) | 16 |  |  |  |  | W | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | M5 |
 | [`swift-scripting`](../../openspec/specs/swift-scripting/spec.md) | 12 |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | **4 — Rendering** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | [`rhi-and-render-graph`](../../openspec/specs/rhi-and-render-graph/spec.md) | 12 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  | M11.d.5 |
@@ -70,11 +70,11 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`rendering-global-illumination`](../../openspec/specs/rendering-global-illumination/spec.md) | 30 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`denoising`](../../openspec/specs/denoising/spec.md) | 6 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
 | [`ray-tracing-infrastructure`](../../openspec/specs/ray-tracing-infrastructure/spec.md) | 6 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
-| [`rendering-post-processing`](../../openspec/specs/rendering-post-processing/spec.md) | 16 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
+| [`rendering-post-processing`](../../openspec/specs/rendering-post-processing/spec.md) | 17 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`temporal-rendering`](../../openspec/specs/temporal-rendering/spec.md) | 8 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`rendering-geometry-and-resources`](../../openspec/specs/rendering-geometry-and-resources/spec.md) | 11 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`rendering-2d`](../../openspec/specs/rendering-2d/spec.md) | 11 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
-| [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 27 |  |  |  |  |  |  |  |  |  |  |  | S |  | W |  |  |  |  |  | **C** |  |  | M11.e |
+| [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 28 |  |  |  |  |  |  |  |  |  |  |  | S |  | W |  |  |  |  |  | **C** |  |  | M11.e |
 | **5 — Simulation** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | [`physics`](../../openspec/specs/physics/spec.md) | 17 |  |  |  |  | W |  |  |  |  | W |  |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`animation-and-skinning`](../../openspec/specs/animation-and-skinning/spec.md) | 32 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
@@ -84,7 +84,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`audio`](../../openspec/specs/audio/spec.md) | 19 |  |  |  |  | S |  |  |  |  |  | W |  |  |  | **C** |  |  |  |  |  |  |  | M11.a |
 | **6 — Content and tooling** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | [`text-and-fonts`](../../openspec/specs/text-and-fonts/spec.md) | 10 |  |  |  |  |  | S |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
-| [`ui-system`](../../openspec/specs/ui-system/spec.md) | 25 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
+| [`ui-system`](../../openspec/specs/ui-system/spec.md) | 26 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`asset-import-pipeline`](../../openspec/specs/asset-import-pipeline/spec.md) | 15 |  |  |  |  |  | W |  |  |  | W |  |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`editor-agent-interface`](../../openspec/specs/editor-agent-interface/spec.md) | 18 |  |  |  |  |  | S | W |  |  |  |  |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`editor-architecture`](../../openspec/specs/editor-architecture/spec.md) | 13 |  |  |  |  |  | S |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
