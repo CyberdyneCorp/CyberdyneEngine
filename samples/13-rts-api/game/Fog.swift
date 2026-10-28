@@ -107,7 +107,8 @@ struct BaseFog {
             // A raider only while blue sees it; the tower where it was last seen. It never moves,
             // so where it stands is where it was seen.
             if sight != .hidden {
-                dots.append(.init(x: minimap.x(member.at.x), y: minimap.y(member.at.z), team: .enemy))
+                dots.append(
+                    .init(x: minimap.x(member.at.x), y: minimap.y(member.at.z), team: .enemy))
             }
         }
         raidersSeen = seen

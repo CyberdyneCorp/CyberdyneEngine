@@ -405,7 +405,8 @@ final class Commander: Behaviour {
 
     private func publishBattle(_ tally: BattleTally, in world: World) throws {
         let values: [(Float, UInt32)] = [
-            (tally.soldiers, reportFields.battleSoldiers), (tally.orders, reportFields.battleOrders),
+            (tally.soldiers, reportFields.battleSoldiers),
+            (tally.orders, reportFields.battleOrders),
             (tally.events, reportFields.battleEvents), (tally.damage, reportFields.battleDamage),
             (tally.deaths, reportFields.battleDeaths), (tally.fallen, reportFields.battleFallen),
             (tally.shown, reportFields.battleShown), (tally.hidden, reportFields.battleHidden),

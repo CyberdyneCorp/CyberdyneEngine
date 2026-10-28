@@ -1928,11 +1928,11 @@ typedef enum CyLockstepStance {
 
 /* What `lockstep_events` reports. */
 typedef enum CyLockstepEventKind {
-    CY_LOCKSTEP_EVENT_STRIKE = 0,   /* `unit` struck `target` in melee, from `position` at `toward` */
-    CY_LOCKSTEP_EVENT_LAUNCH = 1,   /* `projectile` left `unit` at `position`, aimed at `toward` */
-    CY_LOCKSTEP_EVENT_IMPACT = 2,   /* `projectile` landed at `position`; `amount` enemies it hit */
-    CY_LOCKSTEP_EVENT_DAMAGE = 3,   /* `target` lost `amount` to `unit`, leaving `health` */
-    CY_LOCKSTEP_EVENT_DEATH = 4,    /* unit `unit` of `team` died at `position` */
+    CY_LOCKSTEP_EVENT_STRIKE = 0, /* `unit` struck `target` in melee, from `position` at `toward` */
+    CY_LOCKSTEP_EVENT_LAUNCH = 1, /* `projectile` left `unit` at `position`, aimed at `toward` */
+    CY_LOCKSTEP_EVENT_IMPACT = 2, /* `projectile` landed at `position`; `amount` enemies it hit */
+    CY_LOCKSTEP_EVENT_DAMAGE = 3, /* `target` lost `amount` to `unit`, leaving `health` */
+    CY_LOCKSTEP_EVENT_DEATH = 4,  /* unit `unit` of `team` died at `position` */
     CY_LOCKSTEP_EVENT_DESTROYED = 5 /* structure `target` of `team` fell at `position` */
 } CyLockstepEventKind;
 
@@ -1944,15 +1944,15 @@ typedef enum CyLockstepEventKind {
  * edge whatever either one's radius. */
 typedef struct CyLockstepCombatDesc {
     uint32_t struct_size;
-    uint32_t team;     /* units and structures of another team are enemies */
-    uint32_t health;   /* > 0 */
-    uint32_t armour;   /* taken off every hit; a hit always deals at least one point */
-    uint32_t weapon;   /* CyLockstepWeapon */
-    uint32_t damage;   /* points a hit deals before armour, > 0 */
-    uint32_t cooldown; /* ticks between two attacks, > 0 */
-    uint32_t reserved; /* zero */
-    CyFixed range;     /* metres of gap it attacks across, >= 0 */
-    CyFixed sight;     /* metres of gap it notices an enemy across, >= 0 */
+    uint32_t team;            /* units and structures of another team are enemies */
+    uint32_t health;          /* > 0 */
+    uint32_t armour;          /* taken off every hit; a hit always deals at least one point */
+    uint32_t weapon;          /* CyLockstepWeapon */
+    uint32_t damage;          /* points a hit deals before armour, > 0 */
+    uint32_t cooldown;        /* ticks between two attacks, > 0 */
+    uint32_t reserved;        /* zero */
+    CyFixed range;            /* metres of gap it attacks across, >= 0 */
+    CyFixed sight;            /* metres of gap it notices an enemy across, >= 0 */
     CyFixed projectile_speed; /* metres a second, > 0 for a ranged weapon */
     CyFixed splash; /* a ranged weapon's: 0 hits its target alone; otherwise every enemy within */
 } CyLockstepCombatDesc;

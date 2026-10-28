@@ -29,7 +29,11 @@ struct Battle {
 
     /// What each kind of soldier is. `battle::Kind`, case for case.
     enum Kind: UInt32 {
-        case blueSword = 0, blueArcher, catapult, redSword, redArcher
+        case blueSword = 0
+        case blueArcher
+        case catapult
+        case redSword
+        case redArcher
 
         var team: UInt32 { self == .redSword || self == .redArcher ? Battle.red : Battle.blue }
     }
@@ -171,7 +175,8 @@ struct Battle {
         for squad in Battle.squads {
             for index in 0..<squad.count {
                 let at = Battle.spawn(squad, index)
-                let soldier = try prefab.instantiate(at: Pose(position: Battle.level(at, height: 0)))
+                let soldier = try prefab.instantiate(
+                    at: Pose(position: Battle.level(at, height: 0)))
                 let unit = try Lockstep.enlist(
                     .init(
                         group: squad.group, entity: soldier, position: at,
@@ -290,7 +295,8 @@ struct Battle {
             let heavy = kind(of: event.unit) == .catapult
             let from = Battle.level(event.position, height: heavy ? 1.6 : 1.4)
             let aim = direction(from: from, to: Battle.level(event.toward, height: 1.4))
-            try play(look.launch, at: from, scale: heavy ? 2.2 : 1, parameters: [aim.x, aim.y, aim.z])
+            try play(
+                look.launch, at: from, scale: heavy ? 2.2 : 1, parameters: [aim.x, aim.y, aim.z])
             try sound(heavy ? look.thump : look.bow, at: from)
         case .impact:
             if kind(of: event.unit) == .catapult {

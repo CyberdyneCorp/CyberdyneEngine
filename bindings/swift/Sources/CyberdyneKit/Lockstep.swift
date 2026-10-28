@@ -200,20 +200,26 @@ extension Lockstep {
     public struct Arms: Equatable, Sendable {
         /// Units and structures of another team are enemies.
         public var team: UInt32
+        /// What it starts with and can never exceed.
         public var health: UInt32
         /// Taken off every hit; a hit always deals at least one point.
         public var armour: UInt32
+        /// Whether it strikes in melee or launches projectiles.
         public var weapon: LockstepWeapon
+        /// Points one hit deals before the target's armour.
         public var damage: UInt32
         /// Ticks between two attacks.
         public var cooldown: UInt32
+        /// How far it attacks across: the gap between its footprint and its target's.
         public var range: Fixed
+        /// How far it notices an enemy to attack, the same gap.
         public var sight: Fixed
         /// Metres a second, for a ranged weapon.
         public var projectileSpeed: Fixed
         /// A ranged weapon's splash radius; zero hits the target alone.
         public var splash: Fixed
 
+        /// Arms; the armour, the speed and the splash default to none.
         public init(
             team: UInt32, health: UInt32, armour: UInt32 = 0, weapon: LockstepWeapon,
             damage: UInt32, cooldown: UInt32, range: Fixed, sight: Fixed,
@@ -234,14 +240,20 @@ extension Lockstep {
 
     /// A building to place: a static target units walk round.
     public struct StructureDesc: Equatable, Sendable {
+        /// Units of another team attack it.
         public var team: UInt32
         /// The scene entity that draws it, or `.null`; not hashed.
         public var entity: Entity
+        /// Its centre: x and world Z.
         public var position: FixedVec2
+        /// Its footprint, a circle units walk round.
         public var radius: Fixed
+        /// What it takes to knock it down.
         public var health: UInt32
+        /// Taken off every hit it takes; a hit always deals at least one point.
         public var armour: UInt32
 
+        /// A building to place; no entity and no armour by default.
         public init(
             team: UInt32, entity: Entity = .null, position: FixedVec2, radius: Fixed,
             health: UInt32, armour: UInt32 = 0
@@ -272,20 +284,29 @@ extension Lockstep {
 
     /// An armed unit's state, as the last tick left it.
     public struct Combatant: Equatable, Sendable {
+        /// `arm` gave it a weapon.
         public var armed: Bool
+        /// Its health is above zero.
         public var alive: Bool
         /// Its target was within its range on the last tick.
         public var engaged: Bool
         /// It is following a path to its target.
         public var chasing: Bool
+        /// The side it fights for.
         public var team: UInt32
+        /// What it has left.
         public var health: UInt32
+        /// What it was armed with.
         public var maxHealth: UInt32
+        /// Taken off every hit it takes.
         public var armour: UInt32
         /// Ticks until it may attack again.
         public var cooldown: UInt32
+        /// Units and structures it finished.
         public var kills: UInt32
+        /// What it is doing, as far as fighting goes.
         public var stance: LockstepStance
+        /// What it is attacking, or `.none`.
         public var target: Target
 
         init(_ raw: CyLockstepCombatant) {
@@ -306,11 +327,17 @@ extension Lockstep {
 
     /// A structure's state.
     public struct Structure: Equatable, Sendable {
+        /// The side it belongs to.
         public var team: UInt32
+        /// The entity that draws it.
         public var entity: Entity
+        /// Its centre: x and world Z.
         public var position: FixedVec2
+        /// Its footprint.
         public var radius: Fixed
+        /// What it has left: zero once it has fallen.
         public var health: UInt32
+        /// What it was placed with.
         public var maxHealth: UInt32
         /// Its health is above zero.
         public var standing: Bool { health > 0 }
@@ -320,18 +347,23 @@ extension Lockstep {
     public struct Event: Equatable, Sendable {
         /// From zero, in the order the session made them.
         public var sequence: UInt64
+        /// The tick that made it.
         public var tick: UInt64
+        /// What happened.
         public var kind: LockstepEventKind
         /// The unit that acted — or, for a death, died — or nil.
         public var unit: UInt32?
+        /// What was struck, aimed at, damaged or destroyed.
         public var target: Target
         /// A hit's points, or the enemies an impact hit.
         public var amount: UInt32
         /// What a hit left its target.
         public var health: UInt32
+        /// A launch's or an impact's projectile.
         public var projectile: UInt32
         /// The acting side's team; for a death or a fall, the fallen's.
         public var team: UInt32
+        /// Where it happened: the striker, the muzzle, the landing, the struck, the fallen.
         public var position: FixedVec2
         /// A blow's or a launch's target position; an impact's origin.
         public var toward: FixedVec2
@@ -354,13 +386,21 @@ extension Lockstep {
 
     /// A projectile in flight.
     public struct Projectile: Equatable, Sendable {
+        /// Its number, from zero in launch order: an impact names it.
         public var id: UInt32
+        /// The unit that launched it.
         public var shooter: UInt32
+        /// The shooter's side.
         public var team: UInt32
+        /// What it flies at.
         public var target: Target
+        /// The tick it left.
         public var launched: UInt64
+        /// Where it left from.
         public var origin: FixedVec2
+        /// Where it is now.
         public var position: FixedVec2
+        /// Where it is going: its target, or where its target fell.
         public var aim: FixedVec2
     }
 
