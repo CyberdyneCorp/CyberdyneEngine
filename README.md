@@ -17,7 +17,7 @@ editor's node-graph canvas, compiled by the material compiler and bound as BC7 a
 > [M11.e · Ship](docs/ROADMAP.md#m11e--ship) and 1.0, then [M12 · The Game](docs/ROADMAP.md#m12--the-game),
 > an RTS written in Swift that proves the engine by using it; its [test map](#rts-showcase) already runs.
 
-[`openspec/specs/`](openspec/specs/README.md) holds **76 capabilities, 1,253 requirements and 2,806
+[`openspec/specs/`](openspec/specs/README.md) holds **76 capabilities, 1,258 requirements and 2,822
 scenarios** — the contract the implementation must satisfy. Today 17 are Complete, 55 Working, 3
 Seed and 1 not started ([`status.yaml`](docs/roadmap/status.yaml), reported by `just roadmap-status`).
 
@@ -75,8 +75,10 @@ recording to readback on an RTX 5060 (Vulkan), within the 16.7 ms budget `smoke.
 |:---:|:---:|
 | ![The same frame with no features, with shadows, with AO and GI, and with fog and HUD](docs/design/images/rts-map-features.png) | ![The overview camera over the level, with the fog of war and the HUD](docs/design/images/rts-map-overview.png) |
 | **Feature by feature** — none, shadows, AO and GI, then fog and HUD | **Overview** — the video's camera; [watch the 7 s orbit](docs/design/videos/rts-map.mp4) with the workers and the company walking |
+| ![The battle at frames 180, 330, 960 and 1150: the armies closing, the melee with arrows and catapult shot, the watchtower's fall, the barracks burning](docs/design/images/rts-battle.png) | ![The topographic minimap at frame 1150: hillshading, contours, the lake, roads, the fog and the battle's icons](docs/design/images/rts-battle-minimap.png) |
+| **Battle** — forty units fought in fixed point in the lockstep path, the same digest on all four CI legs; [watch it](docs/design/videos/rts-battle.mp4) | **Topographic minimap** — hillshading, contours, water and roads under blue's fog, the units it sees as icons |
 
-→ [**RTS map guide**](docs/guides/rts-map.md) · [fog of war guide](docs/guides/fog-of-war.md)
+→ [**RTS map guide**](docs/guides/rts-map.md) · [RTS combat guide](docs/guides/rts-combat.md) · [fog of war guide](docs/guides/fog-of-war.md)
 
 ---
 
