@@ -373,6 +373,36 @@ both ways, a 1.13 backend answering UNAVAILABLE; `test_layout.cpp`: the 1.14 lay
 shape) and `integration.game_backend_animation` ('animation abi: an aim takes a world point into the
 character, and feet report': a character two metres out and turned a quarter, on a step).
 
+## What ABI 1.15 adds, and why
+
+What a shot leaves behind (`add-first-person-demo`): a burst of particles where it left the muzzle
+and where it landed, and a mark on what it struck. Up to 1.14 a Swift game could light the moment
+(1.11) but could not play a VFX system or leave a decal; the only way was a component the host's
+renderer read, which is the host deciding presentation from game data — the shape 1.3 replaced. Five
+entries over two backends, each a module of its own: `cy::abi::game::EffectsBackend`, implemented
+by `cy::game_backend::EffectsAdapter` (`src/game_backend/effects/`, over `cy::vfx::SimulationWorld`,
+absent with `-D CY_VFX=OFF`), and `cy::abi::game::DecalsBackend`, implemented by
+`cy::game_backend::DecalsAdapter` (`src/game_backend/decals/`, over `cy::rendering::DecalBudget`).
+The host registers what a game may play by NAME, as it registers an audio cue.
+
+| Entries | Phases | Notes |
+|---|---|---|
+| `effect_find` | N F U | the effect the host registered under a name (`EffectsAdapter::add_effect`, with the seconds one play spawns for); NOT_FOUND otherwise |
+| `effect_play` | N U | `CyEffectPlay` (64 bytes): a world position, a scale, and up to eight floats overriding the effect's declared parameters in declaration order, four a parameter — a direction to spray along, a floor to bounce on. Fire-and-forget: the instance stops spawning after its registered seconds and releases itself when its last particle dies. INVALID_ARGUMENT for a count past eight, a scale that is not positive, a number that is not finite or a nonzero reserved word; OUT_OF_RANGE with the world full |
+| `decal_find_material` | N F U | the decal material the host registered under a name (`DecalsAdapter::add_material`: its index in the frame's decal table, and whether it emits) |
+| `decal_spawn` | N U | `CyDecalDesc` (88 bytes): the material, a world pose whose local +Z is the struck surface's normal (the box projects along −Z), half extents, importance, sort order, and the angle and distance fades (zeros are the engine's 60°, 20 m and 40 m). Into the budget the host sized: a full budget evicts the least worth keeping by age, importance and coverage, deterministically — the new mark included, which answers OK and CY_DECAL_NULL |
+| `decal_status` | N U | `CyDecalStatus`: live, capacity, spawned and evicted |
+
+Playing and spawning are refused in a fixed step because a resimulated tick would play its burst and
+leave its mark again; resolving a name is not, so a fixed step may hold the handle a frame update
+plays. Tests: `unit.abi` (`test_game_effects.cpp` and `test_game_decals.cpp` against fake backends:
+the phase rule both ways, UNAVAILABLE, every range and reserved word, `struct_size` both ways;
+`test_layout.cpp`: the 1.15 layouts; the 1.15 table shape), `integration.game_backend_effects` (a
+real world: where and how large a play lands, a parameter overridden and the rest authored, a burst
+released without a stop, a full world refusing) and `integration.game_backend_decals` (a real budget:
+the box's axes from the pose, the fades' defaults, the time a mark is stamped with, eviction).
+samples/15-first-person plays both from Swift; [the guide](../../docs/guides/first-person-demo.md).
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved

@@ -425,6 +425,18 @@ carries the engine's defaults), then `feed(look:speed:aiming:airborne:)`, `kick(
 refused from `onFixedUpdate`. `FirstPersonTests.swift` checks the settings, the flags, the state and
 the refusals through `FakeEngine`; docs/guides/first-person-weapon-view.md is the guide.
 
+## Effects and decals (ABI 1.15)
+
+`Effects.swift` is the face of the five `effect_*` and `decal_*` entries: `Effect.named(_:)`
+resolves an effect the host registered and `play(at:scale:parameters:)` plays it fire-and-forget,
+its first parameters overridden four floats a parameter; `DecalMaterial.named(_:)` resolves a decal
+material and `Decal.spawn(_:)` takes a `Decal.Description` — built with `.mark(_:at:normal:radius:)`,
+which turns the box's +Z onto the struck surface's normal — and answers nil when the full budget
+evicted the new mark; `Decal.status` reads the budget. Playing and spawning are refused from
+`onFixedUpdate`; resolving is not. `EffectsTests.swift` checks the parameters, the decal's frame, the
+eviction and the refusals through `FakeEngine`; `samples/15-first-person/game/Player.swift` plays
+them end to end, and docs/guides/first-person-demo.md is the guide.
+
 ## What is thinner than `swift-scripting` asks for
 
 Recorded here rather than only in a report, because these are the places a reader will look:

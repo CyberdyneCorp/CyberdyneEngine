@@ -60,6 +60,8 @@ class IlluminationBackend;
 class FogBackend;
 class LightsBackend;
 class FirstPersonBackend;
+class EffectsBackend;
+class DecalsBackend;
 
 // --- Phases --------------------------------------------------------------------------------------
 
@@ -120,6 +122,10 @@ struct GameServices {
     LightsBackend* lights = nullptr;
     /// ABI 1.13: `first_person_*` and `viewmodel_*`. Null in a host that draws nothing.
     FirstPersonBackend* first_person = nullptr;
+    /// ABI 1.15: `effect_*`. Null in a host that draws nothing or builds without VFX.
+    EffectsBackend* effects = nullptr;
+    /// ABI 1.15: `decal_*`. Null in a host that draws nothing.
+    DecalsBackend* decals = nullptr;
     GameClock clock;
 };
 

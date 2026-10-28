@@ -182,6 +182,13 @@ add_subdirectory(13-rts-api)
 # has no CTest entry; `render.selection_outlines` is the suite.
 add_subdirectory(13-rts-selection)
 
+# A first-person shooter written in Swift against ABI 1.15: a character that walks, sprints, jumps and
+# crouches, a first-person camera with a weapon view, hitscan shots by physics raycast, props pushed
+# by impulses, targets driven by the engine's AI, and what a shot leaves — a flash, bursts, sparks
+# and scorch marks — drawn with the GI and the upscaler. Declares nothing without Swift, CY_AI or
+# CY_VFX, like 13-rts-api.
+add_subdirectory(15-first-person)
+
 # THE FIXTURE'S SHAPE, CHECKED AGAINST THE CONFIGURED TREE. Every entry that drives the editor must
 # require `cy_editor` and pass no `--build`, or the editor's cold build is back inside a session's
 # smoke budget — which is how `agent` and `authorable` timed out. Declared here, after every sample

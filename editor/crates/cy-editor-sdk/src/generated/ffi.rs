@@ -1442,6 +1442,79 @@ pub struct CyFootPlacement {
     pub normal: [f32; 6],
 }
 
+/// `CyEffect`, the ABI's alias for `uint64_t`.
+pub type CyEffect = u64;
+
+/// `CyEffectPlay` — 64 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyEffectPlay {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub parameter_count: u32,
+    /// `float[3]` at byte 8.
+    pub position: [f32; 3],
+    /// `float` at byte 20.
+    pub scale: f32,
+    /// `float[8]` at byte 24.
+    pub parameters: [f32; 8],
+    /// `uint32_t[2]` at byte 56.
+    pub reserved: [u32; 2],
+}
+
+/// `CyDecalMaterial`, the ABI's alias for `uint64_t`.
+pub type CyDecalMaterial = u64;
+
+/// `CyDecalDesc` — 88 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyDecalDesc {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub reserved0: u32,
+    /// `CyDecalMaterial` at byte 8.
+    pub material: CyDecalMaterial,
+    /// `CyPose` at byte 16.
+    pub pose: CyPose,
+    /// `float[3]` at byte 44.
+    pub half_extent: [f32; 3],
+    /// `float` at byte 56.
+    pub importance: f32,
+    /// `int32_t` at byte 60.
+    pub sort_order: i32,
+    /// `float` at byte 64.
+    pub fade_angle: f32,
+    /// `float` at byte 68.
+    pub fade_start: f32,
+    /// `float` at byte 72.
+    pub fade_end: f32,
+    /// `uint32_t[2]` at byte 76.
+    pub reserved: [u32; 2],
+}
+
+/// `CyDecal`, the ABI's alias for `uint64_t`.
+pub type CyDecal = u64;
+
+/// `CyDecalStatus` — 32 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyDecalStatus {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub live: u32,
+    /// `uint32_t` at byte 8.
+    pub capacity: u32,
+    /// `uint32_t` at byte 12.
+    pub reserved: u32,
+    /// `uint64_t` at byte 16.
+    pub spawned: u64,
+    /// `uint64_t` at byte 24.
+    pub evicted: u64,
+}
+
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -1456,7 +1529,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 1528 bytes, 8-byte aligned.
+/// `CyInterface` — 1568 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -2045,6 +2118,20 @@ pub struct CyInterface {
     /// `CyResult(*)(CyEngine, CyEntity, uint32_t, CyFootPlacement*)` at byte 1520.
     pub animation_foot_placement:
         Option<unsafe extern "C" fn(CyEngine, CyEntity, u32, *mut CyFootPlacement) -> i32>,
+    /// `CyResult(*)(CyEngine, const char*, CyEffect*)` at byte 1528.
+    pub effect_find:
+        Option<unsafe extern "C" fn(CyEngine, *const ::std::ffi::c_char, *mut CyEffect) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEffect, const CyEffectPlay*)` at byte 1536.
+    pub effect_play: Option<unsafe extern "C" fn(CyEngine, CyEffect, *const CyEffectPlay) -> i32>,
+    /// `CyResult(*)(CyEngine, const char*, CyDecalMaterial*)` at byte 1544.
+    pub decal_find_material: Option<
+        unsafe extern "C" fn(CyEngine, *const ::std::ffi::c_char, *mut CyDecalMaterial) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, const CyDecalDesc*, CyDecal*)` at byte 1552.
+    pub decal_spawn:
+        Option<unsafe extern "C" fn(CyEngine, *const CyDecalDesc, *mut CyDecal) -> i32>,
+    /// `CyResult(*)(CyEngine, CyDecalStatus*)` at byte 1560.
+    pub decal_status: Option<unsafe extern "C" fn(CyEngine, *mut CyDecalStatus) -> i32>,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -2276,5 +2363,10 @@ impl CyInterface {
         viewmodel_get: None,
         animation_aim_at: None,
         animation_foot_placement: None,
+        effect_find: None,
+        effect_play: None,
+        decal_find_material: None,
+        decal_spawn: None,
+        decal_status: None,
     };
 }

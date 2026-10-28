@@ -748,6 +748,31 @@ public struct Engine: @unchecked Sendable {
     public func animationFootPlacement(entity: CyEntity, index: UInt32, into: UnsafeMutablePointer<CyFootPlacement>?) throws {
         try interface.animationFootPlacement(engine: raw, entity: entity, index: index, into: into)
     }
+
+    @inlinable
+    public func effectFind(name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyEffect>?) throws {
+        try interface.effectFind(engine: raw, name: name, into: into)
+    }
+
+    @inlinable
+    public func effectPlay(effect: CyEffect, play: UnsafePointer<CyEffectPlay>?) throws {
+        try interface.effectPlay(engine: raw, effect: effect, play: play)
+    }
+
+    @inlinable
+    public func decalFindMaterial(name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyDecalMaterial>?) throws {
+        try interface.decalFindMaterial(engine: raw, name: name, into: into)
+    }
+
+    @inlinable
+    public func decalSpawn(desc: UnsafePointer<CyDecalDesc>?, into: UnsafeMutablePointer<CyDecal>?) throws {
+        try interface.decalSpawn(engine: raw, desc: desc, into: into)
+    }
+
+    @inlinable
+    public func decalStatus(into: UnsafeMutablePointer<CyDecalStatus>?) throws {
+        try interface.decalStatus(engine: raw, into: into)
+    }
 }
 
 public struct World: @unchecked Sendable {

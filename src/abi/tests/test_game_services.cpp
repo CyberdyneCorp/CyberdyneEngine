@@ -292,7 +292,25 @@ CY_TEST_CASE("the 1.14 table appends foot placement and aim after every 1.13 ent
     CY_CHECK_EQ(offsetof(CyInterface, animation_aim_at) + sizeof(void*),
                 offsetof(CyInterface, animation_foot_placement));
     CY_CHECK_EQ(offsetof(CyInterface, animation_foot_placement) + sizeof(void*),
-                sizeof(CyInterface));
+                offsetof(CyInterface, effect_find));
+}
+
+CY_TEST_CASE("the 1.15 table appends effects and decals after every 1.14 entry") {
+    const CyInterface& iface = table();
+    CY_CHECK_GE(iface.header.abi_minor, 15U);
+    CY_CHECK_EQ(iface.header.table_size, sizeof(CyInterface));
+    const bool entries[] = {
+        iface.effect_find != nullptr,         iface.effect_play != nullptr,
+        iface.decal_find_material != nullptr, iface.decal_spawn != nullptr,
+        iface.decal_status != nullptr,
+    };
+    CY_CHECK_EQ(sizeof(entries) / sizeof(entries[0]), 5U);
+    for (const bool set : entries) {
+        CY_CHECK(set);
+    }
+    CY_CHECK_EQ(offsetof(CyInterface, effect_find) + sizeof(void*),
+                offsetof(CyInterface, effect_play));
+    CY_CHECK_EQ(offsetof(CyInterface, decal_status) + sizeof(void*), sizeof(CyInterface));
 }
 
 CY_TEST_CASE("each scheduler stage runs in the phase cy_abi.h states") {
@@ -323,6 +341,8 @@ CY_TEST_CASE("a new host starts with no game backend and in no phase") {
     CY_CHECK(host.game.fog == nullptr);
     CY_CHECK(host.game.lights == nullptr);
     CY_CHECK(host.game.first_person == nullptr);
+    CY_CHECK(host.game.effects == nullptr);
+    CY_CHECK(host.game.decals == nullptr);
     CY_CHECK_EQ(host.game.clock.phase, CY_PHASE_NONE);
     CY_CHECK_FALSE(host.game.clock.resimulating());
 }

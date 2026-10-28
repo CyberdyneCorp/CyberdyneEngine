@@ -71,6 +71,10 @@ cy_add_module(
         src/game/first_person_thunks.cpp
         # ABI 1.12: the widget toolkit, over the 1.6 interface's backend.
         src/game/toolkit_thunks.cpp
+        # ABI 1.15: effects and decals, over backends cy::game-backend-effects and
+        # cy::game-backend-decals bind.
+        src/game/effect_thunks.cpp
+        src/game/decal_thunks.cpp
         src/systems.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::core-assets is the directory listing cy/abi/live_reload.h scans for the next generation

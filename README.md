@@ -393,8 +393,10 @@ func applyGravity(
 The system model is complete and tested, but the ABI does not yet have an entry that hands a module
 a chunk; `ChunkSource` is that seam (see the header of
 [`Systems.swift`](bindings/swift/Sources/CyberdyneKit/Systems.swift)). Larger examples:
-[`samples/04-character`](samples/04-character/) (a third-person character) and
-[`samples/13-rts-api`](samples/13-rts-api/) (an RTS unit written only in Swift).
+[`samples/04-character`](samples/04-character/) (a third-person character),
+[`samples/13-rts-api`](samples/13-rts-api/) (an RTS unit written only in Swift) and
+[`samples/15-first-person`](samples/15-first-person/) (a first-person shooter: a character, a weapon
+view, hitscan shots, AI targets, and a shot's flash, sparks and marks through ABI 1.15).
 → [`swift-scripting`](openspec/specs/swift-scripting/spec.md) · [`bindings/swift/`](bindings/swift/README.md)
 
 ---

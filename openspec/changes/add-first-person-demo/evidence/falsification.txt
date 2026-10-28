@@ -1,0 +1,74 @@
+# Mutations applied to the shipped sources, each rebuilt (the Swift game module too, where the
+# mutation is in it), the targeted suite run whole, and the source restored and rebuilt.
+# Driver: apply -> cmake --build (the suite's targets) -> ctest -R <suite> -> restore.
+# Host: Linux, NVIDIA RTX 5060 (Vulkan 1.4), Development build, GCC 13, Swift 6.3.3.
+# Every mutation below turned its suite RED; the suites are green on the restored tree.
+# A first M7 — the shot's ray not ignoring the shooter's own capsule — stayed GREEN: a ray that starts
+# inside a convex body does not report it on Jolt, so the mutation changes nothing and is not one.
+# It was replaced by the M7 below.
+
+== M0 the Jolt temp arena counts 256 bytes a contact constraint (the sizing before this change)
+   integration.physics_jolt: RED
+   TEST CASE:  a small world's first contact steps: the temp arena holds Jolt's constraint buffer
+   the case crashed with SIGSEGV (exit 139) inside JPH::ContactConstraintManager::AddContactConstraint
+
+== M1 effect_play allowed in a fixed step
+   ^unit.abi$: RED
+   TEST CASE:  effects: a frame update plays an effect; a fixed step may not
+   src/abi/tests/test_game_effects.cpp:107: ERROR: CHECK_EQ( table().effect_play(bound.engine(), kSparks, &play), CY_RESULT_PERMISSION_DENIED ) is NOT correct!
+   src/abi/tests/test_game_effects.cpp:110: ERROR: CHECK_EQ( bound.effects.plays, 0U ) is NOT correct!
+   src/abi/tests/test_game_effects.cpp:113: ERROR: CHECK_EQ( bound.effects.plays, 1U ) is NOT correct!
+== M2 decal fade end not held past its start
+   ^unit.abi$: RED
+   TEST CASE:  decals: a description is whole and in range before the backend sees it
+   src/abi/tests/test_game_decals.cpp:146: ERROR: CHECK_EQ( table().decal_spawn(bound.engine(), &bad, &none), CY_RESULT_INVALID_ARGUMENT ) is NOT correct!
+   src/abi/tests/test_game_decals.cpp:147: ERROR: CHECK_EQ( none, ((CyDecal)0) ) is NOT correct!
+   src/abi/tests/test_game_decals.cpp:183: ERROR: CHECK_EQ( bound.decals.spawns, before ) is NOT correct!
+== M3 decal projected along its pose's +Y rather than +Z
+   game_backend_decals: RED
+   TEST CASE:  decals: a spawn lands in the budget as the engine's decal, facing the surface
+   src/game_backend/decals/tests/test_decals_backend.cpp:94: ERROR: CHECK( near(made.axis_z, cy::Vec3{1.0F, 0.0F, 0.0F}) ) is NOT correct!
+== M4 an effect played with no spawn duration
+   game_backend_effects: RED
+   TEST CASE:  effects: a play lands in the world where the game said, its parameter overridden
+   src/game_backend/effects/tests/test_effects_backend.cpp:121: ERROR: CHECK_EQ( rig.world.instances()[0].spawn_seconds, 0.05F ) is NOT correct!
+   src/game_backend/effects/tests/test_effects_backend.cpp:126: ERROR: CHECK_EQ( stepped.instances, 0U ) is NOT correct!
+   src/game_backend/effects/tests/test_effects_backend.cpp:127: ERROR: CHECK_EQ( rig.world.pool().report().used_bytes, 0U ) is NOT correct!
+== M5 a spawn duration ends before the first sub-step
+   ^integration.vfx$: RED
+   TEST CASE:  a spawn duration shorter than a sub-step still spawns once
+   src/vfx/tests/test_vfx_runtime.cpp:959: ERROR: CHECK_GT( spawned, 0U ) is NOT correct!
+   src/vfx/tests/test_vfx_runtime.cpp:961: FATAL ERROR: REQUIRE( instance != nullptr ) is NOT correct!
+   src/vfx/tests/test_vfx_runtime.cpp:940: FATAL ERROR: test case CRASHED: SIGSEGV - Segmentation violation signal
+== M8 the host recasts a shot after the targets moved and the world stepped
+   first_person_sample: RED
+   TEST CASE:  first-person: every shot hits what the host's own raycast says it hits
+   samples/15-first-person/tests/test_first_person_sample.cpp:167: ERROR: CHECK_EQ( number_after(line, "confirmed="), 1.0 ) is NOT correct!
+== M9 a hit felt does not stagger the target
+   first_person_sample: RED
+   TEST CASE:  first-person: every shot hits what the host's own raycast says it hits
+   samples/15-first-person/tests/test_first_person_sample.cpp:157: ERROR: CHECK_GE( shots, 8.0 ) is NOT correct!
+   samples/15-first-person/tests/test_first_person_sample.cpp:173: ERROR: CHECK_EQ( number_after(session.weapon, "target_hits="), 5.0 ) is NOT correct!
+   TEST CASE:  first-person: what a hit does, and what a shot leaves behind
+   samples/15-first-person/tests/test_first_person_sample.cpp:186: ERROR: CHECK_EQ( text_after(t1, "mode="), "down" ) is NOT correct!
+   samples/15-first-person/tests/test_first_person_sample.cpp:187: ERROR: CHECK_EQ( number_after(t1, "hits="), 3.0 ) is NOT correct!
+   samples/15-first-person/tests/test_first_person_sample.cpp:188: ERROR: CHECK_EQ( number_after(t1, "felt="), 3.0 ) is NOT correct!
+   samples/15-first-person/tests/test_first_person_sample.cpp:189: ERROR: CHECK_LE( number_after(t1, "points="), 0.0 ) is NOT correct!
+   samples/15-first-person/tests/test_first_person_sample.cpp:190: ERROR: CHECK_EQ( number_after(t1, "fall="), 1.0 ) is NOT correct!
+== M10 the stand ignores the headroom test
+   first_person_sample: RED
+   TEST CASE:  first-person: walk, sprint, jump and crouch are the character controller's
+   samples/15-first-person/tests/test_first_person_sample.cpp:139: ERROR: CHECK_GT( number_after(move, "airborne="), 20.0 ) is NOT correct!
+   samples/15-first-person/tests/test_first_person_sample.cpp:140: ERROR: CHECK_GT( number_after(move, "peak="), 1.0 ) is NOT correct!
+   samples/15-first-person/tests/test_first_person_sample.cpp:145: ERROR: CHECK_GT( number_after(move, "stand_refused="), 0.0 ) is NOT correct!
+   samples/15-first-person/tests/test_first_person_sample.cpp:150: ERROR: CHECK_LT( std::strtod(at.substr(at.rfind(',') + 1).c_str(), nullptr), 3.0 ) is NOT correct!
+== M11 the decal table relative to the origin rather than the eye
+   first_person_render: RED
+   TEST CASE:  samples/15-first-person: drawn, its marks where the shots hit, golden and budget
+   samples/15-first-person/tests/test_first_person_render.cpp:206: ERROR: CHECK_GT( marked.size(), 20U ) is NOT correct!
+   samples/15-first-person/tests/test_first_person_render.cpp:216: ERROR: CHECK( touched ) is NOT correct!
+   samples/15-first-person/tests/test_first_person_render.cpp:254: ERROR: CHECK_EQ( comparison.differing, 0U ) is NOT correct!
+== M7 the sights held are not passed to the camera
+   first_person_sample: RED
+   TEST CASE:  first-person: what a hit does, and what a shot leaves behind
+   samples/15-first-person/tests/test_first_person_sample.cpp:234: ERROR: CHECK_GT( number_after(session.weapon, "peak_aim="), 0.9 ) is NOT correct!

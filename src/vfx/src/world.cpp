@@ -360,6 +360,7 @@ Expected<EffectHandle, Error> SimulationWorld::play(const CompiledSystem& system
     instance.scale = spawn.scale;
     instance.importance = system.importance();
     instance.release_on_completion = spawn.release_on_completion;
+    instance.spawn_seconds = spawn.spawn_seconds > 0.0F ? spawn.spawn_seconds : 0.0F;
     instance.simulation_hz = spawn.simulation_hz > 0.0F
                                  ? spawn.simulation_hz
                                  : kDefaultHz[static_cast<u32>(system.importance())];
@@ -866,6 +867,14 @@ Status SimulationWorld::simulate_instance(EffectInstance& instance, f32 dt, Step
             live_this_substep += live;
         }
         instance.live_particles = live_this_substep;
+        ++instance.steps;
+    }
+    // A SPAWN THAT ENDS: once the instance has spawned for its seconds — and simulated at least
+    // once, so a burst shorter than a sub-step still spawns — it stops spawning, and a
+    // fire-and-forget instance then releases itself when its last particle dies.
+    if (instance.spawning && instance.spawn_seconds > 0.0F && instance.steps > 0U &&
+        instance.age >= instance.spawn_seconds) {
+        instance.spawning = false;
     }
 
     // THE POPULATION IS REPORTED WHETHER OR NOT A SUB-STEP RAN, and that is not bookkeeping: an

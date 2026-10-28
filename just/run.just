@@ -720,6 +720,41 @@ capture-foot-placement *args:
     echo "==> encode      foot-placement"
     python3 tools/docs/collect_foot_placement.py "${work}/off" "${work}/on"
 
+# samples/15-first-person's pictures: docs/design/videos/first-person-demo.mp4 and the stills
+# docs/design/images/first-person-*.png, drawn by the scripted session on this machine's device.
+# Like every capture here it needs a graphics device and writes nothing without one, so it is a recipe
+# a person runs rather than a test; what is gated automatically is `smoke.first_person_render`. The
+# frames go under the build directory for `capture-world`'s reason below.
+
+# Play the first-person session on the device, and encode the video and the stills. Usage: just capture-first-person [--profile <p>] [--width <n>] [--height <n>] [--upscale <mode>]
+capture-first-person *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/15-first-person/cy_sample_first-person"
+    if [ ! -x "${sample}" ]; then
+        echo "capture-first-person: ${sample} was not built (it needs Swift, CY_AI, CY_VFX and" >&2
+        echo "  CY_PHYSICS)." >&2
+        exit 1
+    fi
+
+    work="${build_dir}/first-person-capture"
+    rm -rf "${work}"
+    mkdir -p "${work}/video" "${work}/stills"
+    trap 'rm -rf "${work}"' EXIT
+
+    echo "==> capture     the first-person session"
+    "${sample}" --render "${work}/stills" --video "${work}/video" --width 1280 --height 720 ${rest}
+
+    echo "==> encode      first-person-demo"
+    python3 tools/docs/collect_first_person.py "${work}/video" "${work}/stills"
+
 # M10's ARTEFACT: docs/design/images/m10-world.png, docs/design/images/m10-world-budget.png and
 # docs/design/videos/m10-world.mp4, regenerated from nothing but a seed.
 #

@@ -167,6 +167,60 @@ CY_TEST_CASE("the Jolt backend reports itself and what it can do") {
     CY_CHECK_FALSE(capabilities.uses_engine_jobs);
 }
 
+CY_TEST_CASE("a small world's first contact steps: the temp arena holds Jolt's constraint buffer") {
+    // REGRESSION. A world of 128 bodies at the default pair and contact capacities sized its temp
+    // arena below the block Jolt takes for its contact constraints every step — the whole capacity
+    // times `cMaxConstraintSize` — so the first step with a contact failed that allocation and
+    // crashed on the null buffer (samples/15-first-person's arena found it). Every other world in
+    // this suite has room to spare from its bodies term, which is why none of them noticed.
+    const Expected<PhysicsServer*, Error> made = jolt::create_server(allocator(), nullptr);
+    CY_REQUIRE(made.has_value());
+    PhysicsServer* server = *made;
+    CY_REQUIRE(server->initialize().has_value());
+    WorldDescription description;
+    description.name = Name::intern("jolt-small");
+    description.body_capacity = 128;
+    const Expected<WorldHandle, Error> world = server->create_world(description);
+    CY_REQUIRE(world.has_value());
+    const auto box = [&](Vec3 half) {
+        ShapeDescription shape;
+        shape.type = ShapeType::Box;
+        shape.half_extents = half;
+        const Expected<ShapeHandle, Error> created = server->create_shape(shape);
+        CY_REQUIRE(created.has_value());
+        return *created;
+    };
+    const auto body = [&](ShapeHandle shape, MotionType motion, Vec3 at) {
+        ColliderDescription collider;
+        collider.shape = shape;
+        BodyDescription made_body;
+        made_body.motion = motion;
+        made_body.mass = motion == MotionType::Dynamic ? 18.0F : 0.0F;
+        made_body.transform = Transform::from_translation(at);
+        made_body.colliders = &collider;
+        made_body.collider_count = 1;
+        const Expected<BodyHandle, Error> created = server->create_body(*world, made_body);
+        CY_REQUIRE(created.has_value());
+        return *created;
+    };
+    (void)body(box(Vec3{14.0F, 0.25F, 14.0F}), MotionType::Static, Vec3{0.0F, -0.25F, 0.0F});
+    const BodyHandle crate =
+        body(box(Vec3{0.35F, 0.35F, 0.35F}), MotionType::Dynamic, Vec3{0.0F, 0.6F, 0.0F});
+    for (u64 tick = 1; tick <= 90U; ++tick) {
+        StepInput input;
+        input.delta_seconds = 1.0F / 60.0F;
+        input.tick = tick;
+        CY_REQUIRE(server->step(*world, input).has_value());
+    }
+    // It landed on the floor and stayed there.
+    const Expected<BodyState, Error> state = server->body_state(crate);
+    CY_REQUIRE(state.has_value());
+    CY_CHECK(std::fabs(state->transform.translation.y - 0.35F) < 0.02F);
+    (void)server->destroy_world(*world);
+    server->shutdown();
+    jolt::destroy_server(server, allocator());
+}
+
 CY_TEST_CASE("Jolt cloth keeps pinned corners and advances free vertices") {
     Fixture fixture;
     const SoftBodyVertex vertices[] = {{{-1.0f, 0.0f, -1.0f}, 0.0f},
