@@ -164,6 +164,15 @@ published targets are halves); (d) the GI at 480x270 costs 0.89 ms on the device
 the card shading 0.18, the probe gather 0.14 (1.5 ms, the card shading 0.55, when the shade was a
 thread a card) — and a whole frame with any view 5 to 13 ms.
 
+### Reading the field from another module
+
+`GpuGiScene::field_binding()` hands out the field's two device buffers — the page table and the
+brick pool — and the clipmap placement the last `upload_field` wrote. It is how particle collision
+(`vfx.collide.sdf`, src/vfx/README.md) reads the scene: bound, not copied, so a particle collides
+with exactly the geometry the GI traces against in the same frame. A reader imports the buffers with
+`RenderGraph::import_buffer_once`, so a frame that also runs the GI's passes has one resource per
+buffer and the graph derives the barrier between them.
+
 ## Incremental, and how that is checked
 
 The field keeps a change journal: `DistanceField::generation()` counts scrolls and `last_changes()`

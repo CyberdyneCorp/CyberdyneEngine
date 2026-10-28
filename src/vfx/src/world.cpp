@@ -198,7 +198,8 @@ SimulationWorld::SimulationWorld(Allocator& allocator) noexcept
       generation_(allocator),
       alive_offset_(allocator),
       parameters_(allocator),
-      parameter_offset_(allocator) {}
+      parameter_offset_(allocator),
+      cursors_(allocator) {}
 
 Status SimulationWorld::initialize(const WorldDescription& description) noexcept {
     description_ = description;
@@ -594,6 +595,7 @@ Status SimulationWorld::step(f32 dt, StepReport& report) noexcept {
     }
     report = StepReport{};
     events_.begin_frame();
+    cursors_.clear();
     if (Status advanced = readback_.begin_frame(); !advanced) {
         return advanced;
     }
@@ -762,6 +764,60 @@ struct EmitterPass {
 
 }  // namespace
 
+u32 SimulationWorld::gather_cursors(u32 block, const CompiledEmitter& emitter,
+                                    ConsumedEvents (&out)[kMaxConsumedChannels]) const noexcept {
+    const VfxKernel* spawn = emitter.kernel_for(Stage::Spawn);
+    if (spawn == nullptr) {
+        return 0;
+    }
+    u32 count = 0;
+    for (const KernelStep& step : spawn->program()) {
+        if (step.op != EventRead || count == kMaxConsumedChannels) {
+            continue;
+        }
+        bool seen = false;
+        for (u32 index = 0; index < count; ++index) {
+            seen = seen || out[index].channel == step.symbol;
+        }
+        if (seen) {
+            continue;
+        }
+        out[count] = ConsumedEvents{step.symbol, 0};
+        for (const BlockCursor& cursor : cursors_) {
+            if (cursor.block == block && cursor.cursor.channel == step.symbol) {
+                out[count].count = cursor.cursor.count;
+            }
+        }
+        ++count;
+    }
+    return count;
+}
+
+Status SimulationWorld::advance_cursors(u32 block, const ConsumedEvents* consumed, u32 count,
+                                        u32 spawned) noexcept {
+    // EVERY CHANNEL THE SPAWN STAGE READ ADVANCES BY WHAT WAS SPAWNED, not by what the channel
+    // held: a spawn the cap or the controller reduced leaves the rest for the next sub-step this
+    // frame, rather than consuming events nothing was spawned for.
+    for (u32 index = 0; index < count; ++index) {
+        bool found = false;
+        for (BlockCursor& cursor : cursors_) {
+            if (cursor.block == block && cursor.cursor.channel == consumed[index].channel) {
+                cursor.cursor.count = consumed[index].count + spawned;
+                found = true;
+            }
+        }
+        if (found) {
+            continue;
+        }
+        const BlockCursor added{
+            block, ConsumedEvents{consumed[index].channel, consumed[index].count + spawned}};
+        if (Status pushed = cursors_.push_back(added); !pushed) {
+            return pushed;
+        }
+    }
+    return ok();
+}
+
 Status SimulationWorld::simulate_emitter(EffectInstance& instance, u32 which,
                                          const BudgetLevers& levers, f32 substep,
                                          KernelRegisters& registers, StepReport& report,
@@ -820,12 +876,30 @@ Status SimulationWorld::simulate_emitter(EffectInstance& instance, u32 which,
     pass.spawn_scale = levers.spawn_scale;
     pass.spawning = instance.spawning;
 
+    // COLLISION, at the controller's quality for this effect's class. The field and the depth view
+    // are world-space and a particle's position is the instance's, so the instance's origin goes
+    // with them.
+    const CollisionInputs collision{collision_field_, collision_depth_, instance.position,
+                                    levers.collision_quality};
+    pass.context.collision = &collision;
+
+    // WHERE THIS EMITTER HAS GOT TO in each channel it spawns from.
+    ConsumedEvents consumed[kMaxConsumedChannels];
+    const u32 consuming = gather_cursors(block, emitter, consumed);
+    pass.context.consumed = {consumed, consuming};
+
     auto wanted = run_spawn(pass);
     if (!wanted) {
         return make_unexpected(wanted.error());
     }
+    const u32 spawned_before = report.spawned;
     if (Status initialised = run_initialise(pass, *wanted); !initialised) {
         return initialised;
+    }
+    if (Status advanced =
+            advance_cursors(block, consumed, consuming, report.spawned - spawned_before);
+        !advanced) {
+        return advanced;
     }
     auto surviving = run_update(pass);
     if (!surviving) {

@@ -177,11 +177,67 @@ struct GpuPushConstants {
     /// compaction so the cost is REPORTED rather than inferred: "the sort SHALL be a reportable
     /// cost".
     u32 sort_passes = 0;
-    u32 reserved = 0;
+    /// `BudgetLevers::collision_quality`: 3 authored, 2 cheaper normals, 1 analytic colliders
+    /// only, 0 none. Read only by an emitter that collides; see <cy/vfx/collision.h>.
+    u32 collision_quality = 3;
 };
 
 static_assert(sizeof(GpuPushConstants) == 48,
               "the push block is pushed as bytes and its size is in the pipeline layout");
+
+// --- The collision set ---------------------------------------------------------------------------
+//
+// DESCRIPTOR SET 1, AND ONLY FOR AN EMITTER THAT COLLIDES. Set 0 above is fixed for every effect,
+// and that is what lets one set layout serve every kernel and the support dispatches; the
+// collision resources are a SECOND set rather than four more bindings in the first, so that an
+// emitter with no collider binds, generates and dispatches exactly what it did before collision
+// existed. Its four bindings are fixed for the same reason set 0's are.
+
+/// The descriptor set index of the collision set.
+inline constexpr u32 kGpuCollisionSet = 1;
+
+enum GpuCollisionBinding : u32 {
+    /// `kGpuCollisionRows` uint4 rows: the layout below. Written by the host each frame.
+    kGpuCollisionConstants = 0,
+    /// The scene field's page table: one word a brick of every clipmap level's window — the GI
+    /// scene's own buffer, bound rather than copied.
+    kGpuCollisionPages = 1,
+    /// The scene field's brick pool, 125 floats a brick slot — the GI scene's own buffer too.
+    kGpuCollisionBricks = 2,
+    /// The frame's depth, reversed Z, read with `Load`.
+    kGpuCollisionDepth = 3,
+    kGpuCollisionBindingCount = 4,
+};
+
+/// The rows of the collision constants, each a `uint4`.
+enum GpuCollisionRow : u32 {
+    /// xyz: the effect's origin, added to a particle's position before a world-space query (float
+    /// bits). w: `kGpuCollisionHasField | kGpuCollisionHasDepth`.
+    kGpuCollisionOrigin = 0,
+    /// x: clipmap levels, y: bricks along each axis of a level's window.
+    kGpuCollisionField = 1,
+    /// x, y: the depth texture's extent in texels.
+    kGpuCollisionDepthExtent = 2,
+    /// xyz: the camera's world position (float bits).
+    kGpuCollisionCamera = 3,
+    /// Four rows, the columns of world-to-clip.
+    kGpuCollisionViewProjection = 4,
+    /// Four rows, the columns of clip-to-world.
+    kGpuCollisionInverseViewProjection = 8,
+    /// Two rows a level: [voxel size, brick size, far distance, 0] as float bits, then the window's
+    /// origin brick as int bits — `GpuGiScene`'s own level rows, in the same order.
+    kGpuCollisionLevels = 12,
+};
+
+/// The clipmap levels the constants have room for: `GpuGiScene`'s own `kMaxFieldLevels`.
+inline constexpr u32 kGpuCollisionMaxLevels = 8;
+/// The constants block's size in `uint4` rows: what the host allocates and writes each frame.
+inline constexpr u32 kGpuCollisionRows = kGpuCollisionLevels + (2U * kGpuCollisionMaxLevels);
+/// `kGpuCollisionOrigin`'s flag for a bound scene field: without it an `sdf` contact finds nothing.
+inline constexpr u32 kGpuCollisionHasField = 1U;
+/// `kGpuCollisionOrigin`'s flag for a bound depth texture: without it a `depth` contact finds
+/// nothing.
+inline constexpr u32 kGpuCollisionHasDepth = 2U;
 
 /// The largest population one sort dispatch orders. The bitonic sort is ONE workgroup over group-
 /// shared memory — one graph pass rather than the log^2(n) passes a global bitonic sort needs — and

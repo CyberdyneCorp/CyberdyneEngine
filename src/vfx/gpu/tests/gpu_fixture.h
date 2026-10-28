@@ -39,7 +39,9 @@
 #include <cy/vfx/runtime.h>
 #include <cy/vfx/world.h>
 
+#include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 namespace cy::vfx_gpu_test {
@@ -139,6 +141,80 @@ private:
     u32 validation_errors_ = 0;
     Expected<rhi::Device*, Error> device_ = fail(ErrorCode::Unavailable, "not created");
 };
+
+/// Read one attribute component out of the GPU block, at the precision the compiler chose.
+///
+/// THE GPU BLOCK IS NOT THE CPU BLOCK, so this walks `gpu_array_base_words` and
+/// `gpu_words_per_particle` rather than the layout's byte offsets. A helper that reused
+/// `load_component` would read `color` — one byte a particle on the host, one word here — from
+/// three quarters of the wrong place.
+[[nodiscard]] inline f32 read_gpu(Span<const u32> block, const AttributeLayout& layout,
+                                  const char* attribute, u32 particle, u32 component,
+                                  u32 capacity) noexcept {
+    const AttributeSlot* slot = layout.find(Name::intern(attribute));
+    if (slot == nullptr || slot->elided || component >= slot->components) {
+        return 0.0F;
+    }
+    const u32 base = gpu_array_base_words(layout, *slot, capacity);
+    const u32 words = gpu_words_per_particle(*slot);
+    if (words == 0) {
+        // Unreachable for a live slot — `gpu_words_per_particle` is at least one for any slot with
+        // a component — and stated rather than assumed, because this helper's whole job is to index
+        // a buffer and an unchecked divisor here would index it wrongly rather than loudly.
+        return 0.0F;
+    }
+    const u32 components_per_word = ((slot->components + words) - 1U) / words;
+    const u32 word_index = component / components_per_word;
+    const u32 lane = component % components_per_word;
+    const usize index =
+        static_cast<usize>(base) + (static_cast<usize>(particle) * words) + word_index;
+    if (index >= block.size()) {
+        return 0.0F;
+    }
+    const u32 word = block[index];
+    switch (slot->precision) {
+        case Precision::Float32: {
+            f32 value = 0.0F;
+            std::memcpy(&value, &word, sizeof(f32));
+            return value;
+        }
+        case Precision::Float16: {
+            const u16 half = static_cast<u16>((word >> (lane * 16U)) & 0xFFFFU);
+            // The same widening `load_component` performs; spelled here because this file may not
+            // reach into the layout module's private helpers.
+            const u32 sign = (half & 0x8000U) << 16U;
+            const u32 exponent = (half >> 10U) & 0x1FU;
+            const u32 mantissa = half & 0x3FFU;
+            u32 bits = 0;
+            if (exponent == 0) {
+                bits = sign;
+            } else if (exponent == 31U) {
+                bits = sign | 0x7F800000U | (mantissa << 13U);
+            } else {
+                bits = sign | ((exponent + 112U) << 23U) | (mantissa << 13U);
+            }
+            f32 value = 0.0F;
+            std::memcpy(&value, &bits, sizeof(f32));
+            return value;
+        }
+        case Precision::Unorm8:
+            return static_cast<f32>((word >> (lane * 8U)) & 0xFFU) * (1.0F / 255.0F);
+        case Precision::Snorm16: {
+            i32 raw = static_cast<i32>((word >> (lane * 16U)) & 0xFFFFU);
+            raw = (raw & 0x8000) != 0 ? raw - 65536 : raw;
+            const f32 value = static_cast<f32>(raw) * (1.0F / 32767.0F);
+            return value < -1.0F ? -1.0F : value;
+        }
+        case Precision::Auto:
+            break;
+    }
+    return 0.0F;
+}
+
+[[nodiscard]] inline f32 relative_difference(f32 a, f32 b) noexcept {
+    const f32 magnitude = std::fmax(std::fabs(a), std::fabs(b));
+    return magnitude > 1.0F ? std::fabs(a - b) / magnitude : std::fabs(a - b);
+}
 
 /// Execute one graph and drain it. One frame, ended rather than merely waited on, for the reason
 /// `test_skin_pass.cpp` records: `begin_frame` recycles the oldest in-flight frame's pools, and a

@@ -64,6 +64,66 @@ constexpr PropertyDesc kCurve[] = {
 constexpr PropertyDesc kEvent[] = {
     {1, 0, "channel", {}, "Declared event channel name", "identifier", {}}};
 
+// THE COLLIDERS' OPTIONAL INPUTS, as values an author can type. Each is the input of the same name
+// left unwired: `compile.cpp` reads a wire first, then this property, then the default shown here.
+// The response comes first on every collider, the shape's own inputs after it.
+constexpr PropertyDesc kCollideResponse[] = {
+    {1, 0, "radius", "0", "Particle radius in metres", "vfx-literal", {}},
+    {2, 0, "restitution", "0.5", "Normal speed kept by a bounce, 0 to 1", "vfx-literal", {}},
+    {3, 0, "friction", "0", "Coulomb friction coefficient against the surface", "vfx-literal", {}},
+    {4, 0, "stick", "0", "Above one half, a particle stops dead on contact", "vfx-literal", {}},
+    {5, 0, "rest_speed", "0", "Closing speeds below this do not bounce", "vfx-literal", {}}};
+constexpr PropertyDesc kCollidePlane[] = {
+    {6, 0, "normal", "0 1 0", "Plane normal, effect space", "vfx-literal", {}},
+    {7, 0, "offset", "0", "Plane offset along its normal", "vfx-literal", {}}};
+constexpr PropertyDesc kCollideSphere[] = {
+    {6, 0, "centre", "0 0 0", "Sphere centre, effect space", "vfx-literal", {}},
+    {7, 0, "sphere_radius", "1", "Sphere radius in metres", "vfx-literal", {}}};
+constexpr PropertyDesc kCollideBox[] = {
+    {6, 0, "centre", "0 0 0", "Box centre, effect space", "vfx-literal", {}},
+    {7, 0, "half_extents", "0.5 0.5 0.5", "Axis-aligned half extents", "vfx-literal", {}}};
+constexpr PropertyDesc kCollideCapsule[] = {
+    {6, 0, "start", "0 0 0", "First end of the axis, effect space", "vfx-literal", {}},
+    {7, 0, "end", "0 1 0", "Second end of the axis, effect space", "vfx-literal", {}},
+    {8, 0, "capsule_radius", "0.5", "Capsule radius in metres", "vfx-literal", {}}};
+constexpr PropertyDesc kCollideSdf[] = {
+    {6, 0, "step", "0", "Gradient sample step in metres; 0 is 5 cm", "vfx-literal", {}}};
+constexpr PropertyDesc kCollideDepth[] = {{6,
+                                           0,
+                                           "thickness",
+                                           "0",
+                                           "How deep a surface is behind its depth; 0 is 50 cm",
+                                           "vfx-literal",
+                                           {}}};
+
+/// A node's properties: the ones every node of its kind shares, then its own.
+struct PropertyLists {
+    Span<const PropertyDesc> shared;
+    Span<const PropertyDesc> own;
+};
+
+[[nodiscard]] Span<const PropertyDesc> collide_shape_properties(std::string_view name) noexcept {
+    if (name == "vfx.collide.plane") {
+        return {kCollidePlane, std::size(kCollidePlane)};
+    }
+    if (name == "vfx.collide.sphere") {
+        return {kCollideSphere, std::size(kCollideSphere)};
+    }
+    if (name == "vfx.collide.box") {
+        return {kCollideBox, std::size(kCollideBox)};
+    }
+    if (name == "vfx.collide.capsule") {
+        return {kCollideCapsule, std::size(kCollideCapsule)};
+    }
+    if (name == "vfx.collide.sdf") {
+        return {kCollideSdf, std::size(kCollideSdf)};
+    }
+    if (name == "vfx.collide.depth") {
+        return {kCollideDepth, std::size(kCollideDepth)};
+    }
+    return {};
+}
+
 Span<const PropertyDesc> properties_for(std::string_view name) noexcept {
     if (name == "vfx.constant") {
         return {kConstant, std::size(kConstant)};
@@ -83,7 +143,7 @@ Span<const PropertyDesc> properties_for(std::string_view name) noexcept {
     if (name == "vfx.curve" || name == "vfx.noise") {
         return {kCurve, std::size(kCurve)};
     }
-    if (name == "vfx.emit_event") {
+    if (name == "vfx.emit_event" || name == "vfx.event_count" || name == "vfx.event_payload") {
         return {kEvent, std::size(kEvent)};
     }
     return {};
@@ -210,13 +270,21 @@ Status put_node(Array<u8>& out, const graph::NodeType& node,
             return value;
         }
     }
-    const Span<const PropertyDesc> properties = properties_for(node.name().text());
-    if (Status count = put_u32(out, static_cast<u32>(properties.size())); !count) {
+    const std::string_view name = node.name().text();
+    const PropertyLists lists = name.starts_with("vfx.collide.")
+                                    ? PropertyLists{{kCollideResponse, std::size(kCollideResponse)},
+                                                    collide_shape_properties(name)}
+                                    : PropertyLists{{}, properties_for(name)};
+    if (Status count = put_u32(out, static_cast<u32>(lists.shared.size() + lists.own.size()));
+        !count) {
         return count;
     }
-    for (const PropertyDesc& property : properties) {
-        if (Status written = put_property(out, property, interfaces, node.required()); !written) {
-            return written;
+    for (const Span<const PropertyDesc> list : {lists.shared, lists.own}) {
+        for (const PropertyDesc& property : list) {
+            if (Status written = put_property(out, property, interfaces, node.required());
+                !written) {
+                return written;
+            }
         }
     }
     return ok();

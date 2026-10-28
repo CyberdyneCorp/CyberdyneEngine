@@ -52,6 +52,7 @@
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/array.h>
 #include <cy/vfx/budget.h>
+#include <cy/vfx/collision.h>
 #include <cy/vfx/compile.h>
 #include <cy/vfx/events.h>
 
@@ -250,6 +251,15 @@ public:
     /// Advance every active instance by `dt` seconds at its own simulation frequency.
     [[nodiscard]] Status step(f32 dt, StepReport& report) noexcept;
 
+    /// What every `vfx.collide.sdf` and `vfx.collide.depth` in this world collides with. Either may
+    /// be null, and then those contacts find nothing — which is also the state of a world nobody
+    /// called this on. Both are borrowed and must outlive the steps that read them; the depth view
+    /// is the host's frame, so a host sets it again when the frame changes. See collision.h.
+    void set_collision(const CollisionField* field, const DepthCollisionView* depth) noexcept {
+        collision_field_ = field;
+        collision_depth_ = depth;
+    }
+
     [[nodiscard]] Span<const EffectInstance> instances() const noexcept {
         return instances_.span();
     }
@@ -318,6 +328,13 @@ private:
                                           Array<f32>& registers, StepReport& report,
                                           Array<DispatchGroup>& groups, u32& live) noexcept;
     [[nodiscard]] Status release_instance(EffectInstance& instance) noexcept;
+    /// The channels an emitter's Spawn stage reads events from, and how far this block has got in
+    /// each this frame. At most `kMaxConsumedChannels` of them; the compiler refuses a Spawn stage
+    /// that reads more, so none is ever silently read from the start.
+    [[nodiscard]] u32 gather_cursors(u32 block, const CompiledEmitter& emitter,
+                                     ConsumedEvents (&out)[kMaxConsumedChannels]) const noexcept;
+    [[nodiscard]] Status advance_cursors(u32 block, const ConsumedEvents* consumed, u32 count,
+                                         u32 spawned) noexcept;
     /// One pool block per emitter. `reusing` replaces a retired instance's blocks in place rather
     /// than appending, which is what keeps the block, alive-flag and parameter arrays bounded.
     [[nodiscard]] Status acquire_blocks(const CompiledSystem& system, u32 first_block,
@@ -343,6 +360,15 @@ private:
     Array<f32> parameters_;
     Array<u32> parameter_offset_;
     StepReport last_step_;
+    /// Where each block has got to in each channel it spawns from, this frame. Cleared with the
+    /// router's channels at the start of a step, because the events it counts are cleared there.
+    struct BlockCursor {
+        u32 block = 0;
+        ConsumedEvents cursor;
+    };
+    Array<BlockCursor> cursors_;
+    const CollisionField* collision_field_ = nullptr;
+    const DepthCollisionView* collision_depth_ = nullptr;
     WorldDescription description_;
     EffectHandle next_handle_ = 1;
     bool ready_ = false;

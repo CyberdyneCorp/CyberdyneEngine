@@ -419,7 +419,9 @@ Status FrameScene::build(rhi::Device& device, const BloomSettings* bloom) noexce
         }
         recorder_.set_bloom(&bloom_);
     }
-    if (Status made = effect_.initialize(device, pipelines_, kParticleCount); !made) {
+    const u32 particle_capacity =
+        hooks_.particle_capacity > kParticleCount ? hooks_.particle_capacity : kParticleCount;
+    if (Status made = effect_.initialize(device, pipelines_, particle_capacity); !made) {
         return made;
     }
     if (Status made = create_geometry(device); !made) {
@@ -505,7 +507,9 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
     recorder_.clear_extensions();
     effect_.reset_report();
     if (mode == RecordMode::CallbacksAndParticles) {
-        if (Status uploaded = effect_.upload(slot, particles_.span()); !uploaded) {
+        const Span<const particles::ParticleInstance> drawn =
+            hooks_.particles != nullptr ? hooks_.particles(hooks_.user) : particles_.span();
+        if (Status uploaded = effect_.upload(slot, drawn); !uploaded) {
             return uploaded;
         }
         if (Status added = recorder_.add_extension(effect_.extension()); !added) {

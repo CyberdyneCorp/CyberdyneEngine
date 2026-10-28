@@ -984,3 +984,68 @@ CY_TEST_CASE("a spawn duration shorter than a sub-step still spawns once") {
     CY_REQUIRE(instance != nullptr);
     CY_CHECK_FALSE(instance->spawning);
 }
+
+CY_TEST_CASE("a scalar attribute or parameter scales every component of a vector on the CPU path") {
+    // REGRESSION. The CPU executor read a one-component attribute or parameter into lane zero of
+    // its four-float register and left lanes one to three at zero, while every elementwise op reads
+    // all four — so `velocity * scale` scaled x and zeroed y and z. Slang broadcasts a scalar, so
+    // the GPU path was right and the two disagreed; a scalar constant broadcast already, which is
+    // why the plume (whose scalars are all constants and inputs) never showed it. Collision's
+    // `velocity * (1 - collided)` gate is what found it.
+    graph::DiagnosticSink sink(allocator());
+    CompileReport report(allocator());
+    NodeRegistry registry(allocator());
+    DataInterfaceRegistry interfaces(allocator());
+    CY_REQUIRE(prepare(registry, interfaces).has_value());
+    VfxSystemAsset asset(allocator(), Name::intern("scaled"));
+    ParameterDecl boost;
+    boost.name = Name::intern("boost");
+    boost.type = Name::intern("float");
+    boost.value[0] = 3.0F;
+    CY_REQUIRE(asset.declare_parameter(boost).has_value());
+    Emitter emitter(allocator(), Name::intern("scaled"));
+    emitter.set_capacity(4);
+    static constexpr const char* kAttributes[][2] = {{"velocity", "float3"}, {"scale", "float"}};
+    for (const auto& row : kAttributes) {
+        AttributeDecl decl;
+        decl.name = Name::intern(row[0]);
+        decl.type = Name::intern(row[1]);
+        decl.minimum = -100.0F;
+        decl.maximum = 100.0F;
+        CY_REQUIRE(emitter.declare_attribute(decl).has_value());
+    }
+    StageBuilder spawn(allocator(), "spawn");
+    spawn.spawn_count(spawn.constant(1.0F));
+    CY_REQUIRE(emitter.set_stage(Stage::Spawn, spawn.take()).has_value());
+    StageBuilder initialise(allocator(), "initialise");
+    initialise.write("velocity", initialise.constant(1.0F, 1.0F, 1.0F, 0.0F, "float3"));
+    initialise.write("scale", initialise.constant(2.0F));
+    CY_REQUIRE(emitter.set_stage(Stage::Initialise, initialise.take()).has_value());
+    StageBuilder update(allocator(), "update");
+    const NodeKey scaled =
+        update.binary("vfx.mul", update.attribute("velocity"), update.attribute("scale"));
+    update.write("velocity", update.binary("vfx.mul", scaled, update.parameter("boost")));
+    update.write("scale", update.attribute("scale"));
+    CY_REQUIRE(update.ok());
+    CY_REQUIRE(emitter.set_stage(Stage::Update, update.take()).has_value());
+    CY_REQUIRE(asset.add_emitter(std::move(emitter)).has_value());
+    asset.resolve(registry);
+    CompileOptions unfused;
+    unfused.fuse_stages = false;
+    auto system = compile_system(asset, registry, interfaces, unfused, sink, report);
+    CY_REQUIRE(system.has_value());
+
+    SimulationWorld world(allocator());
+    CY_REQUIRE(world.initialize(small_world()).has_value());
+    EffectSpawn play;
+    play.simulation_hz = 60.0F;
+    CY_REQUIRE(world.play(*system, play).has_value());
+    StepReport step;
+    CY_REQUIRE(world.step(1.0F / 60.0F, step).has_value());  // spawned
+    CY_REQUIRE(world.step(1.0F / 60.0F, step).has_value());  // updated once
+    const EffectInstance& instance = world.instances()[0];
+    const Name velocity = Name::intern("velocity");
+    for (u32 component = 0; component < 3; ++component) {
+        CY_CHECK_EQ(world.read_attribute(instance, 0, 0, velocity, component), 6.0F);
+    }
+}

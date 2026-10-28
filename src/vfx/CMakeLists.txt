@@ -81,6 +81,7 @@ cy_add_module(
     SOURCES
         src/authoring_capabilities.cpp
         src/budget.cpp
+        src/collision.cpp
         src/events.cpp
         src/renderers.cpp
         src/runtime.cpp
