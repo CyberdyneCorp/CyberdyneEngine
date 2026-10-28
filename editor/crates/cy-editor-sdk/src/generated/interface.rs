@@ -4883,4 +4883,163 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// Give a lockstep unit health and a weapon before the first tick.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn lockstep_arm(
+        &self,
+        engine: ffi::CyEngine,
+        unit: u32,
+        desc: *const ffi::CyLockstepCombatDesc,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .lockstep_arm
+            .ok_or(CallError::Missing("lockstep_arm"))?;
+        let raw = unsafe { entry(engine, unit, desc) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Place a structure in the lockstep session before its first tick.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn lockstep_fortify(
+        &self,
+        engine: ffi::CyEngine,
+        desc: *const ffi::CyLockstepStructureDesc,
+        into: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .lockstep_fortify
+            .ok_or(CallError::Missing("lockstep_fortify"))?;
+        let raw = unsafe { entry(engine, desc, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A lockstep unit's health, target, stance and kills.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn lockstep_combatant(
+        &self,
+        engine: ffi::CyEngine,
+        unit: u32,
+        into: *mut ffi::CyLockstepCombatant,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .lockstep_combatant
+            .ok_or(CallError::Missing("lockstep_combatant"))?;
+        let raw = unsafe { entry(engine, unit, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A lockstep structure's health.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn lockstep_structure(
+        &self,
+        engine: ffi::CyEngine,
+        structure: u32,
+        into: *mut ffi::CyLockstepStructure,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .lockstep_structure
+            .ok_or(CallError::Missing("lockstep_structure"))?;
+        let raw = unsafe { entry(engine, structure, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The combat events from a sequence number on: blows, flights, hits, deaths.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn lockstep_events(
+        &self,
+        engine: ffi::CyEngine,
+        first: u64,
+        into: *mut ffi::CyLockstepEvent,
+        capacity: u32,
+        count: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .lockstep_events
+            .ok_or(CallError::Missing("lockstep_events"))?;
+        let raw = unsafe { entry(engine, first, into, capacity, count) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The lockstep session's projectiles in flight.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn lockstep_projectiles(
+        &self,
+        engine: ffi::CyEngine,
+        into: *mut ffi::CyLockstepProjectile,
+        capacity: u32,
+        count: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .lockstep_projectiles
+            .ok_or(CallError::Missing("lockstep_projectiles"))?;
+        let raw = unsafe { entry(engine, into, capacity, count) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

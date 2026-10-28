@@ -9305,3 +9305,40 @@ evidence = "test:integration.physics_jolt"
 case = "a small world's first contact steps: the temp arena holds Jolt's constraint buffer"
 note = "The Jolt server sized its temp arena with 256 bytes a contact constraint while Jolt allocates `cMaxConstraintSize` for the whole capacity every step; a 128-body world at the default capacities crashed on its first contact (samples/15-first-person found it). The case drops a box onto a floor in exactly that world and holds it at rest; on the old sizing it crashes (`openspec/changes/add-first-person-demo/evidence/falsification.txt`)."
 
+
+# --- add-rts-combat-and-minimap (ABI 1.16) ---------------------------------------------------------
+
+[[coverage]]
+row = "native-abi"
+requirement = "Combat in the lockstep path through the ABI"
+evidence = "test:integration.game_backend_lockstep"
+case = "combat: two peers fight the same battle, tick for tick, through the ABI"
+note = "ABI 1.16 (`add-rts-combat-and-minimap`): `lockstep_arm`, `lockstep_fortify`, `lockstep_combatant`, `lockstep_structure`, `lockstep_events`, `lockstep_projectiles` and the attack-move and attack order kinds, over a real issuer and follower: every event read once from a cursor and numbered without a gap, arming after the first tick refused. 'combat: the event history keeps the latest, numbered, when a reader falls behind' is the bounded history; `unit.abi`'s `test_game_lockstep_combat.cpp` the phases, the argument checks, `struct_size` both ways, UNSUPPORTED without combat and UNAVAILABLE without a session, and `test_layout.cpp` the 1.16 layouts; CyberdyneKit's `LockstepCombatTests` the Swift face. Proved red by mutation (`openspec/changes/add-rts-combat-and-minimap/evidence/falsification.txt`)."
+
+[[coverage]]
+row = "simulation-and-determinism"
+requirement = "Deterministic lockstep combat"
+evidence = "test:integration.game_backend_lockstep"
+case = "combat: a melee duel's blows, points and death are the ones its specs give"
+note = "Every blow, its tick, its points through armour and the death worked out by hand and held; the projectile, homing, splash, structure and attack cases do the same for flights, splash, buildings and orders, and 'combat: a follower armed differently disagrees from the first blow' holds the hashes to the combat state. `determinism.cross_leg`'s 'the sample's battle is the committed session, on this leg' publishes samples/13-rts-api's battle (host/battle.h) as `detmath-battle-digest` for the four-leg comparison, and `integration.rts_api_sample` holds the Swift-driven battle to the same digest and the twin's damage, deaths and events. The company's committed digest holding on every leg is the session with nothing armed unchanged."
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Topographic minimap"
+evidence = "test:unit.render_minimap"
+case = "minimap: a line on every texel a level crosses below, and nowhere else"
+note = "`cy::rendering-minimap`: the contour placement checked at every texel of a rolling field, the ramp's lines an interval apart with the index line, the hillshade's light and dark faces, water by depth and its shore, roads, the fog's three states, icons, and 'minimap: redrawing only the changed cells is the whole fog stage, texel for texel' for the incremental fog. `integration.rts_map` holds the bake's contours to the cooked Frontier map's own heights at all 65 536 texels and draws it through blue's fog; `smoke.rts_api_map`'s battle case shows it on the HUD."
+
+[[coverage]]
+row = "ui-system"
+requirement = "Atlas pages updated inside a frame"
+evidence = "test:render.ui"
+case = "(j) a staged page changes in the next frame, with no submission of its own"
+note = "`UiRenderer::stage_atlas` on the device: the frame after the stage shows the new texels, the device begins exactly one frame for it, the next frame still shows them, and a page never uploaded or texels of the wrong size are refused. samples/13-rts-api's battle redraws its topographic minimap this way."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Retired instance slots fit what they are reused for"
+evidence = "test:integration.vfx"
+case = "a retired slot is reused only by its own system, never one that would overrun it"
+note = "Regression for the defect samples/13-rts-api's battle found: a retired slot handed to any system with the same emitter count, its alive flags and parameter words overrun by a larger one. Proved red on the old `reusable` (the two live instances' alive flags overlapped)."

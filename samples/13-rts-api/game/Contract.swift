@@ -35,6 +35,36 @@ enum Content {
     /// ABI 1.10: the interface atlas page an embedder that draws the HUD uploads the fog of war's
     /// minimap overlay to (`fog_of_war::compose_minimap_fog`). Page 1 is the glyphs'.
     static let fogPage: UInt32 = 2
+    /// ABI 1.16: the node the host places in the level when there is a battle to fight, and the
+    /// prefab a soldier is spawned from.
+    static let battlefield = "/Level/Battlefield"
+    static let soldier = "units/soldier"
+    /// The battle's effects (ABI 1.15) and cues, as host/battle_effects.h and host/battle_host.h
+    /// register them.
+    static let launchEffect = "battle.launch"
+    static let trailEffect = "battle.trail"
+    static let sparksEffect = "battle.sparks"
+    static let explosionEffect = "battle.explosion"
+    static let smokeEffect = "battle.smoke"
+    static let clashCue = "battle.clash"
+    static let bowCue = "battle.bow"
+    static let thumpCue = "battle.throw"
+    static let boomCue = "battle.boom"
+    static let fallCue = "battle.fall"
+}
+
+/// The minimap's square, in the level's metres: the level alone, or — with a battle — the RTS test
+/// map's whole terrain (`battle::kMapMinX`, `kMapMinZ`, `kMapSize`), which the host draws its
+/// topographic minimap over.
+struct MinimapFrame {
+    var minX: Float
+    var minZ: Float
+    var size: Float
+
+    static let frontier = MinimapFrame(minX: -48, minZ: -64, size: 128)
+
+    func x(_ worldX: Float) -> Float { (worldX - minX) / size }
+    func y(_ worldZ: Float) -> Float { (worldZ - minZ) / size }
 }
 
 /// ABI 1.10: the enemy camp the host placed in the level — `/Level/RaiderNear`, `/Level/RaiderFar`
@@ -126,6 +156,21 @@ struct RtsReport {
     var fogFarHidden: Float = 0
     var fogEnemyDots: Float = 0
     var fogRefused: Float = 0
+    /// ABI 1.16 (Battle.swift). Soldiers enlisted, orders given, events read, points of damage the
+    /// events reported, deaths, buildings fallen, events shown and hidden by blue's fog, and the
+    /// effects, lights, cues and trail marks played.
+    var battleSoldiers: Float = 0
+    var battleOrders: Float = 0
+    var battleEvents: Float = 0
+    var battleDamage: Float = 0
+    var battleDeaths: Float = 0
+    var battleFallen: Float = 0
+    var battleShown: Float = 0
+    var battleHidden: Float = 0
+    var battleEffects: Float = 0
+    var battleLights: Float = 0
+    var battleSounds: Float = 0
+    var battleTrails: Float = 0
 }
 
 extension Component {

@@ -254,6 +254,11 @@ add_subdirectory(lightmaps)
 # after pipeline/.
 add_subdirectory(fog_of_war)
 
+# THE TOPOGRAPHIC MINIMAP. The ground baked from above — colours, hillshade, contours, water and
+# roads — with fog_of_war's field over it and icons on top, on the host. It reads fog_of_war's
+# sampler, so it is read after it.
+add_subdirectory(minimap)
+
 # MANY LIGHTS AND AREA LIGHTS ON THE DEVICE. The device half of cy::rendering-lighting: the LTC
 # table as a texture of the frame's set 0, the clustered light lists assigned by a compute stage at
 # `FramePassKind::ClusterAssignment`, and the stochastic many-light path at

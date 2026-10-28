@@ -138,6 +138,7 @@ final class RtsHud {
             Panel("water")
                 .layout(.anchored(min: Vec2(x: 0.55, y: 0.12), max: Vec2(x: 0.9, y: 0.42)))
                 .style(UIStyle(background: mapWater, cornerRadius: 6))
+                .id("water")
             // The fog of war, over the ground and under the dots, inside the one-unit border;
             // collapsed until shown.
             Image(page: 0, name: "fog")
@@ -260,6 +261,18 @@ final class RtsHud {
         try tree["camera"].setLayout(
             .anchored(
                 min: Vec2(x: camera.x, y: camera.y), max: Vec2(x: camera.right, y: camera.bottom)))
+    }
+
+    /// ABI 1.16's battle: the minimap becomes a square over the whole map, large enough to read —
+    /// the embedder draws the map topographically on the fog's page — and its painted water goes,
+    /// the map's own lake being on the page.
+    func showWholeMap() throws {
+        try tree["minimap"].setLayout(
+            UILayout.anchored(
+                min: Vec2(x: 1, y: 1), max: Vec2(x: 1, y: 1), offsetMin: Vec2(x: -182, y: -182),
+                offsetMax: Vec2(x: -6, y: -6)
+            ).laying(.absolute))
+        try tree["water"].setShown(false)
     }
 
     /// The fog's overlay page over the whole map, or no fog.

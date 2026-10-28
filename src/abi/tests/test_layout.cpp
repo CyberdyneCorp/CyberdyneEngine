@@ -569,3 +569,32 @@ CY_TEST_CASE("the 1.15 structs have the offsets the description generator comput
     CY_CHECK_EQ(offsetof(CyDecalStatus, spawned), 16U);
     CY_CHECK_EQ(offsetof(CyDecalStatus, evicted), 24U);
 }
+
+CY_TEST_CASE("the 1.16 structs have the offsets the description generator computes") {
+    CY_CHECK_EQ(sizeof(CyLockstepCombatDesc), 64U);
+    CY_CHECK_EQ(offsetof(CyLockstepCombatDesc, weapon), 16U);
+    CY_CHECK_EQ(offsetof(CyLockstepCombatDesc, reserved), 28U);
+    CY_CHECK_EQ(offsetof(CyLockstepCombatDesc, range), 32U);
+    CY_CHECK_EQ(offsetof(CyLockstepCombatDesc, splash), 56U);
+    CY_CHECK_EQ(sizeof(CyLockstepStructureDesc), 48U);
+    CY_CHECK_EQ(offsetof(CyLockstepStructureDesc, entity), 8U);
+    CY_CHECK_EQ(offsetof(CyLockstepStructureDesc, position), 16U);
+    CY_CHECK_EQ(offsetof(CyLockstepStructureDesc, radius), 32U);
+    CY_CHECK_EQ(offsetof(CyLockstepStructureDesc, health), 40U);
+    CY_CHECK_EQ(offsetof(CyLockstepStructureDesc, armour), 44U);
+    CY_CHECK_EQ(sizeof(CyLockstepCombatant), 48U);
+    CY_CHECK_EQ(offsetof(CyLockstepCombatant, kills), 28U);
+    CY_CHECK_EQ(offsetof(CyLockstepCombatant, target), 40U);
+    CY_CHECK_EQ(sizeof(CyLockstepStructure), 48U);
+    CY_CHECK_EQ(offsetof(CyLockstepStructure, position), 16U);
+    CY_CHECK_EQ(offsetof(CyLockstepStructure, health), 40U);
+    CY_CHECK_EQ(sizeof(CyLockstepEvent), 80U);
+    CY_CHECK_EQ(offsetof(CyLockstepEvent, kind), 16U);
+    CY_CHECK_EQ(offsetof(CyLockstepEvent, team), 44U);
+    CY_CHECK_EQ(offsetof(CyLockstepEvent, position), 48U);
+    CY_CHECK_EQ(offsetof(CyLockstepEvent, toward), 64U);
+    CY_CHECK_EQ(sizeof(CyLockstepProjectile), 80U);
+    CY_CHECK_EQ(offsetof(CyLockstepProjectile, launched), 24U);
+    CY_CHECK_EQ(offsetof(CyLockstepProjectile, origin), 32U);
+    CY_CHECK_EQ(offsetof(CyLockstepProjectile, aim), 64U);
+}

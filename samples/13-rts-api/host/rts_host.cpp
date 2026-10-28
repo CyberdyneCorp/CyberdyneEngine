@@ -14,6 +14,7 @@
 #include <string_view>
 #include <utility>
 
+#include "battle.h"
 #include "company.h"
 #include "level.h"
 
@@ -236,6 +237,12 @@ cy::Status RtsHost::start(const char** detail) noexcept {
         return bound;
     }
     fog_->bind(host_);
+    if (options_.battle) {
+        *detail = "battle";
+        if (cy::Status staged = start_battle(); !staged) {
+            return staged;
+        }
+    }
     started_ = true;
 
     if (cy::Status loaded = load_module(detail); !loaded) {
@@ -260,10 +267,16 @@ cy::Status RtsHost::start_illumination() noexcept {
 
 cy::Status RtsHost::start_fog() noexcept {
     fog_ = std::make_unique<RtsFog>(allocator_);
-    const cy::Aabb level =
-        cy::Aabb::from_min_max(Vec3{0.0F, 0.0F, 0.0F}, Vec3{kLevelSize, 0.0F, kLevelSize});
+    // A battle is fought on the company's field, off the level's square: the grid covers the RTS
+    // test map's whole terrain then, drawn or not, so a headless battle sees what a drawn one does.
+    const cy::Aabb ground =
+        options_.battle
+            ? cy::Aabb::from_min_max(Vec3{battle::kMapMinX, 0.0F, battle::kMapMinZ},
+                                     Vec3{battle::kMapMinX + battle::kMapSize, 0.0F,
+                                          battle::kMapMinZ + battle::kMapSize})
+            : cy::Aabb::from_min_max(Vec3{0.0F, 0.0F, 0.0F}, Vec3{kLevelSize, 0.0F, kLevelSize});
     if (cy::Status built =
-            fog_->build(options_.fog_bounds != nullptr ? *options_.fog_bounds : level);
+            fog_->build(options_.fog_bounds != nullptr ? *options_.fog_bounds : ground);
         !built) {
         return built;
     }
@@ -273,6 +286,15 @@ cy::Status RtsHost::start_fog() noexcept {
     for (u32 index = 0; index < kCampSize; ++index) {
         fog_->place(camp_[index], kCamp[index].at);
     }
+    return cy::ok();
+}
+
+cy::Status RtsHost::start_battle() noexcept {
+    battle_ = std::make_unique<BattleStage>(allocator_, tree_);
+    if (cy::Status started = battle_->start(audio_, audio_adapter_, kSampleRate); !started) {
+        return started;
+    }
+    battle_->bind(host_);
     return cy::ok();
 }
 
@@ -429,6 +451,18 @@ cy::Status RtsHost::start_scene() noexcept {
             return cy::make_unexpected(made.error());
         }
         camp_[index] = cy::abi::to_abi(made->entity());
+    }
+    // ABI 1.16: the node that tells the game there is a battle, and the soldier it spawns. Made
+    // after every other level node, so a run without a battle has every entity it always had.
+    if (options_.battle) {
+        if (const auto made = tree_.create_node(cy::Name::intern(kBattlefieldNode), *level);
+            !made) {
+            return cy::make_unexpected(made.error());
+        }
+        if (cy::Status added = spawn_adapter_.add_prefab(kSoldierPrefab, soldier_prefab());
+            !added) {
+            return added;
+        }
     }
     return spawn_adapter_.add_prefab(kWorkerPrefab, worker_prefab());
 }
@@ -698,7 +732,8 @@ cy::Status RtsHost::start_audio() noexcept {
     cy::audio::AudioServerConfig config;
     config.requested = device.requested;
     config.block_frames = kBlockFrames;
-    config.voice_capacity = 16;
+    // A battle's blows, bows and blasts on top of the level's one click.
+    config.voice_capacity = options_.battle ? 48U : 16U;
     if (cy::Status configured = audio_.configure(config); !configured) {
         return configured;
     }
@@ -780,6 +815,9 @@ cy::Status RtsHost::run_frame() noexcept {
     // ABI 1.9's changes this frame are stamped with it; the GI runs after the game's frame, from
     // where the frame's camera looks — presentation, which a fixed step never reads.
     gi_->begin_frame(frame_ + 1U);
+    if (battle_ != nullptr) {
+        battle_->begin_frame(kStep);
+    }
     runtime_.frame_update(kStep);
     if (cy::Status staged = run_stages(cy::ecs::Stage::Frame, cy::ecs::Stage::UI); !staged) {
         return staged;
@@ -793,6 +831,11 @@ cy::Status RtsHost::run_frame() noexcept {
     if (ui_adapter_) {
         if (cy::Status laid = ui_layout(); !laid) {
             return laid;
+        }
+    }
+    if (battle_ != nullptr) {
+        if (cy::Status played = battle_->end_frame(kStep); !played) {
+            return played;
         }
     }
     update_audio();
@@ -818,6 +861,12 @@ cy::Status RtsHost::fixed_tick() noexcept {
     // The company's tick, with the orders the commander recorded in its fixed update.
     if (cy::Status ticked = lockstep_adapter_->tick(); !ticked) {
         return ticked;
+    }
+    // The battle's soldiers stand where their units do before the fog places their visions.
+    if (battle_ != nullptr) {
+        if (cy::Status placed = battle_->after_tick(*company_); !placed) {
+            return placed;
+        }
     }
     if (cy::Status followed = bodies_->sync(); !followed) {
         return followed;
@@ -865,6 +914,9 @@ void RtsHost::shutdown() noexcept {
     }
     if (fog_ != nullptr) {
         fog_->unbind(host_);
+    }
+    if (battle_ != nullptr) {
+        BattleStage::unbind(host_);
     }
     lockstep_adapter_.reset();
     company_follower_.reset();
@@ -1094,7 +1146,37 @@ Observation RtsHost::observe() noexcept {
     observe_lockstep(seen, record, bytes);
     observe_illumination(seen, record, bytes);
     observe_fog(seen, record, bytes);
+    observe_battle(seen, record, bytes);
     return seen;
+}
+
+void RtsHost::observe_battle(Observation& seen, const cy::abi::ComponentRecord* report,
+                             const void* bytes) noexcept {
+    if (battle_ == nullptr || company_ == nullptr) {
+        return;
+    }
+    battle_->observe(*company_, seen.battle);
+    seen.battle.follower_digest = company_follower_->digest();
+    seen.battle.disagreements = lockstep_adapter_->disagreements();
+    if (report == nullptr || bytes == nullptr) {
+        return;
+    }
+    const auto field = [&](const char* name) {
+        return read_field<f32>(bytes, report_field(binding_, *report, name));
+    };
+    BattleObservation::Game& game = seen.battle.game;
+    game.soldiers = field("battleSoldiers");
+    game.orders = field("battleOrders");
+    game.events = field("battleEvents");
+    game.damage = field("battleDamage");
+    game.deaths = field("battleDeaths");
+    game.fallen = field("battleFallen");
+    game.shown = field("battleShown");
+    game.hidden = field("battleHidden");
+    game.effects = field("battleEffects");
+    game.lights = field("battleLights");
+    game.sounds = field("battleSounds");
+    game.trails = field("battleTrails");
 }
 
 void RtsHost::observe_fog(Observation& seen, const cy::abi::ComponentRecord* report,

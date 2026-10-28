@@ -56,6 +56,19 @@
 //                                updated every frame from the camera
 //   presentation only            the same call from a fixed step is refused
 //
+// and, at ABI 1.16:
+//
+//   the battle is lockstep       lockstep_enlist, lockstep_arm and lockstep_fortify for 40
+//                                soldiers and two buildings, then attack-move and attack orders on
+//                                the plan's ticks; the digest the Swift-driven battle ends in is
+//                                host/battle.h's committed one, every CI leg's (cross_leg), and its
+//                                damage, deaths and events are the C++ twin's, point for point
+//   it is read, not decided      lockstep_events from a cursor: the game's sum of the damage it
+//   read
+//                                is the session's, every event read once
+//   it is drawn where blue sees  effect_play, light_spawn and audio_play for what blue's fog shows,
+//                                nothing for what it hides
+//
 // and the negative controls: the same host with no behaviours does none of the behaviour work and
 // animates nothing, the same host with the systems left out of the schedule never runs
 // `trainUnits`, and the same host with no interface has no HUD and its Build click lands on the
@@ -66,6 +79,7 @@
 #include <cstdlib>
 #include <string>
 
+#include "battle.h"
 #include "process.h"
 
 namespace {
@@ -497,6 +511,82 @@ CY_TEST_CASE(
     CY_CHECK_EQ(number_after(control.order, "orders="), 1.0);
     CY_CHECK_EQ(number_after(control.audio, "arrivals="), 1.0);
     CY_CHECK_EQ(number_after(control.tree, "readied="), 1.0);
+}
+
+CY_TEST_CASE(
+    "samples/13-rts-api: ABI 1.16 — a battle fought in fixed point, read and drawn by sight") {
+    const cy::test::smoke::ProcessResult process =
+        cy::test::smoke::run(cy::test::smoke::quoted(CY_SAMPLE_RTS_API) + " --battle 2>&1");
+    const std::string battle = line_with(process.output, "rts battle ");
+    const std::string fight = line_with(process.output, "rts fight ");
+    if (!process.ran || process.exit_code != 0 || battle.empty() || fight.empty()) {
+        CY_TEST_MESSAGE(process.output);
+    }
+    CY_REQUIRE(process.ran);
+    CY_REQUIRE_EQ(process.exit_code, 0);
+    CY_REQUIRE(!battle.empty());
+    CY_REQUIRE(!fight.empty());
+
+    // THE SESSION: the battle the Swift game set up and ordered, two peers agreeing on every tick,
+    // ending in the digest every CI leg computes from host/battle.h's C++ orders.
+    CY_CHECK_EQ(number_after(battle, "units="), 40.0);
+    CY_CHECK_EQ(number_after(battle, "structures="), 2.0);
+    CY_CHECK_EQ(number_after(battle, "ticks="), 1200.0);
+    CY_CHECK_EQ(number_after(battle, "commands="), 13.0);
+    CY_CHECK_EQ(number_after(battle, "disagreements="), 0.0);
+    CY_CHECK_EQ(hex_after(battle, "digest="), sample::rts::battle::kBattleDigest);
+    CY_CHECK_EQ(hex_after(battle, "follower="), sample::rts::battle::kBattleDigest);
+
+    // THE NUMBERS ARE THE TWIN'S: the same damage, the same survivors, the same events, the same
+    // fallen buildings — what the session reports, and what the game read.
+    const sample::rts::battle::BattleRun twin = sample::rts::battle::run_battle();
+    CY_REQUIRE(twin.complete);
+    CY_CHECK_EQ(number_after(battle, "damage="), static_cast<double>(twin.damage));
+    CY_CHECK_EQ(number_after(battle, "events="), static_cast<double>(twin.events));
+    CY_CHECK_EQ(number_after(battle, "blue="), static_cast<double>(twin.blue_alive));
+    CY_CHECK_EQ(number_after(battle, "red="), static_cast<double>(twin.red_alive));
+    CY_CHECK_EQ(number_after(battle, "standing="), 0.0);
+    CY_CHECK_EQ(number_after(fight, "soldiers="), 40.0);
+    CY_CHECK_EQ(number_after(fight, "orders="), 13.0);
+    CY_CHECK_EQ(number_after(fight, "damage="), static_cast<double>(twin.damage));
+    CY_CHECK_EQ(number_after(fight, "deaths="),
+                40.0 - static_cast<double>(twin.blue_alive + twin.red_alive));
+    CY_CHECK_EQ(number_after(fight, "fallen="), 2.0);
+    // Every event read once: the game reads a tick's events on the frame after it, so the last
+    // tick's are the only ones it has not read when the run ends.
+    CY_CHECK(number_after(fight, "events=") <= static_cast<double>(twin.events));
+    CY_CHECK(number_after(fight, "events=") > static_cast<double>(twin.events) - 40.0);
+
+    // DRAWN BY SIGHT: blue saw much of the battle and not all of it, and played only what it saw.
+    const double shown = number_after(fight, "shown=");
+    const double hidden = number_after(fight, "hidden=");
+    CY_CHECK(shown > 100.0);
+    CY_CHECK(hidden > 0.0);
+    CY_CHECK(number_after(fight, "sounds=") > 0.0);
+    CY_CHECK(number_after(fight, "trails=") > 0.0);
+    CY_CHECK(number_after(fight, "lights=") > 0.0);
+    CY_CHECK_EQ(number_after(fight, "lights="), number_after(fight, "spawned="));
+    // With the VFX runtime the host registers the effects, and every play the game counted is one
+    // the adapter played.
+    if (number_after(fight, "played=") > 0.0) {
+        CY_CHECK_EQ(number_after(fight, "effects="), number_after(fight, "played="));
+        CY_CHECK(number_after(fight, "particles_peak=") > 0.0);
+    }
+}
+
+CY_TEST_CASE("samples/13-rts-api: with no Swift behaviour there is no battle, only its field") {
+    const cy::test::smoke::ProcessResult process = cy::test::smoke::run(
+        cy::test::smoke::quoted(CY_SAMPLE_RTS_API) + " --battle --no-behaviours 2>&1");
+    CY_REQUIRE(process.ran);
+    CY_REQUIRE_EQ(process.exit_code, 0);
+    const std::string battle = line_with(process.output, "rts battle ");
+    CY_REQUIRE(!battle.empty());
+    CY_CHECK_EQ(number_after(battle, "units="), 0.0);
+    CY_CHECK_EQ(number_after(battle, "events="), 0.0);
+    CY_CHECK_EQ(number_after(battle, "commands="), 0.0);
+    // And a run without `--battle` has no battle at all.
+    const Run plain = run_sample("");
+    CY_CHECK(line_with(plain.process.output, "rts battle ").empty());
 }
 
 CY_TEST_CASE("samples/13-rts-api reproduces exactly across two runs") {

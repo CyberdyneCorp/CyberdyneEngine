@@ -773,6 +773,36 @@ public struct Engine: @unchecked Sendable {
     public func decalStatus(into: UnsafeMutablePointer<CyDecalStatus>?) throws {
         try interface.decalStatus(engine: raw, into: into)
     }
+
+    @inlinable
+    public func lockstepArm(unit: UInt32, desc: UnsafePointer<CyLockstepCombatDesc>?) throws {
+        try interface.lockstepArm(engine: raw, unit: unit, desc: desc)
+    }
+
+    @inlinable
+    public func lockstepFortify(desc: UnsafePointer<CyLockstepStructureDesc>?, into: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.lockstepFortify(engine: raw, desc: desc, into: into)
+    }
+
+    @inlinable
+    public func lockstepCombatant(unit: UInt32, into: UnsafeMutablePointer<CyLockstepCombatant>?) throws {
+        try interface.lockstepCombatant(engine: raw, unit: unit, into: into)
+    }
+
+    @inlinable
+    public func lockstepStructure(structure: UInt32, into: UnsafeMutablePointer<CyLockstepStructure>?) throws {
+        try interface.lockstepStructure(engine: raw, structure: structure, into: into)
+    }
+
+    @inlinable
+    public func lockstepEvents(first: UInt64, into: UnsafeMutablePointer<CyLockstepEvent>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.lockstepEvents(engine: raw, first: first, into: into, capacity: capacity, count: count)
+    }
+
+    @inlinable
+    public func lockstepProjectiles(into: UnsafeMutablePointer<CyLockstepProjectile>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.lockstepProjectiles(engine: raw, into: into, capacity: capacity, count: count)
+    }
 }
 
 public struct World: @unchecked Sendable {

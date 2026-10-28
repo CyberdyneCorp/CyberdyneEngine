@@ -833,6 +833,96 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyDecalStatus>.offset(of: \CyDecalStatus.evicted), 24, "CyDecalStatus.evicted offset")
     }
 
+    func testLockstepCombatDescLayout() {
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatDesc>.size, 64, "CyLockstepCombatDesc size")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatDesc>.alignment, 8, "CyLockstepCombatDesc alignment")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatDesc>.offset(of: \CyLockstepCombatDesc.struct_size), 0, "CyLockstepCombatDesc.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatDesc>.offset(of: \CyLockstepCombatDesc.team), 4, "CyLockstepCombatDesc.team offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatDesc>.offset(of: \CyLockstepCombatDesc.health), 8, "CyLockstepCombatDesc.health offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatDesc>.offset(of: \CyLockstepCombatDesc.armour), 12, "CyLockstepCombatDesc.armour offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatDesc>.offset(of: \CyLockstepCombatDesc.weapon), 16, "CyLockstepCombatDesc.weapon offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatDesc>.offset(of: \CyLockstepCombatDesc.damage), 20, "CyLockstepCombatDesc.damage offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatDesc>.offset(of: \CyLockstepCombatDesc.cooldown), 24, "CyLockstepCombatDesc.cooldown offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatDesc>.offset(of: \CyLockstepCombatDesc.reserved), 28, "CyLockstepCombatDesc.reserved offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatDesc>.offset(of: \CyLockstepCombatDesc.range), 32, "CyLockstepCombatDesc.range offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatDesc>.offset(of: \CyLockstepCombatDesc.sight), 40, "CyLockstepCombatDesc.sight offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatDesc>.offset(of: \CyLockstepCombatDesc.projectile_speed), 48, "CyLockstepCombatDesc.projectile_speed offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatDesc>.offset(of: \CyLockstepCombatDesc.splash), 56, "CyLockstepCombatDesc.splash offset")
+    }
+
+    func testLockstepStructureDescLayout() {
+        XCTAssertEqual(MemoryLayout<CyLockstepStructureDesc>.size, 48, "CyLockstepStructureDesc size")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructureDesc>.alignment, 8, "CyLockstepStructureDesc alignment")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructureDesc>.offset(of: \CyLockstepStructureDesc.struct_size), 0, "CyLockstepStructureDesc.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructureDesc>.offset(of: \CyLockstepStructureDesc.team), 4, "CyLockstepStructureDesc.team offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructureDesc>.offset(of: \CyLockstepStructureDesc.entity), 8, "CyLockstepStructureDesc.entity offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructureDesc>.offset(of: \CyLockstepStructureDesc.position), 16, "CyLockstepStructureDesc.position offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructureDesc>.offset(of: \CyLockstepStructureDesc.radius), 32, "CyLockstepStructureDesc.radius offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructureDesc>.offset(of: \CyLockstepStructureDesc.health), 40, "CyLockstepStructureDesc.health offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructureDesc>.offset(of: \CyLockstepStructureDesc.armour), 44, "CyLockstepStructureDesc.armour offset")
+    }
+
+    func testLockstepCombatantLayout() {
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatant>.size, 48, "CyLockstepCombatant size")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatant>.alignment, 4, "CyLockstepCombatant alignment")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatant>.offset(of: \CyLockstepCombatant.struct_size), 0, "CyLockstepCombatant.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatant>.offset(of: \CyLockstepCombatant.flags), 4, "CyLockstepCombatant.flags offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatant>.offset(of: \CyLockstepCombatant.team), 8, "CyLockstepCombatant.team offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatant>.offset(of: \CyLockstepCombatant.health), 12, "CyLockstepCombatant.health offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatant>.offset(of: \CyLockstepCombatant.max_health), 16, "CyLockstepCombatant.max_health offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatant>.offset(of: \CyLockstepCombatant.armour), 20, "CyLockstepCombatant.armour offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatant>.offset(of: \CyLockstepCombatant.cooldown), 24, "CyLockstepCombatant.cooldown offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatant>.offset(of: \CyLockstepCombatant.kills), 28, "CyLockstepCombatant.kills offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatant>.offset(of: \CyLockstepCombatant.stance), 32, "CyLockstepCombatant.stance offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatant>.offset(of: \CyLockstepCombatant.target_kind), 36, "CyLockstepCombatant.target_kind offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatant>.offset(of: \CyLockstepCombatant.target), 40, "CyLockstepCombatant.target offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepCombatant>.offset(of: \CyLockstepCombatant.reserved), 44, "CyLockstepCombatant.reserved offset")
+    }
+
+    func testLockstepStructureLayout() {
+        XCTAssertEqual(MemoryLayout<CyLockstepStructure>.size, 48, "CyLockstepStructure size")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructure>.alignment, 8, "CyLockstepStructure alignment")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructure>.offset(of: \CyLockstepStructure.struct_size), 0, "CyLockstepStructure.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructure>.offset(of: \CyLockstepStructure.team), 4, "CyLockstepStructure.team offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructure>.offset(of: \CyLockstepStructure.entity), 8, "CyLockstepStructure.entity offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructure>.offset(of: \CyLockstepStructure.position), 16, "CyLockstepStructure.position offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructure>.offset(of: \CyLockstepStructure.radius), 32, "CyLockstepStructure.radius offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructure>.offset(of: \CyLockstepStructure.health), 40, "CyLockstepStructure.health offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStructure>.offset(of: \CyLockstepStructure.max_health), 44, "CyLockstepStructure.max_health offset")
+    }
+
+    func testLockstepEventLayout() {
+        XCTAssertEqual(MemoryLayout<CyLockstepEvent>.size, 80, "CyLockstepEvent size")
+        XCTAssertEqual(MemoryLayout<CyLockstepEvent>.alignment, 8, "CyLockstepEvent alignment")
+        XCTAssertEqual(MemoryLayout<CyLockstepEvent>.offset(of: \CyLockstepEvent.sequence), 0, "CyLockstepEvent.sequence offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepEvent>.offset(of: \CyLockstepEvent.tick), 8, "CyLockstepEvent.tick offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepEvent>.offset(of: \CyLockstepEvent.kind), 16, "CyLockstepEvent.kind offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepEvent>.offset(of: \CyLockstepEvent.unit), 20, "CyLockstepEvent.unit offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepEvent>.offset(of: \CyLockstepEvent.target_kind), 24, "CyLockstepEvent.target_kind offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepEvent>.offset(of: \CyLockstepEvent.target), 28, "CyLockstepEvent.target offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepEvent>.offset(of: \CyLockstepEvent.amount), 32, "CyLockstepEvent.amount offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepEvent>.offset(of: \CyLockstepEvent.health), 36, "CyLockstepEvent.health offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepEvent>.offset(of: \CyLockstepEvent.projectile), 40, "CyLockstepEvent.projectile offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepEvent>.offset(of: \CyLockstepEvent.team), 44, "CyLockstepEvent.team offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepEvent>.offset(of: \CyLockstepEvent.position), 48, "CyLockstepEvent.position offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepEvent>.offset(of: \CyLockstepEvent.toward), 64, "CyLockstepEvent.toward offset")
+    }
+
+    func testLockstepProjectileLayout() {
+        XCTAssertEqual(MemoryLayout<CyLockstepProjectile>.size, 80, "CyLockstepProjectile size")
+        XCTAssertEqual(MemoryLayout<CyLockstepProjectile>.alignment, 8, "CyLockstepProjectile alignment")
+        XCTAssertEqual(MemoryLayout<CyLockstepProjectile>.offset(of: \CyLockstepProjectile.id), 0, "CyLockstepProjectile.id offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepProjectile>.offset(of: \CyLockstepProjectile.shooter), 4, "CyLockstepProjectile.shooter offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepProjectile>.offset(of: \CyLockstepProjectile.team), 8, "CyLockstepProjectile.team offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepProjectile>.offset(of: \CyLockstepProjectile.target_kind), 12, "CyLockstepProjectile.target_kind offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepProjectile>.offset(of: \CyLockstepProjectile.target), 16, "CyLockstepProjectile.target offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepProjectile>.offset(of: \CyLockstepProjectile.reserved), 20, "CyLockstepProjectile.reserved offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepProjectile>.offset(of: \CyLockstepProjectile.launched), 24, "CyLockstepProjectile.launched offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepProjectile>.offset(of: \CyLockstepProjectile.origin), 32, "CyLockstepProjectile.origin offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepProjectile>.offset(of: \CyLockstepProjectile.position), 48, "CyLockstepProjectile.position offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepProjectile>.offset(of: \CyLockstepProjectile.aim), 64, "CyLockstepProjectile.aim offset")
+    }
+
     func testInterfaceHeaderLayout() {
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.size, 16, "CyInterfaceHeader size")
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.alignment, 4, "CyInterfaceHeader alignment")
@@ -843,7 +933,7 @@ final class GeneratedLayoutTests: XCTestCase {
     }
 
     func testInterfaceLayout() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1568, "CyInterface size")
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1616, "CyInterface size")
         XCTAssertEqual(MemoryLayout<CyInterface>.alignment, 8, "CyInterface alignment")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.header), 0, "CyInterface.header offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.log), 16, "CyInterface.log offset")
@@ -1040,6 +1130,12 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.decal_find_material), 1544, "CyInterface.decal_find_material offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.decal_spawn), 1552, "CyInterface.decal_spawn offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.decal_status), 1560, "CyInterface.decal_status offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.lockstep_arm), 1568, "CyInterface.lockstep_arm offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.lockstep_fortify), 1576, "CyInterface.lockstep_fortify offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.lockstep_combatant), 1584, "CyInterface.lockstep_combatant offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.lockstep_structure), 1592, "CyInterface.lockstep_structure offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.lockstep_events), 1600, "CyInterface.lockstep_events offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.lockstep_projectiles), 1608, "CyInterface.lockstep_projectiles offset")
     }
 
     func testModuleInitLayout() {
@@ -1057,7 +1153,7 @@ final class GeneratedLayoutTests: XCTestCase {
     /// The table itself. `Interface` reads entries by name through the imported struct, so if Swift
     /// laid `CyInterface` out differently from the engine, every call would go to the wrong entry.
     func testInterfaceTableSize() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1568,
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1616,
                        "CyInterface size")
         XCTAssertEqual(Int(ABI.interfaceTableSize), MemoryLayout<CyInterface>.size,
                        "the generated table size and the imported one")
@@ -1103,8 +1199,8 @@ final class GeneratedLayoutTests: XCTestCase {
     /// this is the same claim from Swift's side, and it is what makes `ABI.entryNames` — which a
     /// diagnostic uses to say *which* entry a short table stops at — worth trusting.
     func testEntryNameCount() {
-        XCTAssertEqual(ABI.entryNames.count, 194)
+        XCTAssertEqual(ABI.entryNames.count, 200)
         XCTAssertEqual(ABI.entryNames.first, "log")
-        XCTAssertEqual(ABI.entryNames.last, "decal_status")
+        XCTAssertEqual(ABI.entryNames.last, "lockstep_projectiles")
     }
 }

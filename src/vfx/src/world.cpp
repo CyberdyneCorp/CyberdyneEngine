@@ -275,18 +275,42 @@ Span<const u32> SimulationWorld::spawn_generations(u32 block) const noexcept {
 
 namespace {
 
-/// A retired instance whose block range is the right size, or null. Reusing one is what stops a
-/// fire-and-forget effect played every frame from growing four arrays without bound.
-[[nodiscard]] EffectInstance* reusable(Array<EffectInstance>& instances, usize emitters) noexcept {
-    for (EffectInstance& candidate : instances) {
-        if (!candidate.active && candidate.block_count == emitters) {
+/// The words of `array` reserved for entry `index` of `offsets`: up to the next entry's offset, or
+/// to the end for the last. Entries are appended in order and never grow, so this is what the
+/// entry was made with.
+[[nodiscard]] usize reserved(Span<const u32> offsets, usize total, usize index) noexcept {
+    const usize end = index + 1U < offsets.size() ? offsets[index + 1U] : total;
+    return end - offsets[index];
+}
+
+}  // namespace
+
+EffectInstance* SimulationWorld::reusable(const CompiledSystem& system) noexcept {
+    // A retired slot fits a system when every emitter's capacity fits the alive flags its block
+    // was made with and the system's parameters fit its words. The ranges are never grown, so a
+    // slot made for a smaller system — same emitter count or not — would run the larger one's
+    // flags into the next block's and its parameters into the next instance's.
+    const Span<const CompiledEmitter> emitters = system.emitters();
+    const usize words = system.parameters().size() * 4U;
+    for (usize slot = 0; slot < instances_.size(); ++slot) {
+        EffectInstance& candidate = instances_[slot];
+        if (candidate.active || candidate.block_count != emitters.size() ||
+            slot >= parameter_offset_.size() ||
+            reserved(parameter_offset_.span(), parameters_.size(), slot) < words) {
+            continue;
+        }
+        bool fits = true;
+        for (u32 which = 0; which < emitters.size() && fits; ++which) {
+            const u32 block = candidate.first_block + which;
+            fits = block < alive_offset_.size() && reserved(alive_offset_.span(), alive_.size(),
+                                                            block) >= emitters[which].capacity();
+        }
+        if (fits) {
             return &candidate;
         }
     }
     return nullptr;
 }
-
-}  // namespace
 
 Status SimulationWorld::acquire_blocks(const CompiledSystem& system, u32 first_block,
                                        bool reusing) noexcept {
@@ -348,7 +372,7 @@ Expected<EffectHandle, Error> SimulationWorld::play(const CompiledSystem& system
         return fail(ErrorCode::InvalidArgument, "vfx: a system with no emitters plays nothing");
     }
 
-    EffectInstance* reused = reusable(instances_, emitters.size());
+    EffectInstance* reused = reusable(system);
     if (reused == nullptr && instances_.size() >= description_.max_instances) {
         return fail(ErrorCode::OutOfRange,
                     "vfx: the simulation world holds its declared maximum number of instances");

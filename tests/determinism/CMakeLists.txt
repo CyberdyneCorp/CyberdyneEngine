@@ -78,7 +78,7 @@ endif()
 # the two-peer lockstep RTS scenario of src/movement/tests/rts_scenario.h (tasks 4.2 and 7.2), which
 # this suite runs header-only, as it runs the replay and PCG fixtures — and samples/13-rts-api's
 # lockstep company (host/company.h), whose Swift-driven run the sample's own test holds to the same
-# committed digest (ABI 1.8, stage 8).
+# committed digest (ABI 1.8, stage 8) — and its battle (host/battle.h, ABI 1.16), held the same way.
 cy_add_test(
     NAME    cross_leg
     KIND    determinism

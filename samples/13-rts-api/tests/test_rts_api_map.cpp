@@ -31,6 +31,17 @@
 //                                     submitted and waited for — within 16.7 ms on average: sixty
 //                                     frames a second
 //
+// and, ABI 1.16, the battle (`--battle`) drawn on the same map:
+//
+//   the battle, drawn               validation on at 480x270: all 1200 frames, the battle's
+//                                   digest the committed one, its effects, particles and lights
+//                                   drawn, red's buildings and the battle's figures among the
+//                                   draws, the topographic minimap composed and redrawn only where
+//                                   blue's fog moved, no validation error
+//   the battle's frame budget       at 1080p without the validation layer, a battle of forty units
+//                                   — blows, arrows, catapult shot, explosions, smoke and their
+//                                   lights — within 16.7 ms a frame on average
+//
 // It leaves the stills (`rts-map-*.png`) in the test's binary directory. `CY_RENDER_UPDATE_GOLDEN`
 // rewrites the reference, as for every golden in tests/render/.
 
@@ -39,9 +50,12 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <sstream>
 #include <string>
+#include <system_error>
 
+#include "battle.h"
 #include "golden.h"
 #include "process.h"
 
@@ -196,5 +210,58 @@ CY_TEST_CASE("samples/13-rts-api: the session on the RTS test map, its golden an
     CY_REQUIRE_EQ(timed.exit_code, 0);
     CY_CHECK_EQ(number_after(cost, "width="), 1920.0);
     CY_CHECK_GT(number_after(cost, "timed="), 300.0);
+    CY_CHECK_LT(number_after(cost, "frame_ms="), kFrameBudgetMs);
+}
+
+CY_TEST_CASE("samples/13-rts-api: the battle on the RTS test map, drawn, and its frame budget") {
+    const std::string directory = std::string(CY_TEST_BINARY_DIR) + "/battle";
+    std::error_code made;
+    std::filesystem::create_directories(directory, made);
+    CY_REQUIRE(!made);
+    const std::string package = cy::test::smoke::quoted(CY_RTS_MAP_PACKAGE);
+    const cy::test::smoke::ProcessResult drawn =
+        run("--battle --render " + cy::test::smoke::quoted(directory) + " --map " + package +
+            " --width 480 --height 270");
+    if (drawn.output.find("no requested graphics device on this machine") != std::string::npos) {
+        std::fprintf(stderr, "no requested graphics device on this machine; skipped\n");
+        return;
+    }
+    const std::string render = line_with(drawn.output, "rts map render ");
+    const std::string look = line_with(drawn.output, "rts map battle ");
+    const std::string battle = line_with(drawn.output, "rts battle ");
+    std::fprintf(stderr, "%s\n%s\n", render.c_str(), look.c_str());
+    CY_REQUIRE_EQ(drawn.exit_code, 0);
+    CY_REQUIRE(!render.empty());
+    CY_REQUIRE(!look.empty());
+
+    // THE DRAWING DOES NOT TOUCH THE BATTLE: the session ends in the committed digest.
+    char committed[32];
+    (void)std::snprintf(committed, sizeof(committed), "digest=%016llx",
+                        static_cast<unsigned long long>(sample::rts::battle::kBattleDigest));
+    CY_CHECK_NE(battle.find(committed), std::string::npos);
+    CY_CHECK_EQ(number_after(battle, "standing="), 0.0);
+
+    // ALL OF IT, DRAWN: every frame, the four stills, a figure for every unit and red's buildings
+    // among the draws, the effects' particles and the blasts' lights, and no validation error.
+    CY_CHECK_EQ(number_after(render, "frames="), 1200.0);
+    CY_CHECK_EQ(number_after(render, "stills="), 4.0);
+    CY_CHECK_EQ(number_after(render, "validation_errors="), 0.0);
+    CY_CHECK_EQ(number_after(look, "figures="), 58.0);
+    CY_CHECK_GT(number_after(look, "particles_peak="), 100.0);
+    CY_CHECK_GT(number_after(look, "lights_peak="), 0.0);
+    // The topographic minimap: composed every sixth frame, its fog redrawn where it moved.
+    CY_CHECK_EQ(number_after(look, "minimap_composed="), 200.0);
+    CY_CHECK_GT(number_after(look, "minimap_fog_passes="), 0.0);
+
+    // THE BUDGET: forty units fighting, at 1080p and without the validation layer.
+    const cy::test::smoke::ProcessResult timed =
+        run("--battle --render " + cy::test::smoke::quoted(directory) + " --map " + package +
+            " --no-validation");
+    const std::string cost = line_with(timed.output, "rts map render ");
+    std::fprintf(stderr, "%s\n%s\n", cost.c_str(),
+                 line_with(timed.output, "rts map battle ").c_str());
+    CY_REQUIRE_EQ(timed.exit_code, 0);
+    CY_CHECK_EQ(number_after(cost, "width="), 1920.0);
+    CY_CHECK_GT(number_after(cost, "timed="), 1000.0);
     CY_CHECK_LT(number_after(cost, "frame_ms="), kFrameBudgetMs);
 }

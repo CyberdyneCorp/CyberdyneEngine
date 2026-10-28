@@ -118,6 +118,7 @@
 #include <cy/ui/store.h>
 #include <cy/ui/text/text_painter.h>
 
+#include "battle_host.h"
 #include "fog.h"
 #include "illumination.h"
 #include "units.h"
@@ -149,6 +150,11 @@ struct HostOptions {
     /// the run is on it (`map::map_bounds`). None, the default, is the level's square, the grid the
     /// level always had. The host does not own it.
     const cy::Aabb* fog_bounds = nullptr;
+    /// ABI 1.16: a battle on the company's field (battle_host.h). The host places
+    /// `/Level/Battlefield`, by which the game knows to fight one instead of patrolling with its
+    /// company, registers the soldier prefab, the battle's effects, lights and cues, and runs
+    /// `battle::kTicks` frames. Off, the default, is the run before the battle existed.
+    bool battle = false;
 };
 
 /// What the game and the engine say happened. Engine facts are read from the servers and the
@@ -288,6 +294,8 @@ struct Observation {
         cy::f32 refused = 0.0F;
     };
     Fog fog;
+    /// ABI 1.16: the battle, when the run has one.
+    BattleObservation battle;
     /// Navigation agents with a body, which is every unit the game configured.
     cy::u32 units = 0;
     /// Agents the navigation adapter drives.
@@ -359,6 +367,12 @@ public:
     [[nodiscard]] const cy::animation::AnimationRig& worker_rig() const noexcept {
         return worker_rig_.rig();
     }
+    /// The lockstep session — the company's, or the battle's — as the issuing peer holds it.
+    [[nodiscard]] const cy::game_backend::LockstepSession* lockstep() const noexcept {
+        return company_.get();
+    }
+    /// ABI 1.16: the battle's presentation, or null on a run without one.
+    [[nodiscard]] const BattleStage* battle() const noexcept { return battle_.get(); }
     /// The lockstep company's units, from the issuing peer.
     [[nodiscard]] cy::u32 company_units() const noexcept;
     [[nodiscard]] bool company_unit(cy::u32 index,
@@ -391,6 +405,9 @@ private:
     [[nodiscard]] cy::Status start_lockstep() noexcept;
     [[nodiscard]] cy::Status start_illumination() noexcept;
     [[nodiscard]] cy::Status start_fog() noexcept;
+    [[nodiscard]] cy::Status start_battle() noexcept;
+    void observe_battle(Observation& seen, const cy::abi::ComponentRecord* report,
+                        const void* bytes) noexcept;
     void observe_fog(Observation& seen, const cy::abi::ComponentRecord* report,
                      const void* bytes) noexcept;
     void observe_illumination(Observation& seen, const cy::abi::ComponentRecord* report,
@@ -492,6 +509,8 @@ private:
     std::unique_ptr<RtsFog> fog_;
     CyEntity camp_[kCampSize] = {};
     cy::scene::Node barracks_;
+    // ABI 1.16: the battle's presentation, with `--battle`.
+    std::unique_ptr<BattleStage> battle_;
 
     // Content.
     cy::Array<cy::f32> click_samples_;

@@ -11,9 +11,15 @@
 //
 // The embedder calls `tick()` once per fixed step, after the scripts' fixed updates have recorded
 // their orders for it; the first `tick()` starts both sessions, which is when enlisting stops.
+//
+// ABI 1.16: arming and fortifying go to both peers, as enlisting does. The issuer's combat events
+// are kept, after every tick, in a bounded history (`kEventHistory`) numbered as the session
+// numbered them, which `lockstep_events` answers from: a game reads them from a frame update, and
+// however many ticks ran since the last frame, each event once.
 
 #include <cy/abi/game/lockstep.h>
 #include <cy/abi/host.h>
+#include <cy/core/memory/array.h>
 #include <cy/game_backend/lockstep_session.h>
 
 namespace cy::game_backend {
@@ -21,13 +27,26 @@ namespace cy::game_backend {
 class LockstepAdapter final : public abi::game::LockstepBackend {
 public:
     /// Over `issuer`, and `follower` when not null. Both are borrowed and outlive the adapter.
-    explicit LockstepAdapter(LockstepSession& issuer, LockstepSession* follower = nullptr) noexcept
-        : issuer_(issuer), follower_(follower) {}
+    /// `history` is how many of the most recent events `lockstep_events` can still hand out.
+    LockstepAdapter(LockstepSession& issuer, LockstepSession* follower = nullptr,
+                    u32 history = kEventHistory) noexcept;
+
+    /// The events a host keeps by default: minutes of a large battle at sixty ticks a second.
+    static constexpr u32 kEventHistory = 4096;
 
     [[nodiscard]] CyResult enlist(const CyLockstepUnitDesc& desc, u32& out_unit) noexcept override;
     [[nodiscard]] CyResult order(const CyLockstepOrder& order) noexcept override;
     [[nodiscard]] CyResult unit(u32 index, CyLockstepUnit& out) const noexcept override;
     [[nodiscard]] CyResult status(CyLockstepStatus& out) const noexcept override;
+    [[nodiscard]] CyResult arm(u32 unit, const CyLockstepCombatDesc& desc) noexcept override;
+    [[nodiscard]] CyResult fortify(const CyLockstepStructureDesc& desc,
+                                   u32& out_structure) noexcept override;
+    [[nodiscard]] CyResult combatant(u32 unit, CyLockstepCombatant& out) const noexcept override;
+    [[nodiscard]] CyResult structure(u32 index, CyLockstepStructure& out) const noexcept override;
+    [[nodiscard]] CyResult events(u64 first, CyLockstepEvent* out, u32 capacity,
+                                  u32& out_count) const noexcept override;
+    [[nodiscard]] CyResult projectiles(CyLockstepProjectile* out, u32 capacity,
+                                       u32& out_count) const noexcept override;
 
     /// One fixed step: the follower receives the issuer's commands for this tick, both advance,
     /// and their state hashes are compared.
@@ -35,9 +54,18 @@ public:
 
     [[nodiscard]] u32 disagreements() const noexcept { return disagreements_; }
 
+    /// Events the history holds, oldest first: the issuer's, numbered as it made them.
+    [[nodiscard]] u32 history() const noexcept { return history_.size(); }
+
 private:
+    [[nodiscard]] Status keep(Span<const LockstepEvent> made) noexcept;
+
     LockstepSession& issuer_;
     LockstepSession* follower_ = nullptr;
+    /// A ring of `capacity_`: `oldest_` is the slot of the first event it holds.
+    Array<LockstepEvent> history_;
+    u32 capacity_ = kEventHistory;
+    u32 oldest_ = 0;
     u32 follower_cursor_ = 0;
     u32 disagreements_ = 0;
 };

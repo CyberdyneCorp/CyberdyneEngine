@@ -31,6 +31,25 @@ public:
     [[nodiscard]] virtual CyResult unit(u32 index, CyLockstepUnit& out) const noexcept = 0;
     /// `lockstep_status`: `out` is whole.
     [[nodiscard]] virtual CyResult status(CyLockstepStatus& out) const noexcept = 0;
+
+    // --- ABI 1.16: combat. A backend without combat answers UNSUPPORTED. ---------------------
+    /// `lockstep_arm`: `desc` is whole, its weapon a CyLockstepWeapon and its reserved word zero.
+    [[nodiscard]] virtual CyResult arm(u32 unit, const CyLockstepCombatDesc& desc) noexcept;
+    /// `lockstep_fortify`: `desc` is whole.
+    [[nodiscard]] virtual CyResult fortify(const CyLockstepStructureDesc& desc,
+                                           u32& out_structure) noexcept;
+    /// `lockstep_combatant`: `out` is whole.
+    [[nodiscard]] virtual CyResult combatant(u32 unit, CyLockstepCombatant& out) const noexcept;
+    /// `lockstep_structure`: `out` is whole.
+    [[nodiscard]] virtual CyResult structure(u32 index, CyLockstepStructure& out) const noexcept;
+    /// `lockstep_events`: write up to `capacity` events numbered `first` and after into `out`
+    /// (null when `capacity` is zero) and set `out_count` to the number written — or, asked for
+    /// the count, to the number there are.
+    [[nodiscard]] virtual CyResult events(u64 first, CyLockstepEvent* out, u32 capacity,
+                                          u32& out_count) const noexcept;
+    /// `lockstep_projectiles`: as `events`, of what is in flight.
+    [[nodiscard]] virtual CyResult projectiles(CyLockstepProjectile* out, u32 capacity,
+                                               u32& out_count) const noexcept;
 };
 
 }  // namespace cy::abi::game

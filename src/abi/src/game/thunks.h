@@ -234,4 +234,16 @@ CyResult decal_find_material(CyEngine engine, const char* name, CyDecalMaterial*
 CyResult decal_spawn(CyEngine engine, const CyDecalDesc* desc, CyDecal* out_decal);
 CyResult decal_status(CyEngine engine, CyDecalStatus* out_status);
 
+// --- 1.16: combat in the lockstep path
+CyResult lockstep_arm(CyEngine engine, uint32_t unit, const CyLockstepCombatDesc* desc);
+CyResult lockstep_fortify(CyEngine engine, const CyLockstepStructureDesc* desc,
+                          uint32_t* out_structure);
+CyResult lockstep_combatant(CyEngine engine, uint32_t unit, CyLockstepCombatant* out_combatant);
+CyResult lockstep_structure(CyEngine engine, uint32_t structure,
+                            CyLockstepStructure* out_structure);
+CyResult lockstep_events(CyEngine engine, uint64_t first, CyLockstepEvent* out_events,
+                         uint32_t capacity, uint32_t* out_count);
+CyResult lockstep_projectiles(CyEngine engine, CyLockstepProjectile* out_projectiles,
+                              uint32_t capacity, uint32_t* out_count);
+
 }  // namespace cy::abi::game

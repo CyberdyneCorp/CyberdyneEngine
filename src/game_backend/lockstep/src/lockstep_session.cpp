@@ -47,7 +47,11 @@ LockstepSession::LockstepSession(Allocator& allocator, const LockstepConfig& con
       paths_(allocator),
       cursors_(allocator),
       moving_(allocator),
-      arrived_(allocator) {}
+      arrived_(allocator),
+      combatants_(allocator),
+      structures_(allocator),
+      projectiles_(allocator),
+      events_(allocator) {}
 
 Status LockstepSession::load(const navigation::NavMesh& baked) noexcept {
     if (started_) {
@@ -84,7 +88,7 @@ Expected<u32, Error> LockstepSession::enlist(const LockstepUnitSpec& spec) noexc
     }
     if (!groups_.push_back(spec.group) || !entities_.push_back(spec.entity) ||
         !paths_.emplace_back(allocator_) || !cursors_.push_back(0) || !moving_.push_back(0) ||
-        !arrived_.push_back(0)) {
+        !arrived_.push_back(0) || !combatants_.push_back(Combatant{})) {
         return make_unexpected(refused(ErrorCode::OutOfMemory, "enlisting a unit"));
     }
     return *added;
@@ -169,9 +173,9 @@ Status LockstepSession::record_command(gameplay::Command command) noexcept {
 }
 
 Status LockstepSession::record(const LockstepOrderPayload& order) noexcept {
-    if (order.kind > static_cast<u32>(LockstepOrderKind::Stop)) {
-        return make_unexpected(
-            refused(ErrorCode::InvalidArgument, "an order's kind is Move or Stop"));
+    if (order.kind > static_cast<u32>(LockstepOrderKind::Attack)) {
+        return make_unexpected(refused(ErrorCode::InvalidArgument,
+                                       "an order's kind is Move, Stop, AttackMove or Attack"));
     }
     if (!has_group(order.group)) {
         return make_unexpected(refused(ErrorCode::NotFound, "no unit is in that group"));
@@ -220,6 +224,11 @@ Status LockstepSession::move_group(u32 group, FixedVec2 target) noexcept {
         if (groups_[unit] != group) {
             continue;
         }
+        if (!combatants_[unit].state.alive) {
+            // A fallen unit keeps its slot in the group's formation and goes nowhere.
+            ++k;
+            continue;
+        }
         const movement::FixedPathResult result =
             movement::find_path(search_, mesh_, mover_.position(unit), target + slot(k++, size),
                                 config_.node_budget, corridor_, paths_[unit]);
@@ -227,6 +236,10 @@ Status LockstepSession::move_group(u32 group, FixedVec2 target) noexcept {
         paths_found_ += result.found ? 1U : 0U;
         cursors_[unit] = 0;
         moving_[unit] = paths_[unit].empty() ? 0U : 1U;
+        Combatant& fighter = combatants_[unit];
+        fighter.state.stance = LockstepStance::Move;
+        fighter.state.target = LockstepTarget{};
+        fighter.state.chasing = false;
     }
     return ok();
 }
@@ -237,15 +250,25 @@ Status LockstepSession::execute(const gameplay::Command& command) noexcept {
         return ok();
     }
     ++orders_executed_;
-    if (order.kind == static_cast<u32>(LockstepOrderKind::Move)) {
-        return move_group(order.group, FixedVec2{Fixed::from_raw(order.target_x),
-                                                 Fixed::from_raw(order.target_z)});
+    const FixedVec2 target{Fixed::from_raw(order.target_x), Fixed::from_raw(order.target_z)};
+    switch (static_cast<LockstepOrderKind>(order.kind)) {
+        case LockstepOrderKind::Move:
+            return move_group(order.group, target);
+        case LockstepOrderKind::AttackMove:
+            return order_attack(order.group, target, false);
+        case LockstepOrderKind::Attack:
+            return order_attack(order.group, target, true);
+        case LockstepOrderKind::Stop:
+            break;
     }
     for (u32 unit = 0; unit < mover_.size(); ++unit) {
         if (groups_[unit] == order.group) {
             paths_[unit].clear();
             cursors_[unit] = 0;
             moving_[unit] = 0;
+            combatants_[unit].state.stance = LockstepStance::Idle;
+            combatants_[unit].state.target = LockstepTarget{};
+            combatants_[unit].state.chasing = false;
         }
     }
     return ok();
@@ -261,9 +284,15 @@ Status LockstepSession::advance(jobs::JobSystem* jobs) noexcept {
     context.commands = &commands_;
     context.at = determinism::SimulationPoint{determinism::Epoch{0}, tick_};
     commands_.commit(context, tick_);
+    events_.clear();
     for (u32 index = 0; index < commands_.committed_count(); ++index) {
         if (Status executed = execute(commands_.committed(index)); !executed) {
             return executed;
+        }
+    }
+    if (combat_) {
+        if (Status thought = think(); !thought) {
+            return thought;
         }
     }
     const Fixed rate = Fixed::from_int(mover_.params().tick_rate);
@@ -276,6 +305,7 @@ Status LockstepSession::advance(jobs::JobSystem* jobs) noexcept {
         if (moving_[unit] != 0U && cursors_[unit] >= paths_[unit].size()) {
             moving_[unit] = 0;
             arrived_[unit] = 1;
+            arrive(unit);
         }
     }
     if (config_.avoidance) {
@@ -287,6 +317,11 @@ Status LockstepSession::advance(jobs::JobSystem* jobs) noexcept {
     }
     if (auto stepped = mover_.step(jobs); !stepped) {
         return make_unexpected(stepped.error());
+    }
+    if (combat_) {
+        if (Status flown = fly(); !flown) {
+            return flown;
+        }
     }
     ++tick_;
     state_hash_ = compute_state_hash();
@@ -317,7 +352,7 @@ u64 LockstepSession::compute_state_hash() const noexcept {
         fold = hash_combine(fold, paths_[unit].size());
         fold = hash_combine(fold, moving_[unit]);
     }
-    return fold;
+    return combat_ ? fold_combat_state(fold) : fold;
 }
 
 u64 LockstepSession::compute_world_hash() const noexcept {
@@ -334,6 +369,9 @@ u64 LockstepSession::compute_world_hash() const noexcept {
     fold = hash_combine(fold, config_.node_budget);
     for (u32 unit = 0; unit < mover_.size(); ++unit) {
         fold = hash_combine(fold, groups_[unit]);
+    }
+    if (combat_) {
+        fold = fold_combat_world(fold);
     }
     return hash_combine(fold, mover_.state_hash());
 }

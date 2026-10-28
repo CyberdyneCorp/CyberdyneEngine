@@ -68,6 +68,12 @@
 //                       gives these orders; here C++ gives the same ones, and
 //                       `integration.rts_api_sample` holds the Swift run to this same committed
 //                       digest, so the comparator's agreement covers the Swift-driven session too.
+//   detmath-battle-digest, detmath-battle-final-hash
+//                       samples/13-rts-api's battle (samples/13-rts-api/host/battle.h, ABI 1.16):
+//                       46 armed units and two buildings on the company's field, swords, arrows and
+//                       catapult shot with splash, attack-move and attack orders; issuer and
+//                       follower. Held, like the company, to one committed digest here and, for the
+//                       Swift-driven battle, in `integration.rts_api_sample`.
 //
 // The leg's identity — os, architecture, compiler, endianness and the four build-time
 // floating-point facts `determinism::BuildConfiguration` reads — is published beside the digests,
@@ -98,6 +104,7 @@
 //     reported a speed-up on a mutation that made the content constant, because one live field
 //     carried the aggregate. Two legs agreeing on a constant are not two legs that agreed.
 
+#include "battle.h"
 #include "company.h"
 #include "golden_session.h"
 #include "rts_scenario.h"
@@ -290,6 +297,12 @@ constexpr u64 kLockstepFinalHash = 0x3e5a'699a'41b7'1076ULL;
     return taken;
 }
 
+/// The sample's battle, run by C++ with the orders the Swift commander gives. Measured once.
+[[nodiscard]] const sample::rts::battle::BattleRun& battle_measurement() {
+    static const sample::rts::battle::BattleRun taken = sample::rts::battle::run_battle();
+    return taken;
+}
+
 /// Both measurements, taken once for the whole binary. Two of them, because "the same digest twice
 /// in one process" is a case rather than an assumption — a publisher that was not repeatable within
 /// one process could not be compared between two.
@@ -371,6 +384,11 @@ struct Measurements {
     text += "detmath-company-ticks " + std::to_string(company.ticks) + "\n";
     text += "detmath-company-digest " + hex(company.digest) + "\n";
     text += "detmath-company-final-hash " + hex(company.final_hash) + "\n";
+    const sample::rts::battle::BattleRun& battle = battle_measurement();
+    text += "detmath-battle-units " + std::to_string(battle.units) + "\n";
+    text += "detmath-battle-ticks " + std::to_string(battle.ticks) + "\n";
+    text += "detmath-battle-digest " + hex(battle.digest) + "\n";
+    text += "detmath-battle-final-hash " + hex(battle.final_hash) + "\n";
     // Which 128-bit multiply and divide this leg's binary used. An annotation: the comparison is of
     // the digest, and the point of the claim is that the paths do not matter.
     text += "detmath-paths " + std::string(cy::detmath::wide::kNativeMultiply) + " / " +
@@ -418,6 +436,10 @@ constexpr const char* kRequiredKeys[] = {
     "detmath-company-ticks",
     "detmath-company-digest",
     "detmath-company-final-hash",
+    "detmath-battle-units",
+    "detmath-battle-ticks",
+    "detmath-battle-digest",
+    "detmath-battle-final-hash",
 };
 
 }  // namespace
@@ -530,6 +552,31 @@ CY_TEST_CASE("cross-leg: the company's digest is a function of its orders") {
     CY_CHECK_EQ(idle.commands, 0U);
     CY_CHECK_NE(idle.digest, company_measurement().digest);
     CY_CHECK_NE(idle.final_hash, company_measurement().final_hash);
+}
+
+CY_TEST_CASE("cross-leg: the sample's battle is the committed session, on this leg") {
+    // ABI 1.16. The Swift-driven samples/13-rts-api --battle reports the same digest, held by
+    // `integration.rts_api_sample`; here C++ gives the orders. The tally says it was a battle: both
+    // sides lost units, blue won the field, and both of red's buildings fell.
+    const sample::rts::battle::BattleRun& battle = battle_measurement();
+    CY_REQUIRE(battle.complete);
+    CY_CHECK_EQ(battle.units, sample::rts::battle::kUnits);
+    CY_CHECK_EQ(battle.ticks, sample::rts::battle::kTicks);
+    CY_CHECK_EQ(battle.commands, 13U);
+    CY_CHECK_EQ(battle.disagreements, 0U);
+    CY_CHECK_LT(battle.blue_alive, 24U);
+    CY_CHECK_GT(battle.blue_alive, 12U);
+    CY_CHECK_LT(battle.red_alive, 4U);
+    CY_CHECK_EQ(battle.buildings_standing, 0U);
+    CY_CHECK_EQ(battle.digest, sample::rts::battle::kBattleDigest);
+}
+
+CY_TEST_CASE("cross-leg: the battle's digest is a function of its orders") {
+    const sample::rts::battle::BattleRun idle =
+        sample::rts::battle::run_battle(sample::rts::battle::kTicks, false);
+    CY_REQUIRE(idle.complete);
+    CY_CHECK_EQ(idle.commands, 0U);
+    CY_CHECK_NE(idle.digest, battle_measurement().digest);
 }
 
 CY_TEST_CASE("cross-leg: the PCG world matches the cross-architecture golden") {

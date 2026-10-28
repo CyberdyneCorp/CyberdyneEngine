@@ -237,6 +237,8 @@ public enum DetmathFunction: UInt32, Sendable, CaseIterable {
 public enum LockstepOrderKind: UInt32, Sendable, CaseIterable {
     case move = 0
     case stop = 1
+    case attackMove = 2
+    case attack = 3
 }
 
 /// `CyGiMode`: which sources light the world.
@@ -384,6 +386,37 @@ public enum UIEasing: UInt32, Sendable, CaseIterable {
     case ease = 4
     case spring = 5
     case back = 6
+}
+
+/// `CyLockstepWeapon`: how an armed lockstep unit attacks.
+public enum LockstepWeapon: UInt32, Sendable, CaseIterable {
+    case melee = 0
+    case ranged = 1
+}
+
+/// `CyLockstepTargetKind`: what a lockstep unit attacks.
+public enum LockstepTargetKind: UInt32, Sendable, CaseIterable {
+    case none = 0
+    case unit = 1
+    case structure = 2
+}
+
+/// `CyLockstepStance`: what an armed lockstep unit is doing.
+public enum LockstepStance: UInt32, Sendable, CaseIterable {
+    case idle = 0
+    case move = 1
+    case attackMove = 2
+    case attack = 3
+}
+
+/// `CyLockstepEventKind`: what a lockstep tick's combat did.
+public enum LockstepEventKind: UInt32, Sendable, CaseIterable {
+    case strike = 0
+    case launch = 1
+    case impact = 2
+    case damage = 3
+    case death = 4
+    case destroyed = 5
 }
 
 /// The error every throwing overlay call raises.

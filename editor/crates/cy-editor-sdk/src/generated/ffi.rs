@@ -1515,6 +1515,162 @@ pub struct CyDecalStatus {
     pub evicted: u64,
 }
 
+/// `CyLockstepCombatDesc` — 64 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyLockstepCombatDesc {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub team: u32,
+    /// `uint32_t` at byte 8.
+    pub health: u32,
+    /// `uint32_t` at byte 12.
+    pub armour: u32,
+    /// `uint32_t` at byte 16.
+    pub weapon: u32,
+    /// `uint32_t` at byte 20.
+    pub damage: u32,
+    /// `uint32_t` at byte 24.
+    pub cooldown: u32,
+    /// `uint32_t` at byte 28.
+    pub reserved: u32,
+    /// `CyFixed` at byte 32.
+    pub range: CyFixed,
+    /// `CyFixed` at byte 40.
+    pub sight: CyFixed,
+    /// `CyFixed` at byte 48.
+    pub projectile_speed: CyFixed,
+    /// `CyFixed` at byte 56.
+    pub splash: CyFixed,
+}
+
+/// `CyLockstepStructureDesc` — 48 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyLockstepStructureDesc {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub team: u32,
+    /// `CyEntity` at byte 8.
+    pub entity: CyEntity,
+    /// `CyFixedVec2` at byte 16.
+    pub position: CyFixedVec2,
+    /// `CyFixed` at byte 32.
+    pub radius: CyFixed,
+    /// `uint32_t` at byte 40.
+    pub health: u32,
+    /// `uint32_t` at byte 44.
+    pub armour: u32,
+}
+
+/// `CyLockstepCombatant` — 48 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyLockstepCombatant {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `uint32_t` at byte 8.
+    pub team: u32,
+    /// `uint32_t` at byte 12.
+    pub health: u32,
+    /// `uint32_t` at byte 16.
+    pub max_health: u32,
+    /// `uint32_t` at byte 20.
+    pub armour: u32,
+    /// `uint32_t` at byte 24.
+    pub cooldown: u32,
+    /// `uint32_t` at byte 28.
+    pub kills: u32,
+    /// `uint32_t` at byte 32.
+    pub stance: u32,
+    /// `uint32_t` at byte 36.
+    pub target_kind: u32,
+    /// `uint32_t` at byte 40.
+    pub target: u32,
+    /// `uint32_t` at byte 44.
+    pub reserved: u32,
+}
+
+/// `CyLockstepStructure` — 48 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyLockstepStructure {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub team: u32,
+    /// `CyEntity` at byte 8.
+    pub entity: CyEntity,
+    /// `CyFixedVec2` at byte 16.
+    pub position: CyFixedVec2,
+    /// `CyFixed` at byte 32.
+    pub radius: CyFixed,
+    /// `uint32_t` at byte 40.
+    pub health: u32,
+    /// `uint32_t` at byte 44.
+    pub max_health: u32,
+}
+
+/// `CyLockstepEvent` — 80 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyLockstepEvent {
+    /// `uint64_t` at byte 0.
+    pub sequence: u64,
+    /// `uint64_t` at byte 8.
+    pub tick: u64,
+    /// `uint32_t` at byte 16.
+    pub kind: u32,
+    /// `uint32_t` at byte 20.
+    pub unit: u32,
+    /// `uint32_t` at byte 24.
+    pub target_kind: u32,
+    /// `uint32_t` at byte 28.
+    pub target: u32,
+    /// `uint32_t` at byte 32.
+    pub amount: u32,
+    /// `uint32_t` at byte 36.
+    pub health: u32,
+    /// `uint32_t` at byte 40.
+    pub projectile: u32,
+    /// `uint32_t` at byte 44.
+    pub team: u32,
+    /// `CyFixedVec2` at byte 48.
+    pub position: CyFixedVec2,
+    /// `CyFixedVec2` at byte 64.
+    pub toward: CyFixedVec2,
+}
+
+/// `CyLockstepProjectile` — 80 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyLockstepProjectile {
+    /// `uint32_t` at byte 0.
+    pub id: u32,
+    /// `uint32_t` at byte 4.
+    pub shooter: u32,
+    /// `uint32_t` at byte 8.
+    pub team: u32,
+    /// `uint32_t` at byte 12.
+    pub target_kind: u32,
+    /// `uint32_t` at byte 16.
+    pub target: u32,
+    /// `uint32_t` at byte 20.
+    pub reserved: u32,
+    /// `uint64_t` at byte 24.
+    pub launched: u64,
+    /// `CyFixedVec2` at byte 32.
+    pub origin: CyFixedVec2,
+    /// `CyFixedVec2` at byte 48.
+    pub position: CyFixedVec2,
+    /// `CyFixedVec2` at byte 64.
+    pub aim: CyFixedVec2,
+}
+
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -1529,7 +1685,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 1568 bytes, 8-byte aligned.
+/// `CyInterface` — 1616 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -2132,6 +2288,24 @@ pub struct CyInterface {
         Option<unsafe extern "C" fn(CyEngine, *const CyDecalDesc, *mut CyDecal) -> i32>,
     /// `CyResult(*)(CyEngine, CyDecalStatus*)` at byte 1560.
     pub decal_status: Option<unsafe extern "C" fn(CyEngine, *mut CyDecalStatus) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t, const CyLockstepCombatDesc*)` at byte 1568.
+    pub lockstep_arm:
+        Option<unsafe extern "C" fn(CyEngine, u32, *const CyLockstepCombatDesc) -> i32>,
+    /// `CyResult(*)(CyEngine, const CyLockstepStructureDesc*, uint32_t*)` at byte 1576.
+    pub lockstep_fortify:
+        Option<unsafe extern "C" fn(CyEngine, *const CyLockstepStructureDesc, *mut u32) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t, CyLockstepCombatant*)` at byte 1584.
+    pub lockstep_combatant:
+        Option<unsafe extern "C" fn(CyEngine, u32, *mut CyLockstepCombatant) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t, CyLockstepStructure*)` at byte 1592.
+    pub lockstep_structure:
+        Option<unsafe extern "C" fn(CyEngine, u32, *mut CyLockstepStructure) -> i32>,
+    /// `CyResult(*)(CyEngine, uint64_t, CyLockstepEvent*, uint32_t, uint32_t*)` at byte 1600.
+    pub lockstep_events:
+        Option<unsafe extern "C" fn(CyEngine, u64, *mut CyLockstepEvent, u32, *mut u32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyLockstepProjectile*, uint32_t, uint32_t*)` at byte 1608.
+    pub lockstep_projectiles:
+        Option<unsafe extern "C" fn(CyEngine, *mut CyLockstepProjectile, u32, *mut u32) -> i32>,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -2368,5 +2542,11 @@ impl CyInterface {
         decal_find_material: None,
         decal_spawn: None,
         decal_status: None,
+        lockstep_arm: None,
+        lockstep_fortify: None,
+        lockstep_combatant: None,
+        lockstep_structure: None,
+        lockstep_events: None,
+        lockstep_projectiles: None,
     };
 }
