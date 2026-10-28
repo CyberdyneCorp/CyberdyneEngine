@@ -17,7 +17,7 @@ editor's node-graph canvas, compiled by the material compiler and bound as BC7 a
 > [M11.e · Ship](docs/ROADMAP.md#m11e--ship) and 1.0, then [M12 · The Game](docs/ROADMAP.md#m12--the-game),
 > an RTS written in Swift that proves the engine by using it; its [test map](#rts-showcase) already runs.
 
-[`openspec/specs/`](openspec/specs/README.md) holds **76 capabilities, 1,248 requirements and 2,792
+[`openspec/specs/`](openspec/specs/README.md) holds **76 capabilities, 1,253 requirements and 2,806
 scenarios** — the contract the implementation must satisfy. Today 17 are Complete, 55 Working, 3
 Seed and 1 not started ([`status.yaml`](docs/roadmap/status.yaml), reported by `just roadmap-status`).
 
