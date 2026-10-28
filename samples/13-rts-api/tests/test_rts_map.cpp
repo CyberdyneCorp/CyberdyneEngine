@@ -37,6 +37,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <cy/rendering/fog_of_war/visibility_field.h>
@@ -415,8 +416,8 @@ CY_TEST_CASE("samples/13-rts-api map: the minimap's contours lie where the map's
             for (const auto& step : steps) {
                 const int c = static_cast<int>(column) + step[0];
                 const int r = static_cast<int>(row) + step[1];
-                if (c < 0 || r < 0 || c >= static_cast<int>(kMinimapTexels) ||
-                    r >= static_cast<int>(kMinimapTexels)) {
+                if (c < 0 || r < 0 || !std::cmp_less(c, kMinimapTexels) ||
+                    !std::cmp_less(r, kMinimapTexels)) {
                     continue;
                 }
                 const f32 there = heights[(static_cast<std::size_t>(r) * kMinimapTexels) +
@@ -452,10 +453,10 @@ CY_TEST_CASE("samples/13-rts-api map: the minimap's contours lie where the map's
         mm::bake_topographic(bake.input, bake.style, {baked.data(), baked.size()}).has_value());
     CY_CHECK(save_rgba(binary("rts-topographic-minimap.png"), baked, kMinimapTexels).has_value());
     const cy::Vec2 lake = {-31.0F, 24.0F};  // the lake's two lobes meet near here
-    const cy::u32 lake_column = static_cast<cy::u32>(
+    const auto lake_column = static_cast<cy::u32>(
         (lake.x - region.left_x) / (region.right_x - region.left_x) * kMinimapTexels);
-    const cy::u32 lake_row = static_cast<cy::u32>(
-        (lake.y - region.top_z) / (region.bottom_z - region.top_z) * kMinimapTexels);
+    const auto lake_row = static_cast<cy::u32>((lake.y - region.top_z) /
+                                               (region.bottom_z - region.top_z) * kMinimapTexels);
     CY_REQUIRE(map.terrain.height_at(lake.x, lake.y) < water);
     const cy::u32 lake_texel =
         baked[(static_cast<std::size_t>(lake_row) * kMinimapTexels) + lake_column];

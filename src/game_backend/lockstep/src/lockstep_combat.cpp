@@ -78,7 +78,7 @@ Expected<u32, Error> LockstepSession::fortify(const LockstepStructureSpec& spec)
         return make_unexpected(refused(ErrorCode::OutOfMemory, "fortifying a structure"));
     }
     combat_ = true;
-    return structures_.size() - 1U;
+    return static_cast<u32>(structures_.size() - 1U);
 }
 
 // --- Reading -----------------------------------------------------------------------------------
@@ -335,8 +335,8 @@ Status LockstepSession::fire(u32 unit) noexcept {
 
 Status LockstepSession::fly() noexcept {
     u32 kept = 0;
-    for (u32 index = 0; index < projectiles_.size(); ++index) {
-        LockstepProjectile shot = projectiles_[index];
+    // Survivors are compacted in place: `kept` never passes the shot being read.
+    for (LockstepProjectile shot : projectiles_) {
         if (standing(shot.target)) {
             shot.aim = where(shot.target);
         }
@@ -397,7 +397,7 @@ Status LockstepSession::land(const LockstepProjectile& shot) noexcept {
             return make_unexpected(refused(ErrorCode::OutOfMemory, "a projectile's splash"));
         }
     }
-    impact.amount = touched.size();
+    impact.amount = static_cast<u32>(touched.size());
     if (Status emitted = emit(impact); !emitted) {
         return emitted;
     }

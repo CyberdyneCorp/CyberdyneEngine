@@ -15,6 +15,7 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/test/test.h>
 
+#include <algorithm>
 #include <cstddef>
 
 namespace {
@@ -93,7 +94,7 @@ public:
             }
             ++count;
         }
-        out_count = out == nullptr ? count : (count < capacity ? count : capacity);
+        out_count = out == nullptr ? count : std::min(count, capacity);
         return CY_RESULT_OK;
     }
     CyResult projectiles(CyLockstepProjectile* out, u32 capacity,

@@ -55,7 +55,7 @@ public:
     [[nodiscard]] u32 disagreements() const noexcept { return disagreements_; }
 
     /// Events the history holds, oldest first: the issuer's, numbered as it made them.
-    [[nodiscard]] u32 history() const noexcept { return history_.size(); }
+    [[nodiscard]] u32 history() const noexcept { return static_cast<u32>(history_.size()); }
 
 private:
     [[nodiscard]] Status keep(Span<const LockstepEvent> made) noexcept;

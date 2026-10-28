@@ -14,6 +14,7 @@
 #include <cy/test/test.h>
 
 #include <cmath>
+#include <utility>
 #include <vector>
 
 using namespace cy;
@@ -98,8 +99,7 @@ CY_TEST_CASE("minimap: a line on every texel a level crosses below, and nowhere 
             for (const auto& [dc, dr] : steps) {
                 const i32 c = static_cast<i32>(column) + dc;
                 const i32 r = static_cast<i32>(row) + dr;
-                if (c < 0 || r < 0 || c >= static_cast<i32>(kSize) ||
-                    r >= static_cast<i32>(kSize)) {
+                if (c < 0 || r < 0 || !std::cmp_less(c, kSize) || !std::cmp_less(r, kSize)) {
                     continue;
                 }
                 const f32 there = h(static_cast<u32>(c), static_cast<u32>(r));
@@ -131,7 +131,7 @@ CY_TEST_CASE("minimap: on a ramp the lines stand exactly a contour interval apar
     for (u32 row = 0; row < kHeight; ++row) {
         for (u32 column = 0; column < kWidth; ++column) {
             heights[(static_cast<usize>(row) * kWidth) + column] =
-                0.25F * static_cast<f32>(column) + 0.1F;
+                (0.25F * static_cast<f32>(column)) + 0.1F;
         }
     }
     TopographicStyle style;
@@ -165,7 +165,7 @@ CY_TEST_CASE("minimap: flat ground is its colour, a slope to the light brighter,
     for (u32 row = 0; row < kSize; ++row) {
         for (u32 column = 10; column < 22; ++column) {
             const f32 d = std::fabs(static_cast<f32>(column) - 16.0F);
-            heights[(static_cast<usize>(row) * kSize) + column] = 0.5F + (6.0F - d) * 0.3F;
+            heights[(static_cast<usize>(row) * kSize) + column] = 0.5F + ((6.0F - d) * 0.3F);
         }
     }
     TopographicInput input;
@@ -199,7 +199,7 @@ CY_TEST_CASE("minimap: water by its depth, a shore at its edge, and roads laid o
             const f32 dx = static_cast<f32>(column) - 12.0F;
             const f32 dz = static_cast<f32>(row) - 12.0F;
             heights[(static_cast<usize>(row) * kSize) + column] =
-                std::sqrt((dx * dx) + (dz * dz)) * 0.5F - 4.0F;
+                (std::sqrt((dx * dx) + (dz * dz)) * 0.5F) - 4.0F;
         }
     }
     std::vector<u8> roads(heights.size(), 0);
@@ -246,8 +246,13 @@ CY_TEST_CASE("minimap: through the fog, visible is the bake, explored grey, unex
     std::vector<u8> states(static_cast<usize>(kCells) * kCells);
     for (u32 z = 0; z < kCells; ++z) {
         for (u32 x = 0; x < kCells; ++x) {
-            states[(static_cast<usize>(z) * kCells) + x] =
-                x < 3 ? fow::kCellVisible : (x < 6 ? fow::kCellExplored : fow::kCellUnexplored);
+            u8 state = fow::kCellUnexplored;
+            if (x < 3) {
+                state = fow::kCellVisible;
+            } else if (x < 6) {
+                state = fow::kCellExplored;
+            }
+            states[(static_cast<usize>(z) * kCells) + x] = state;
         }
     }
     fow::VisibilityField field(allocator());
@@ -337,9 +342,10 @@ CY_TEST_CASE("minimap: redrawing only the changed cells is the whole fog stage, 
     // The incremental fog stage against the whole one: a field whose units' sight moves a few
     // cells at a time, composed after every move, must give exactly the picture a full pass over
     // the same field gives — and draw far fewer texels to get it. (`fog_stage_fades` holds the
-    // same over a field that is still fading.)
+    // same over a field that is still fading.) The image is 1.5 texels a cell, so texel centres
+    // fall both on and between cells and the bilinear sample reads neighbours.
     constexpr u32 kCells = 16;
-    constexpr u32 kImage = 32;
+    constexpr u32 kImage = 24;
     const std::vector<f32> heights = rolling(kCells);
     TopographicMinimap map(allocator());
     TopographicInput input;
@@ -352,16 +358,21 @@ CY_TEST_CASE("minimap: redrawing only the changed cells is the whole fog stage, 
     CY_REQUIRE(field.create(kCells, kCells).has_value());
     std::vector<u8> states(static_cast<usize>(kCells) * kCells, fow::kCellUnexplored);
     std::vector<u32> whole(static_cast<usize>(kImage) * kImage);
-    u64 full_texels = 0;
-    for (u32 step = 0; step < 6; ++step) {
+    // The texels drawn after the first composition, which draws the whole image.
+    u64 first_texels = 0;
+    u64 later_full_texels = 0;
+    for (u32 step = 0; step < 5; ++step) {
         // A scout walks east along row 10, seeing two cells round it; what it saw stays explored.
         for (u32 z = 0; z < kCells; ++z) {
             for (u32 x = 0; x < kCells; ++x) {
                 u8& cell = states[(static_cast<usize>(z) * kCells) + x];
                 const bool near =
                     (x + 2U >= step * 2U && x <= (step * 2U) + 2U) && (z + 2U >= 10U && z <= 12U);
-                cell = near ? fow::kCellVisible
-                            : (cell == fow::kCellVisible ? fow::kCellExplored : cell);
+                if (near) {
+                    cell = fow::kCellVisible;
+                } else if (cell == fow::kCellVisible) {
+                    cell = fow::kCellExplored;
+                }
             }
         }
         CY_REQUIRE(field.set_states({states.data(), states.size()}).has_value());
@@ -372,14 +383,19 @@ CY_TEST_CASE("minimap: redrawing only the changed cells is the whole fog stage, 
                                      kCells, kCells, fow::FogGridPlacement{}, map.look,
                                      {whole.data(), whole.size()})
                        .has_value());
-        full_texels += whole.size();
+        if (step == 0) {
+            first_texels = map.refogged();
+        } else {
+            later_full_texels += whole.size();
+        }
         usize differing = 0;
         for (usize index = 0; index < whole.size(); ++index) {
             differing += map.fogged()[index] != whole[index] ? 1U : 0U;
         }
         CY_CHECK_EQ(differing, 0U);
     }
-    CY_CHECK_LT(map.refogged() * 3U, full_texels);
+    CY_CHECK_EQ(first_texels, whole.size());
+    CY_CHECK_LT((map.refogged() - first_texels) * 4U, later_full_texels);
 }
 
 CY_TEST_CASE("minimap: fog_stage_fades — a field still fading is redrawn exactly where it moved") {

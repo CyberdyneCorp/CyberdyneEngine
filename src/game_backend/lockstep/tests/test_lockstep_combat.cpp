@@ -113,7 +113,7 @@ struct Battle {
         CY_REQUIRE(session->load(baked).has_value());
     }
 
-    u32 unit(u32 group, FixedVec2 position, const LockstepCombatSpec& spec) noexcept {
+    u32 unit(u32 group, FixedVec2 position, const LockstepCombatSpec& spec) const noexcept {
         LockstepUnitSpec unit;
         unit.group = group;
         unit.position = position;
@@ -123,7 +123,7 @@ struct Battle {
         return *enlisted;
     }
 
-    void order(LockstepOrderKind kind, u32 group, FixedVec2 target) noexcept {
+    void order(LockstepOrderKind kind, u32 group, FixedVec2 target) const noexcept {
         LockstepOrderPayload payload;
         payload.kind = static_cast<u32>(kind);
         payload.group = group;
@@ -449,10 +449,9 @@ struct Peers {
     /// runs any; returns the events read through the ABI, a cursor kept.
     std::vector<CyLockstepEvent> fight(u32 ticks) noexcept {
         for (u32 index = 0; index < 4; ++index) {
-            (void)soldier(0, 1, 4 + static_cast<i32>(index), 6 + static_cast<i32>(index % 2) * 3,
-                          index % 2 == 0);
-            (void)soldier(1, 2, 40 + static_cast<i32>(index), 8 + static_cast<i32>(index % 2) * 3,
-                          index % 2 == 1);
+            const i32 row = static_cast<i32>(index % 2) * 3;
+            (void)soldier(0, 1, 4 + static_cast<i32>(index), 6 + row, index % 2 == 0);
+            (void)soldier(1, 2, 40 + static_cast<i32>(index), 8 + row, index % 2 == 1);
         }
         CyLockstepStructureDesc keep{};
         keep.struct_size = sizeof(keep);

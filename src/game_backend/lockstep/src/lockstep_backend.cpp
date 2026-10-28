@@ -200,7 +200,7 @@ CyResult LockstepAdapter::structure(u32 index, CyLockstepStructure& out) const n
 
 CyResult LockstepAdapter::events(u64 first, CyLockstepEvent* out, u32 capacity,
                                  u32& out_count) const noexcept {
-    const u32 held = history_.size();
+    const auto held = static_cast<u32>(history_.size());
     u32 count = 0;
     for (u32 offset = 0; offset < held; ++offset) {
         const LockstepEvent& event = history_[(oldest_ + offset) % held];

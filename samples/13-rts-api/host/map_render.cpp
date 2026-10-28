@@ -1306,8 +1306,7 @@ struct MapRenderer::State {
         const f32 h = static_cast<f32>(turn * 2.0 * std::numbers::pi);
         stated = std::atan2(std::cos(h), std::sin(h));
         const f32 phase = clock + (0.13F * static_cast<f32>(which));
-        const Motion motion = battle ? battle_motion(from, member, unit)
-                                     : (unit.moving ? Motion::Walk : Motion::Idle);
+        const Motion motion = battle ? battle_motion(from, member, unit) : idle_or_walk(unit);
         if (motion == Motion::Fall) {
             fell_at[which] = fell_at[which] < 0.0F ? clock : fell_at[which];
             poser.pose(Motion::Fall, clock - fell_at[which], pose);
@@ -1322,13 +1321,17 @@ struct MapRenderer::State {
         return unit.moving ? &stated : nullptr;
     }
 
+    [[nodiscard]] static Motion idle_or_walk(
+        const cy::game_backend::LockstepUnitState& unit) noexcept {
+        return unit.moving ? Motion::Walk : Motion::Idle;
+    }
+
     /// What a battle unit is doing, from its combat state.
-    [[nodiscard]] Motion battle_motion(
-        const RtsHost& from, u32 member,
-        const cy::game_backend::LockstepUnitState& unit) const noexcept {
+    [[nodiscard]] static Motion battle_motion(
+        const RtsHost& from, u32 member, const cy::game_backend::LockstepUnitState& unit) noexcept {
         const auto fighter = from.lockstep()->combatant(member);
         if (!fighter || !fighter->armed) {
-            return unit.moving ? Motion::Walk : Motion::Idle;
+            return idle_or_walk(unit);
         }
         if (!fighter->alive) {
             return Motion::Fall;
@@ -1336,12 +1339,12 @@ struct MapRenderer::State {
         if (fighter->engaged) {
             return Motion::Attack;
         }
-        return unit.moving ? Motion::Walk : Motion::Idle;
+        return idle_or_walk(unit);
     }
 
     /// The yaw that faces a striking unit's target, or `otherwise`.
-    [[nodiscard]] f32 attack_heading(const RtsHost& from, u32 member, Vec3 at,
-                                     f32 otherwise) const noexcept {
+    [[nodiscard]] static f32 attack_heading(const RtsHost& from, u32 member, Vec3 at,
+                                            f32 otherwise) noexcept {
         const cy::game_backend::LockstepSession* session = from.lockstep();
         const auto fighter = session->combatant(member);
         if (!fighter || !fighter->target.some()) {

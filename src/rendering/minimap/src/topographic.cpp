@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <utility>
 
 namespace cy::rendering::minimap {
 namespace {
@@ -313,10 +314,10 @@ void draw_icons(Span<const MinimapIcon> icons, const MinimapRegion& region, u32 
         const auto last_column = static_cast<i32>(std::ceil(cx + reach));
         const auto first_row = static_cast<i32>(std::floor(cy - reach));
         const auto last_row = static_cast<i32>(std::ceil(cy + reach));
-        for (i32 row = std::max(first_row, 0); row <= last_row && row < static_cast<i32>(height);
+        for (i32 row = std::max(first_row, 0); row <= last_row && std::cmp_less(row, height);
              ++row) {
             for (i32 column = std::max(first_column, 0);
-                 column <= last_column && column < static_cast<i32>(width); ++column) {
+                 column <= last_column && std::cmp_less(column, width); ++column) {
                 const f32 dx = std::fabs((static_cast<f32>(column) + 0.5F) - cx);
                 const f32 dy = std::fabs((static_cast<f32>(row) + 0.5F) - cy);
                 const f32 distance =
@@ -385,7 +386,7 @@ Status TopographicMinimap::compose(Span<const u8> texels, u32 grid_width, u32 gr
         return updated;
     }
     std::memcpy(field_.data(), texels.data(), texels.size());
-    std::copy(fogged_.begin(), fogged_.end(), image_.begin());
+    std::ranges::copy(fogged_, image_.begin());
     draw_icons(icons, region_, width_, height_, image_.span());
     return ok();
 }
@@ -398,7 +399,7 @@ Status TopographicMinimap::refog_changed(Span<const u8> texels,
     if (Status sized = dirty_.resize(cells); !sized) {
         return sized;
     }
-    std::fill(dirty_.begin(), dirty_.end(), u8{0});
+    std::ranges::fill(dirty_, u8{0});
     u32 changed = 0;
     for (u32 cell = 0; cell < cells; ++cell) {
         if (std::memcmp(texels.data() + (static_cast<usize>(cell) * fog_of_war::kTexelBytes),

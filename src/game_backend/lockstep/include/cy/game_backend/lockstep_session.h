@@ -171,7 +171,7 @@ public:
     [[nodiscard]] bool combat() const noexcept { return combat_; }
     /// Unit `index`'s combat state. NotFound for a unit never enlisted.
     [[nodiscard]] Expected<LockstepCombatantState, Error> combatant(u32 index) const noexcept;
-    [[nodiscard]] u32 structures() const noexcept { return structures_.size(); }
+    [[nodiscard]] u32 structures() const noexcept { return static_cast<u32>(structures_.size()); }
     [[nodiscard]] Expected<LockstepStructureState, Error> structure(u32 index) const noexcept;
     /// The last tick's events, in the order they happened.
     [[nodiscard]] Span<const LockstepEvent> events() const noexcept { return events_.span(); }
@@ -209,7 +209,7 @@ private:
     [[nodiscard]] Status think() noexcept;
     [[nodiscard]] Status think_unit(u32 unit) noexcept;
     [[nodiscard]] Status fly() noexcept;
-    [[nodiscard]] Status land(const LockstepProjectile& projectile) noexcept;
+    [[nodiscard]] Status land(const LockstepProjectile& shot) noexcept;
     [[nodiscard]] Status fire(u32 unit) noexcept;
     [[nodiscard]] Status deal(u32 attacker, u32 team, LockstepTarget target, u32 damage) noexcept;
     [[nodiscard]] Status emit(LockstepEvent event) noexcept;
