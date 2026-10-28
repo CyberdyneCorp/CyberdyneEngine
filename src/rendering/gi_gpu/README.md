@@ -327,8 +327,12 @@ stands for, and one with no history always traces).
 ## The screen-probe gather, measured
 
 `GpuScreenResolve` runs `gi::ScreenProbeGather` as passes in place of the per-pixel resolve:
-PLACE (a thread a tile and a half-tile cell; the adaptive slots taken with an atomic and every probe
-addressed by its cell), TRACE (one workgroup a probe, a lane a ray, summed by lane 0 in ray order,
+PLACE (a thread a tile and a half-tile cell, each cell the uniform probes cannot interpolate marked
+a candidate), RANK (one workgroup: the candidates' adaptive slots in cell order, the first
+`capacity` kept and the rest refused, as the host's `place` keeps them — taken with an atomic, a
+spent capacity refused whichever candidates the device happened to reach last, and the frame
+differed from run to run; `render.gi_gpu_resolve`'s spent-capacity case holds the two to each
+other; every probe is still addressed by its cell), TRACE (one workgroup a probe, a lane a ray, summed by lane 0 in ray order,
 the host's order), FILTER (a thread a probe: `ScreenProbeGather::filter`, the probe-space denoiser —
 each probe's harmonics with its uniform neighbours' on its own surface, into the coefficients the
 pixels read), INTEGRATE (a thread a grid cell). Under `gi::ScreenProbeDenoiser::ProbeSpace`, the

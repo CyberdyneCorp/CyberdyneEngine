@@ -34,7 +34,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`ecs-core`](../../openspec/specs/ecs-core/spec.md) | 12 |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  | M11.d |
 | [`scene-graph-and-nodes`](../../openspec/specs/scene-graph-and-nodes/spec.md) | 10 |  |  | W |  |  | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | M5 |
 | [`serialization-and-prefabs`](../../openspec/specs/serialization-and-prefabs/spec.md) | 23 |  |  | W |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  |  |  |  |  | M8.b |
-| [`gameplay-framework`](../../openspec/specs/gameplay-framework/spec.md) | 36 |  |  |  |  | S |  |  |  |  | S | W |  |  | **C** |  |  |  |  |  |  |  |  | M10 |
+| [`gameplay-framework`](../../openspec/specs/gameplay-framework/spec.md) | 37 |  |  |  |  | S |  |  |  |  | S | W |  |  | **C** |  |  |  |  |  |  |  |  | M10 |
 | [`gameplay-abilities-and-effects`](../../openspec/specs/gameplay-abilities-and-effects/spec.md) | 20 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`visual-scripting`](../../openspec/specs/visual-scripting/spec.md) | 22 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`sequencing-and-cinematics`](../../openspec/specs/sequencing-and-cinematics/spec.md) | 31 |  |  |  |  |  |  |  |  |  |  |  | W |  |  |  | **C** |  |  |  |  |  |  | M11.b |
@@ -67,7 +67,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`rendering-materials-and-shading`](../../openspec/specs/rendering-materials-and-shading/spec.md) | 9 |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  | M7 |
 | [`material-compiler`](../../openspec/specs/material-compiler/spec.md) | 21 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`rendering-lighting-and-shadows`](../../openspec/specs/rendering-lighting-and-shadows/spec.md) | 18 |  |  |  | S |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
-| [`rendering-global-illumination`](../../openspec/specs/rendering-global-illumination/spec.md) | 29 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
+| [`rendering-global-illumination`](../../openspec/specs/rendering-global-illumination/spec.md) | 30 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`denoising`](../../openspec/specs/denoising/spec.md) | 6 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
 | [`ray-tracing-infrastructure`](../../openspec/specs/ray-tracing-infrastructure/spec.md) | 6 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
 | [`rendering-post-processing`](../../openspec/specs/rendering-post-processing/spec.md) | 16 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |

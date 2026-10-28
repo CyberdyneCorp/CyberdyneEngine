@@ -277,6 +277,8 @@ private:
         kTemporal,
         /// The probe trace in 32-lane workgroups, for probes of at most 32 rays.
         kProbeTraceNarrow,
+        /// The adaptive probes' slots, in cell order: one workgroup after the placement.
+        kProbeRank,
         kResolveHardware,
         kProbeTraceHardware,
         kProbeIntegrateHardware,

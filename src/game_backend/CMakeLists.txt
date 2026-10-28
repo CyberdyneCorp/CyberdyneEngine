@@ -31,6 +31,8 @@ cy_add_module(
         src/body_backend.cpp
         src/character_backend.cpp
         src/scene_bridge.cpp
+        # The camera rig's batched collision and occlusion queries, answered by a physics world.
+        src/camera_collision.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES
         cy::abi
@@ -120,8 +122,9 @@ if(CY_BUILD_TESTS)
         set(extra_physics cy::physics-reference)
         set(extra_bodies cy::physics-reference)
         set(extra_character cy::physics-reference)
+        set(extra_camera_collision cy::physics-reference)
         foreach(service IN ITEMS input camera physics navigation audio spawn graph bodies
-                                 character scene)
+                                 character scene camera_collision)
             if(EXISTS "${tests_dir}/test_${service}_backend.cpp")
                 cy_add_test(
                     NAME game_backend_${service}

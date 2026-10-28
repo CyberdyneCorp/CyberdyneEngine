@@ -22,6 +22,8 @@ namespace {
 
 /// Below this, a direction is not a direction and normalising it would produce a NaN.
 constexpr f32 kMinDirectionLength = 1e-5F;
+/// How close to the wanted distance a recovering camera must come to be back: a millimetre.
+constexpr f32 kRecoveredMetres = 1e-3F;
 
 /// Wrap an angle into (−pi, pi]. Yaw accumulates for the length of a session, and a float that has
 /// grown to a few thousand radians has lost the precision a smooth turn needs.
@@ -312,9 +314,58 @@ struct QueryAnswers {
     return answers;
 }
 
+/// PULL IN, AND EASE BACK OUT. The collision distance is ENGAGED from the first answer that pulls
+/// the camera in until the recovery has carried it back to the framing the rig wants:
+///
+///   * IN IMMEDIATELY. A camera that eased into a wall would clip through it for the duration of
+///     the ease. The first contact snaps to the allowed distance rather than easing from whatever
+///     the smoother last held — which, for a rig that had never collided, is zero: the camera would
+///     slam into the target's head and fly back out.
+///   * OUT SLOWLY. Once the wall clears, the answer is "nothing in the way" (a fraction of one),
+///   and
+///     the camera eases back out by `recovery_half_life` rather than popping to the full distance.
+///     A clear answer is therefore NOT a no-op while the distance is engaged.
+void pull_in(f32 fraction, const RigOp& op, const RigEvaluationInput& input, RigState& state,
+             RigFrame& frame) noexcept {
+    if (!frame.has_anchor) {
+        return;
+    }
+    const Vec3 offset = frame.position - frame.anchor;
+    const f32 distance = length(offset);
+    if (distance <= kMinDirectionLength) {
+        return;
+    }
+    // The accessibility setting scales how far the camera is allowed to be pushed, which is
+    // `camera-system`'s "adjustable camera collision strength".
+    const f32 allowed =
+        math::lerp(distance, distance * math::min(fraction, 1.0F), input.collision_strength);
+    if (!state.collision_engaged) {
+        if (allowed >= distance) {
+            return;
+        }
+        state.collision_distance.reset(allowed);
+        state.collision_engaged = true;
+    }
+    const f32 current = state.collision_distance.value();
+    f32 next = allowed < current
+                   ? allowed
+                   : state.collision_distance.advance(allowed, op.collision.recovery_half_life,
+                                                      input.delta_seconds);
+    if (next >= distance - kRecoveredMetres) {
+        next = distance;
+        state.collision_engaged = false;
+    }
+    state.collision_distance.reset(next);
+    frame.position = frame.anchor + (offset * (next / distance));
+}
+
 /// Apply one response at `fraction` of the way from the anchor to the desired position.
 void apply_response(CollisionResponse response, f32 fraction, Vec3 normal, const RigOp& op,
                     const RigEvaluationInput& input, RigState& state, RigFrame& frame) noexcept {
+    if (response == CollisionResponse::PullIn) {
+        pull_in(fraction, op, input, state, frame);
+        return;
+    }
     if (fraction >= 1.0F || !frame.has_anchor) {
         return;
     }
@@ -323,28 +374,8 @@ void apply_response(CollisionResponse response, f32 fraction, Vec3 normal, const
     if (distance <= kMinDirectionLength) {
         return;
     }
-    const Vec3 direction = offset * (1.0F / distance);
 
     switch (response) {
-        case CollisionResponse::PullIn: {
-            // The accessibility setting scales how far the camera is allowed to be pushed, which is
-            // `camera-system`'s "adjustable camera collision strength".
-            const f32 allowed = math::lerp(distance, distance * fraction, input.collision_strength);
-            if (!state.primed) {
-                state.collision_distance.reset(allowed);
-            }
-            // IN IMMEDIATELY, OUT SLOWLY. A camera that eased into a wall would clip through it for
-            // the duration of the ease; a camera that snapped back out the moment the wall cleared
-            // would pop. Only the recovery is smoothed.
-            const f32 current = state.collision_distance.value();
-            const f32 next = (allowed < current) ? allowed
-                                                 : state.collision_distance.advance(
-                                                       allowed, op.collision.recovery_half_life,
-                                                       input.delta_seconds);
-            state.collision_distance.reset(next);
-            frame.position = frame.anchor + (direction * next);
-            break;
-        }
         case CollisionResponse::Slide:
             // Stand off the surface by the probe radius rather than pulling toward the anchor, so a
             // camera brushing a wall slides along it instead of diving at the target.
@@ -362,6 +393,7 @@ void apply_response(CollisionResponse response, f32 fraction, Vec3 normal, const
             // The camera does NOT move. Whoever owns the obstacle's material is asked to fade it.
             frame.obstacle_fade = math::max(frame.obstacle_fade, 1.0F - fraction);
             break;
+        case CollisionResponse::PullIn:
         case CollisionResponse::Ignore:
         case CollisionResponse::Count:
             break;
@@ -371,6 +403,12 @@ void apply_response(CollisionResponse response, f32 fraction, Vec3 normal, const
 void eval_collision(const RigOp& op, const RigEvaluationInput& input, RigState& state,
                     RigFrame& frame) noexcept {
     const QueryAnswers answers = gather_answers(input);
+    // THE QUESTIONS ARE ASKED ABOUT THE FRAMING THE RIG WANTS, not the position an answer pulls it
+    // to below. Asked about the pulled-in position, the next sweep finds it clear, the camera eases
+    // back out into the wall, the sweep after finds the wall again: a camera that pokes through on
+    // every other frame. Asked about the desired position, each frame's answer is the same while
+    // nothing moves, and the camera stays where the last one put it.
+    const Vec3 desired = frame.position;
 
     // COLLISION AND OCCLUSION ARE DIFFERENT QUESTIONS WITH DIFFERENT RESPONSES, which is why they
     // are two calls with two responses and not one number.
@@ -391,7 +429,7 @@ void eval_collision(const RigOp& op, const RigEvaluationInput& input, RigState& 
     collision.kind = CameraQuery::Kind::Collision;
     collision.rig_bits = input.rig_bits;
     collision.from = frame.anchor;
-    collision.to = frame.position;
+    collision.to = desired;
     collision.radius = op.collision.probe_radius;
     (void)input.queries->push_back(collision);
 
@@ -399,7 +437,7 @@ void eval_collision(const RigOp& op, const RigEvaluationInput& input, RigState& 
         CameraQuery occlusion;
         occlusion.kind = CameraQuery::Kind::Occlusion;
         occlusion.rig_bits = input.rig_bits;
-        occlusion.from = frame.position;
+        occlusion.from = desired;
         occlusion.to = frame.anchor;
         (void)input.queries->push_back(occlusion);
     }
@@ -478,6 +516,7 @@ void RigState::reset(const Transform& pose, const Lens& lens) noexcept {
     lens_value.reset(lens.kind == LensKind::Physical ? lens.physical.focal_length_mm
                                                      : lens.gameplay.vertical_fov_radians);
     collision_distance.reset(0.0F);
+    collision_engaged = false;
     recentring = false;
     // `primed` is NOT set: a reset rig re-primes on its next evaluation, which is what makes a cut
     // snap to the new pose instead of easing out of the old one.

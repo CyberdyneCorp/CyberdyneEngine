@@ -73,9 +73,9 @@
 //
 // `cy::rendering-gi-gpu`'s probe passes (gi_screen_probes.slang) transcribe this file expression
 // for expression, and `render.gi_gpu_resolve` holds them to it. The randomness is `screen_hash` of
-// the probe's id, so the host and the device draw the same rays. The one place a device may order
-// work differently is the adaptive probes' slots, which it takes with an atomic: every probe is
-// therefore addressed by its CELL through `adaptive_slot`, never by its slot.
+// the probe's id, so the host and the device draw the same rays. Every probe is addressed by its
+// CELL through `adaptive_slot`, never by its slot; the device hands the adaptive slots out in cell
+// order as `place` does, so a spent capacity refuses the same candidates on both.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>

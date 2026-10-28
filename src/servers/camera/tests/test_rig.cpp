@@ -372,6 +372,139 @@ CY_TEST_CASE("a collision result pulls the camera in, and glass occludes without
     }
 }
 
+CY_TEST_CASE("a camera pulled in by a wall stays in front of it, frame after frame") {
+    // The queries a collision node publishes ask about the framing the rig WANTS, not the position
+    // the last answer already pulled it to. Asked about the pulled-in position, the sweep finds it
+    // clear, the next frame eases back out towards the wall, the sweep after that finds it again —
+    // a camera that pokes through the wall on every other frame. Here a wall stands 2.5 m behind
+    // the target, a 6 m orbit wants the camera 6 m back, and each frame's queries are answered as
+    // a physics sweep of the probe would answer them.
+    const RigNodeRegistry registry(allocator());
+    RigDefinition definition(allocator());
+    (void)definition.nodes.push_back(node("target", nullptr, RigNodeKind::Target));
+    RigNodeDesc orbit = node("orbit", "target", RigNodeKind::Orbit);
+    orbit.orbit.near_distance = 6.0F;
+    orbit.orbit.far_distance = 6.0F;
+    orbit.orbit.distance_half_life = 0.0F;
+    (void)definition.nodes.push_back(orbit);
+    RigNodeDesc collide = node("collide", "orbit", RigNodeKind::Collision);
+    collide.collision.collision_response = CollisionResponse::PullIn;
+    collide.collision.occlusion_samples = 0;
+    collide.collision.probe_radius = 0.25F;
+    (void)definition.nodes.push_back(collide);
+    (void)definition.nodes.push_back(node("output", "collide", RigNodeKind::Output));
+    auto compiled = compile(definition, registry, allocator());
+    CY_REQUIRE(static_cast<bool>(compiled));
+
+    // The orbit's camera sits on +z behind the target; the wall's face is at z = 2.5.
+    constexpr f32 kWall = 2.5F;
+    constexpr f32 kRadius = 0.25F;
+    const auto sweep = [](const CameraQuery& query) {
+        CameraQueryResult result;
+        result.kind = query.kind;
+        result.rig_bits = query.rig_bits;
+        const f32 length = cy::length(query.to - query.from);
+        const f32 reach = query.to.z + query.radius;
+        if (length > 0.0F && reach > kWall) {
+            result.fraction = cy::math::clamp(
+                (kWall - query.radius - query.from.z) / (query.to.z - query.from.z), 0.0F, 1.0F);
+            result.normal = cy::Vec3{0.0F, 0.0F, -1.0F};
+        }
+        return result;
+    };
+
+    RigState state;
+    cy::Array<CameraQuery> queries(allocator());
+    cy::Array<CameraQueryResult> answers(allocator());
+    f32 previous = 0.0F;
+    f32 farthest = 0.0F;
+    f32 largest_step = 0.0F;
+    for (int step = 0; step < 120; ++step) {
+        RigFrame frame;
+        RigEvaluationInput input = input_at(cy::Vec3{0.0F, 0.0F, 0.0F}, 1.0F / 60.0F);
+        input.rig_bits = 3;
+        input.queries = &queries;
+        input.query_results = answers.span();
+        CY_REQUIRE(static_cast<bool>(evaluate(*compiled, registry, state, input, frame, nullptr)));
+        const f32 distance = frame.position.z;
+        if (step >= 2) {
+            farthest = cy::math::max(farthest, distance);
+            largest_step = cy::math::max(largest_step, std::fabs(distance - previous));
+        }
+        previous = distance;
+        answers.clear();
+        for (const CameraQuery& query : queries) {
+            (void)answers.push_back(sweep(query));
+        }
+        queries.clear();
+    }
+    // In front of the wall by the probe's radius on every frame once the answers arrive, and still.
+    CY_CHECK_LE(farthest, kWall - kRadius + 1e-3F);
+    CY_CHECK_LT(largest_step, 1e-3F);
+    CY_CHECK_NEAR(previous, kWall - kRadius, 1e-3F);
+}
+
+CY_TEST_CASE("a wall that appears snaps the camera to it, and one that clears lets it ease out") {
+    // IN IMMEDIATELY, OUT SLOWLY. The camera frames from 6 m for half a second with nothing in the
+    // way; a wall then appears 2.5 m behind the target for a second, and goes. The first answer
+    // that finds it puts the camera in front of it — not at the target, which is where a smoother
+    // that had never been engaged would ease it out from — and the first clear answer after it
+    // starts an ease back out rather than a pop to 6 m.
+    const RigNodeRegistry registry(allocator());
+    RigDefinition definition(allocator());
+    (void)definition.nodes.push_back(node("target", nullptr, RigNodeKind::Target));
+    RigNodeDesc orbit = node("orbit", "target", RigNodeKind::Orbit);
+    orbit.orbit.near_distance = 6.0F;
+    orbit.orbit.far_distance = 6.0F;
+    orbit.orbit.distance_half_life = 0.0F;
+    (void)definition.nodes.push_back(orbit);
+    RigNodeDesc collide = node("collide", "orbit", RigNodeKind::Collision);
+    collide.collision.collision_response = CollisionResponse::PullIn;
+    collide.collision.occlusion_samples = 0;
+    collide.collision.recovery_half_life = 0.25F;
+    (void)definition.nodes.push_back(collide);
+    (void)definition.nodes.push_back(node("output", "collide", RigNodeKind::Output));
+    auto compiled = compile(definition, registry, allocator());
+    CY_REQUIRE(static_cast<bool>(compiled));
+
+    RigState state;
+    const auto frame_with = [&](f32 fraction) {
+        CameraQueryResult answer;
+        answer.kind = CameraQuery::Kind::Collision;
+        answer.rig_bits = 3;
+        answer.fraction = fraction;
+        RigFrame frame;
+        RigEvaluationInput input = input_at(cy::Vec3{0.0F, 0.0F, 0.0F}, 1.0F / 60.0F);
+        input.rig_bits = 3;
+        input.query_results = cy::Span<const CameraQueryResult>(&answer, 1);
+        CY_REQUIRE(static_cast<bool>(evaluate(*compiled, registry, state, input, frame, nullptr)));
+        return frame.position.z;
+    };
+    for (int step = 0; step < 30; ++step) {
+        CY_CHECK_NEAR(frame_with(1.0F), 6.0F, 1e-4F);
+    }
+    // The wall: 2.25 m of the 6 m are clear.
+    CY_CHECK_NEAR(frame_with(2.25F / 6.0F), 2.25F, 1e-4F);
+    for (int step = 0; step < 59; ++step) {
+        CY_CHECK_NEAR(frame_with(2.25F / 6.0F), 2.25F, 1e-4F);
+    }
+    // It goes. One frame of a 0.25 s half-life covers under 5 % of the 3.75 m back.
+    const f32 first = frame_with(1.0F);
+    CY_CHECK_GT(first, 2.25F);
+    CY_CHECK_LT(first, 2.25F + (0.05F * 3.75F));
+    f32 previous = first;
+    bool monotone = true;
+    for (int step = 0; step < 240; ++step) {
+        const f32 next = frame_with(1.0F);
+        monotone = monotone && next >= previous;
+        previous = next;
+    }
+    CY_CHECK(monotone);
+    // Four seconds is sixteen half-lives: back, exactly, and disengaged.
+    CY_CHECK_NEAR(previous, 6.0F, 1e-4F);
+    CY_CHECK_FALSE(state.collision_engaged);
+}
+
 namespace {
 
 /// A project-supplied node kind: raises the camera by a metre. The extension point

@@ -508,8 +508,7 @@ CY_TEST_CASE("on rippled normals the device places the probes the host places") 
     // fractional and a placement that weighed normals differently places differently. The probes'
     // estimates are not compared here: a rippled normal turns a ray by its last bit, and a ray
     // that grazes an edge then meets its other side (see the half-grid case). A larger ripple
-    // asks for more adaptive probes than a frame keeps, and which of them the device's atomic
-    // keeps is the order its threads arrive in.
+    // asks for more adaptive probes than a frame keeps: the next case.
     Comparison result;
     RoomCase room = probe_case(2);
     room.rippled = kRipple;
@@ -519,6 +518,34 @@ CY_TEST_CASE("on rippled normals the device places the probes the host places") 
                  "refused\n",
                  result.probe_records, result.probe_mismatches, result.refused);
     CY_CHECK_EQ(result.refused, 0U);
+    CY_CHECK_GT(result.probe_records, 0U);
+    CY_CHECK_EQ(result.probe_mismatches, 0U);
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE(
+    "when a frame's adaptive capacity is spent the device keeps the probes the host keeps") {
+    Gpu gpu(false);
+    if (!gpu.available()) {
+        return;
+    }
+    // A RIPPLE LARGE ENOUGH TO SPEND THE CAPACITY: more cells ask for an adaptive probe than a
+    // frame keeps. The host keeps the first `capacity` of them in cell order and refuses the rest;
+    // the device must keep the same ones. Taken with an atomic, it kept whichever its threads
+    // reached first — a frame that differed from the host's, and from run to run.
+    // A grid of many workgroups: on one, the threads reach the atomic in cell order anyway.
+    Comparison result;
+    RoomCase room = probe_case(2);
+    room.width = 256;
+    room.height = 160;
+    room.rippled = kRipple * 4.0F;
+    CY_REQUIRE(compare_room(gpu, room, result));
+    std::fprintf(stderr,
+                 "a spent capacity: %u live records compared, %u placed differently, %u adaptive "
+                 "refused\n",
+                 result.probe_records, result.probe_mismatches, result.refused);
+    // The control: the capacity WAS spent, or this case is the one above.
+    CY_CHECK_GT(result.refused, 0U);
     CY_CHECK_GT(result.probe_records, 0U);
     CY_CHECK_EQ(result.probe_mismatches, 0U);
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);

@@ -460,6 +460,9 @@ struct RigState {
     SmoothScalar distance;
     SmoothScalar lens_value;
     SmoothScalar collision_distance;
+    /// True from the answer that pulls the camera in until the recovery has carried it back out:
+    /// while it is, a clear answer eases the camera out rather than being a no-op.
+    bool collision_engaged = false;
 
     f32 yaw_radians = 0.0F;
     f32 pitch_radians = 0.0F;

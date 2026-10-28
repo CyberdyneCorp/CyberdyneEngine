@@ -292,9 +292,15 @@ void spWriteProbe(uint slot, uint record, float3 position, float depth, float3 n
 
 // --- `ScreenProbeGather::place` ---------------------------------------------------------------------
 
-/// One thread a uniform tile and a half-tile cell: the tile's probe, and the cell's adaptive probe
-/// where the uniform ones about its centre — read from the surfaces they stand on, which is what
-/// `place` wrote them from — cannot be interpolated.
+/// A cell the uniform probes cannot interpolate, before the rank pass gives it a slot.
+static const uint kSpCandidate = 0xFFFFFFFEu;
+/// The rank pass is one workgroup: each lane walks a run of consecutive cells.
+static const uint kSpRankLanes = 64u;
+
+/// One thread a uniform tile and a half-tile cell: the tile's probe, and whether the cell is a
+/// CANDIDATE for an adaptive probe — the uniform ones about its centre, read from the surfaces
+/// they stand on, which is what `place` wrote them from, cannot be interpolated. No slot is taken
+/// here: `spRank` hands them out in cell order.
 void spPlace(uint thread) {
     const uint slot = spSlot();
     const uint uniform = spUniformCount();
@@ -344,13 +350,62 @@ void spPlace(uint thread) {
     if (covered >= weights.x) {
         return;
     }
-    uint taken = 0u;
-    InterlockedAdd(giResolve.slots[spCounter(slot)], 1u, taken);
-    if (taken >= spCapacity()) {
-        return;
+    giResolve.slots[spTableIndex(slot, thread)] = kSpCandidate;
+}
+
+groupshared uint spRankCounts[kSpRankLanes];
+
+/// THE CANDIDATES' SLOTS, IN CELL ORDER, as `place` takes them: the first `capacity` candidates by
+/// cell index get slots 0, 1, 2 ..., and the rest are refused. One workgroup: each lane counts the
+/// candidates in its run of cells, the lanes' counts are scanned, and each lane then hands out its
+/// run's slots from where the scan put it. A slot taken with an atomic would be the same set while
+/// the candidates fit, but once they do not, WHICH ones are refused would be the order the device
+/// happened to reach them in — a frame that differs from run to run, and from its oracle.
+void spRank(uint lane) {
+    const uint slot = spSlot();
+    const uint uniform = spUniformCount();
+    const uint pixels = giResolve.constants[kGrCounts].z;
+    const uint cells = spCellsX() * spCellsY();
+    const uint run = (cells + kSpRankLanes - 1u) / kSpRankLanes;
+    const uint first = min(lane * run, cells);
+    const uint last = min(first + run, cells);
+    uint count = 0u;
+    for (uint cell = first; cell < last; ++cell) {
+        count += giResolve.slots[spTableIndex(slot, cell)] == kSpCandidate ? 1u : 0u;
     }
-    giResolve.slots[spTableIndex(slot, thread)] = taken;
-    spWriteProbe(slot, uniform + taken, at.xyz, at.w, normal, uniform + thread);
+    spRankCounts[lane] = count;
+    GroupMemoryBarrierWithGroupSync();
+    // An inclusive scan of the lanes' counts, in place: log2(64) rounds.
+    for (uint offset = 1u; offset < kSpRankLanes; offset *= 2u) {
+        const uint before = lane >= offset ? spRankCounts[lane - offset] : 0u;
+        GroupMemoryBarrierWithGroupSync();
+        spRankCounts[lane] += before;
+        GroupMemoryBarrierWithGroupSync();
+    }
+    // Every candidate is counted, the refused ones too: readers take `min(counter, capacity)`.
+    if (lane == kSpRankLanes - 1u) {
+        giResolve.slots[spCounter(slot)] = spRankCounts[lane];
+    }
+    uint taken = spRankCounts[lane] - count;
+    const uint capacity = spCapacity();
+    for (uint cell = first; cell < last; ++cell) {
+        const uint index = spTableIndex(slot, cell);
+        if (giResolve.slots[index] != kSpCandidate) {
+            continue;
+        }
+        if (taken >= capacity) {
+            giResolve.slots[index] = kSpNone;
+            continue;
+        }
+        const uint pixel = spAdaptivePixel(cell);
+        const uint record = ((slot * pixels) + pixel) * 2u;
+        const float4 at = giResolve.surfaces[record];
+        const float3 normal =
+            giNormalisedOr(giResolve.surfaces[record + 1u].xyz, float3(0.0f, 1.0f, 0.0f));
+        giResolve.slots[index] = taken;
+        spWriteProbe(slot, uniform + taken, at.xyz, at.w, normal, uniform + cell);
+        taken += 1u;
+    }
 }
 
 // --- `ScreenProbeGather::trace_probe` ----------------------------------------------------------------

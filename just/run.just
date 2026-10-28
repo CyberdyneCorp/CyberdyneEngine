@@ -1863,3 +1863,76 @@ capture-rts-map *args:
         "${images}/rts-map-features.png"
     echo "    ${images}/rts-map-{game,overview,before-after,features}.png"
     echo "    docs/design/videos/rts-map.mp4"
+
+# samples/14-third-person's artefacts: the run's stills at 1920x1080 composed into
+# docs/design/images/third-person-run.png, the frame's features off and on at the stairs
+# (third-person-features.png), the frame at frame 630 (third-person-wall.png), and the run filmed
+# at 1280x720 with the game's own sound mixed in, docs/design/videos/third-person.mp4. Needs a
+# graphics device, Swift and ffmpeg.
+# Photograph and film the third-person demo, with its sound. Usage: just capture-third-person [--profile <p>]
+capture-third-person *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/14-third-person/cy_sample_third-person"
+    if [ ! -x "${sample}" ]; then
+        echo "capture-third-person: ${sample} was not built (it needs Swift, CY_ANIMATION and" >&2
+        echo "  CY_PHYSICS)." >&2
+        exit 1
+    fi
+    if ! command -v ffmpeg > /dev/null; then
+        echo "capture-third-person: ffmpeg is not installed." >&2
+        exit 1
+    fi
+    work="${build_dir}/third-person-capture"
+    rm -rf "${work}"
+    mkdir -p "${work}"/{run,film,frames,plain,shadows,lit,all} docs/design/images docs/design/videos
+    run() {
+        local directory="$1"
+        shift
+        "${sample}" --render "${work}/${directory}" "$@" ${rest} > "${work}/${directory}.log"
+        grep "tps render" "${work}/${directory}.log"
+    }
+
+    echo "==> run         the stills at 1920x1080, without the validation layer"
+    run run --no-validation
+    if [ ! -e "${work}/run/third-person-0630.png" ]; then
+        echo "capture-third-person: no frame was written (no graphics device?)"
+        exit 0
+    fi
+    echo "==> film        every second frame at 1280x720, and the sound"
+    "${sample}" --render "${work}/film" --width 1280 --height 720 --video "${work}/frames" \
+        --video-every 2 --audio "${work}/run.wav" ${rest} > "${work}/film.log"
+    ffmpeg -y -loglevel error -framerate 30 -pattern_type glob -i "${work}/frames/frame-*.png" \
+        -i "${work}/run.wav" -c:v libx264 -pix_fmt yuv420p -crf 22 -preset slow \
+        -c:a aac -b:a 128k -shortest docs/design/videos/third-person.mp4
+    rm -rf "${work}/frames"
+    echo "==> features    no shadows, AO, GI or upscaler; shadows; and AO and GI; all of them"
+    run plain --width 960 --height 540 --no-shadows --no-ao --no-gi --no-upscale
+    run shadows --width 960 --height 540 --no-ao --no-gi --no-upscale
+    run lit --width 960 --height 540 --no-upscale
+    run all --width 960 --height 540
+
+    images=docs/design/images
+    still() { echo "${work}/run/third-person-$1.png"; }
+    grid="[0]scale=720:405[a];[1]scale=720:405[b];[2]scale=720:405[c]"
+    grid="${grid};[3]scale=720:405[d];[4]scale=720:405[e];[5]scale=720:405[f]"
+    grid="${grid};[a][b]hstack[top];[c][d]hstack[middle];[e][f]hstack[bottom]"
+    grid="${grid};[top][middle][bottom]vstack=3"
+    ffmpeg -y -loglevel error -i "$(still 0270)" -i "$(still 0410)" -i "$(still 0630)" \
+        -i "$(still 0880)" -i "$(still 0990)" -i "$(still 1190)" -filter_complex "${grid}" \
+        "${images}/third-person-run.png"
+    ffmpeg -y -loglevel error -i "$(still 0880)" -vf scale=1280:720 "${images}/third-person-ramp.png"
+    ffmpeg -y -loglevel error -i "$(still 0630)" -vf scale=1280:720 "${images}/third-person-wall.png"
+    ffmpeg -y -loglevel error -i "${work}/plain/third-person-0270.png" \
+        -i "${work}/shadows/third-person-0270.png" -i "${work}/lit/third-person-0270.png" \
+        -i "${work}/all/third-person-0270.png" \
+        -filter_complex "[0][1]hstack[top];[2][3]hstack[bottom];[top][bottom]vstack,scale=1280:720" \
+        "${images}/third-person-features.png"
+    echo "    ${images}/third-person-{run,ramp,wall,features}.png"
+    echo "    docs/design/videos/third-person.mp4"
