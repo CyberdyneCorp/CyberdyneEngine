@@ -87,6 +87,10 @@ struct MapRenderOptions {
     /// The graphics API's validation layer, which every other run of this sample keeps on. Off is
     /// for measuring what the frame costs, which the layer's own checks would be part of.
     bool validation = true;
+    /// The battle's minimap re-made with `UiRenderer::upload_atlas` every time it is composed — a
+    /// new page each sixth frame — rather than staged into the page it has with `stage_atlas`. The
+    /// control for `fix-ui-atlas-upload-frame`: the path that once lost the device.
+    bool minimap_upload = false;
 };
 
 /// The frame's numbers, over the timed frames.

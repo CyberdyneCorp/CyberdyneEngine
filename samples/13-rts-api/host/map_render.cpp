@@ -1538,10 +1538,10 @@ struct MapRenderer::State {
         const cy::Span<const u32> image = topo->image();
         const cy::Span<const u8> bytes(reinterpret_cast<const u8*>(image.data()),
                                        image.size() * 4U);
-        // Made once; from then on replaced inside the frame's own graph, with no submission and
-        // no wait of its own, so a minimap redrawn while the battle runs costs the frame nothing
-        // but its copy.
-        if (!ui.has_atlas(kMinimapFogPage)) {
+        // Made once; from then on replaced inside the frame's own graph, in the page it has, so a
+        // minimap redrawn while the battle runs costs the frame nothing but its copy. With
+        // `--minimap-upload` the page is made anew each time, which costs a texture and its view.
+        if (!ui.has_atlas(kMinimapFogPage) || options.minimap_upload) {
             return ui.upload_atlas(kMinimapFogPage, rhi::Format::Rgba8Unorm, kTopoTexels,
                                    kTopoTexels, bytes);
         }

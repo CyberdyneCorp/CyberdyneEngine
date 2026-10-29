@@ -13,7 +13,6 @@
 namespace cy::ui::render {
 namespace {
 
-using rendering::GraphExecutor;
 using rendering::PassContext;
 using rendering::PassId;
 using rendering::RenderGraph;
@@ -91,63 +90,6 @@ template <usize N>
         return 4U;
     }
     return 0U;
-}
-
-struct AtlasUpload {
-    rhi::BufferHandle staging;
-    rhi::TextureHandle texture;
-    u32 width = 0;
-    u32 height = 0;
-};
-
-void record_atlas_upload(const PassContext& context, void* user) noexcept {
-    const auto* upload = static_cast<const AtlasUpload*>(user);
-    rhi::BufferTextureCopy region;
-    region.texture_extent = rhi::Extent3D{upload->width, upload->height, 1};
-    context.commands->copy_buffer_to_texture(upload->staging, upload->texture,
-                                             Span<const rhi::BufferTextureCopy>(&region, 1));
-}
-
-/// Copy a page's texels in through a graph of its own and leave it in the sampled layout the pass
-/// reads it in — the graph derives both transitions, as grading's table upload does.
-[[nodiscard]] Status run_atlas_upload(rhi::Device& device, Allocator& allocator,
-                                      AtlasUpload& upload, rhi::Format format) noexcept {
-    RenderGraph graph(allocator);
-    rendering::TextureRequest request;
-    request.name = "ui atlas page";
-    request.format = format;
-    request.width = upload.width;
-    request.height = upload.height;
-    const ResourceId page = graph.import_texture(request, upload.texture, rhi::ImageUse::Undefined);
-    graph.add_pass("ui atlas upload", QueueKind::Graphics)
-        .write(page, Access::TransferWrite)
-        .record(&record_atlas_upload, &upload);
-    graph.add_pass("ui atlas residency", QueueKind::Graphics)
-        .read(page, Access::FragmentSampledRead)
-        .side_effect();
-    if (Status declared = graph.status(); !declared) {
-        return declared;
-    }
-    const Expected<u32, Error> began = device.begin_frame();
-    if (!began.has_value()) {
-        return make_unexpected(began.error());
-    }
-    Status executed = ok();
-    {
-        GraphExecutor executor(allocator, device);
-        if (auto result =
-                executor.execute(graph, rendering::CompileOptions{}, rendering::ExecuteOptions{});
-            !result) {
-            executed = make_unexpected(result.error());
-        } else {
-            executed = device.wait_idle();
-        }
-        executor.release();
-    }
-    if (Status ended = device.end_frame(); !ended && executed) {
-        executed = ended;
-    }
-    return executed;
 }
 
 void record_fn(const PassContext& context, void* user) noexcept {
@@ -413,9 +355,8 @@ void UiRenderer::destroy() noexcept {
         }
     };
     for (StagedPage& staged : staged_) {
-        for (rhi::BufferHandle& buffer : staged.staging) {
-            release(buffer);
-        }
+        release_staging(staged);
+        staged.staging_bytes = 0;
         staged.pending = false;
         staged.resource = rendering::kInvalidResource;
     }
@@ -458,6 +399,28 @@ void UiRenderer::destroy() noexcept {
     device_ = nullptr;
 }
 
+Expected<UiRenderer::AtlasPage, Error> UiRenderer::make_page(rhi::Format format, u32 width,
+                                                             u32 height) noexcept {
+    rhi::TextureDescription texture;
+    texture.name = "ui atlas page";
+    texture.format = format;
+    texture.extent = rhi::Extent3D{width, height, 1};
+    texture.usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDestination;
+    Expected<rhi::TextureHandle, Error> image = device_->create_texture(texture);
+    if (!image.has_value()) {
+        return make_unexpected(image.error());
+    }
+    rhi::TextureViewDescription view;
+    view.name = "ui atlas page";
+    view.texture = *image;
+    Expected<rhi::TextureViewHandle, Error> made = device_->create_texture_view(view);
+    if (!made.has_value()) {
+        device_->destroy_texture(*image);
+        return make_unexpected(made.error());
+    }
+    return AtlasPage{*image, *made, format, width, height, false};
+}
+
 Status UiRenderer::upload_atlas(u16 page, rhi::Format format, u32 width, u32 height,
                                 Span<const u8> pixels) noexcept {
     if (device_ == nullptr) {
@@ -470,52 +433,41 @@ Status UiRenderer::upload_atlas(u16 page, rhi::Format format, u32 width, u32 hei
                     "ui renderer: an atlas page is R8Unorm or Rgba8Unorm, its texels its extent, "
                     "and its number below kMaxAtlasPages");
     }
-    rhi::TextureDescription texture;
-    texture.name = "ui atlas page";
-    texture.format = format;
-    texture.extent = rhi::Extent3D{width, height, 1};
-    texture.usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDestination;
-    Expected<rhi::TextureHandle, Error> image = device_->create_texture(texture);
-    if (!image.has_value()) {
-        return make_unexpected(image.error());
-    }
-    rhi::BufferDescription staging;
-    staging.name = "ui atlas staging";
-    staging.size = pixels.size();
-    staging.usage = rhi::BufferUsage::TransferSource;
-    staging.memory = rhi::MemoryUse::Upload;
-    Expected<rhi::BufferHandle, Error> buffer = device_->create_buffer(staging);
-    if (!buffer.has_value()) {
-        device_->destroy_texture(*image);
-        return make_unexpected(buffer.error());
-    }
-    void* mapped = device_->buffer_mapped_pointer(*buffer);
-    Status uploaded =
-        mapped != nullptr ? ok() : fail(ErrorCode::Internal, "ui renderer: staging is not mapped");
-    if (uploaded) {
-        std::memcpy(mapped, pixels.data(), pixels.size());
-        AtlasUpload upload{*buffer, *image, width, height};
-        uploaded = run_atlas_upload(*device_, *allocator_, upload, format);
-    }
-    device_->destroy_buffer(*buffer);
-    if (!uploaded) {
-        device_->destroy_texture(*image);
-        return uploaded;
-    }
-    rhi::TextureViewDescription view;
-    view.name = "ui atlas page";
-    view.texture = *image;
-    Expected<rhi::TextureViewHandle, Error> made = device_->create_texture_view(view);
+    Expected<AtlasPage, Error> made = make_page(format, width, height);
     if (!made.has_value()) {
-        device_->destroy_texture(*image);
         return make_unexpected(made.error());
     }
-    // The previous page is idle: the upload above waited for the device.
+    StagedPage& staged = staged_[page];
+    if (Status sized = staged.texels.resize(pixels.size()); !sized) {
+        destroy_page(*made);
+        return sized;
+    }
+    // RETIRED, NOT FREED: a frame still in flight may sample the old page, and the device keeps it
+    // until that frame's slot comes round.
     destroy_page(pages_[page]);
-    pages_[page] = AtlasPage{*image, *made, format, width, height};
-    // Texels staged for the old page are not this one's.
-    staged_[page].pending = false;
+    pages_[page] = *made;
+    // A staging buffer sized for the old page is not this one's.
+    if (staged.staging_bytes != pixels.size()) {
+        release_staging(staged);
+        staged.staging_bytes = pixels.size();
+    }
+    // NO DEVICE FRAME OF ITS OWN. The texels are copied in the next frame's graph, as
+    // `stage_atlas`'s are: beginning a device frame here advanced the frame ring behind the
+    // game's back, and the frame after it lost the device (`fix-ui-atlas-upload-frame`).
+    std::memcpy(staged.texels.data(), pixels.data(), pixels.size());
+    staged.renderer = this;
+    staged.page = page;
+    staged.pending = true;
     return ok();
+}
+
+void UiRenderer::release_staging(StagedPage& staged) noexcept {
+    for (rhi::BufferHandle& buffer : staged.staging) {
+        if (!buffer.is_null()) {
+            device_->destroy_buffer(buffer);
+            buffer = rhi::BufferHandle{};
+        }
+    }
 }
 
 Status UiRenderer::stage_atlas(u16 page, Span<const u8> pixels) noexcept {
@@ -547,45 +499,52 @@ Status UiRenderer::stage_atlas(u16 page, Span<const u8> pixels) noexcept {
 
 bool UiRenderer::declare_staged(RenderGraph& graph) noexcept {
     const u32 slot = device_->frame_slot() % slots_;
-    for (u16 page = 0; page < kMaxAtlasPages; ++page) {
-        StagedPage& staged = staged_[page];
+    for (StagedPage& staged : staged_) {
         staged.resource = rendering::kInvalidResource;
-        if (!staged.pending) {
-            continue;
-        }
-        if (staged.staging[slot].is_null()) {
-            rhi::BufferDescription buffer;
-            buffer.name = "ui atlas staging";
-            buffer.size = staged.texels.size();
-            buffer.usage = rhi::BufferUsage::TransferSource;
-            buffer.memory = rhi::MemoryUse::Upload;
-            Expected<rhi::BufferHandle, Error> made = device_->create_buffer(buffer);
-            if (!made.has_value()) {
-                return false;
-            }
-            staged.staging[slot] = *made;
-        }
-        // THIS SLOT'S BUFFER: `begin_frame` waited for the frame that last read it.
-        void* mapped = device_->buffer_mapped_pointer(staged.staging[slot]);
-        if (mapped == nullptr) {
+        if (staged.pending && !declare_copy(graph, staged, slot)) {
             return false;
         }
-        std::memcpy(mapped, staged.texels.data(), staged.texels.size());
-        const AtlasPage& atlas = pages_[page];
-        rendering::TextureRequest request;
-        request.name = "ui atlas page";
-        request.format = atlas.format;
-        request.width = atlas.width;
-        request.height = atlas.height;
-        // Resident in the sampled layout, as every upload and every frame since left it.
-        staged.resource = graph.import_texture(request, atlas.texture, rhi::ImageUse::SampledRead);
-        staged.slot = slot;
-        staged.pending = false;
-        graph.add_pass("ui atlas update", QueueKind::Graphics)
-            .write(staged.resource, Access::TransferWrite)
-            .record(&UiRenderer::record_staged, &staged);
     }
     return graph.status().has_value();
+}
+
+bool UiRenderer::declare_copy(RenderGraph& graph, StagedPage& staged, u32 slot) noexcept {
+    if (staged.staging[slot].is_null()) {
+        rhi::BufferDescription buffer;
+        buffer.name = "ui atlas staging";
+        buffer.size = staged.texels.size();
+        buffer.usage = rhi::BufferUsage::TransferSource;
+        buffer.memory = rhi::MemoryUse::Upload;
+        Expected<rhi::BufferHandle, Error> made = device_->create_buffer(buffer);
+        if (!made.has_value()) {
+            return false;
+        }
+        staged.staging[slot] = *made;
+    }
+    // THIS SLOT'S BUFFER: `begin_frame` waited for the frame that last read it.
+    void* mapped = device_->buffer_mapped_pointer(staged.staging[slot]);
+    if (mapped == nullptr) {
+        return false;
+    }
+    std::memcpy(mapped, staged.texels.data(), staged.texels.size());
+    AtlasPage& atlas = pages_[staged.page];
+    rendering::TextureRequest request;
+    request.name = "ui atlas page";
+    request.format = atlas.format;
+    request.width = atlas.width;
+    request.height = atlas.height;
+    // A page `upload_atlas` just made holds nothing yet; one copied before is resident in the
+    // sampled layout, as that copy and every frame since left it.
+    const rhi::ImageUse resident =
+        atlas.copied ? rhi::ImageUse::SampledRead : rhi::ImageUse::Undefined;
+    staged.resource = graph.import_texture(request, atlas.texture, resident);
+    staged.slot = slot;
+    staged.pending = false;
+    atlas.copied = true;
+    graph.add_pass("ui atlas update", QueueKind::Graphics)
+        .write(staged.resource, Access::TransferWrite)
+        .record(&UiRenderer::record_staged, &staged);
+    return true;
 }
 
 void UiRenderer::read_staged(rendering::PassBuilder& builder) const noexcept {

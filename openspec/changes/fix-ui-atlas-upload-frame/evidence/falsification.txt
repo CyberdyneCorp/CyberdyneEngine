@@ -1,0 +1,38 @@
+# Mutations applied to the shipped sources, each rebuilt, the targeted suite run whole, and the
+# source restored and rebuilt.
+# Driver: apply -> ninja cy_test_integration_ui_atlas_upload -> run it -> restore.
+# Host: Linux, NVIDIA RTX 5060 (driver 580.95.05, Vulkan 1.4.312), Development build, GCC 13.
+# Every mutation below turned its suite RED; the suite is green on the restored tree.
+
+== M0 upload_atlas as it was (src/ui/render/src/ui_renderer.cpp and ui_renderer.h from origin/main
+   36859bb0): a graph of its own inside begin_frame / submit / wait_idle / end_frame
+   integration.ui_atlas_upload: RED
+   TEST CASE:  upload_atlas begins no device frame and submits nothing
+   src/ui/render/tests/test_atlas_upload.cpp:177: ERROR: CHECK_EQ( device.statistics().frames_begun, 0U ) is NOT correct!
+     values: CHECK_EQ( 1, 0 )
+   src/ui/render/tests/test_atlas_upload.cpp:178: ERROR: CHECK_EQ( device.statistics().submissions, 0U ) is NOT correct!
+     values: CHECK_EQ( 1, 0 )
+   src/ui/render/tests/test_atlas_upload.cpp:183: ERROR: CHECK_EQ( device.statistics().frames_begun, 0U ) is NOT correct!
+     values: CHECK_EQ( 3, 0 )
+   src/ui/render/tests/test_atlas_upload.cpp:184: ERROR: CHECK_EQ( device.statistics().submissions, 0U ) is NOT correct!
+     values: CHECK_EQ( 3, 0 )
+   TEST CASE:  the game's frames take the slots in order however often a page is re-made
+   src/ui/render/tests/test_atlas_upload.cpp:209: ERROR: CHECK_EQ( result.slot, index % ring ) is NOT correct!
+     values: CHECK_EQ( 1, 0 )      (then 0, 1 / 1, 0 / 0, 1 / 1, 0 / 0, 1: every frame after an upload)
+   src/ui/render/tests/test_atlas_upload.cpp:211: ERROR: CHECK_EQ( device.statistics().frames_begun, u64{kFrames} ) is NOT correct!
+     values: CHECK_EQ( 19, 12 )
+   TEST CASE:  the next frame copies a new page in before the interface reads it
+   src/ui/render/tests/test_atlas_upload.cpp:226: ERROR: CHECK_EQ( frame.run(renderer).copies, 2 ) is NOT correct!
+     values: CHECK_EQ( 0, 2 )
+   src/ui/render/tests/test_atlas_upload.cpp:230: ERROR: CHECK_EQ( frame.run(renderer).copies, 1 ) is NOT correct!
+     values: CHECK_EQ( 0, 1 )
+
+# The device half of the same mutation is the finding itself, run before the fix on this host:
+#   cy_sample_rts-api --battle --render <dir> --map frontier.cypak --minimap-upload [--no-validation]
+#   rts-api: frame 101 failed: vkDeviceWaitIdle      (the frame drawn after the upload at 102,
+#                                                     5 278 ms of waiting; the frames before 8.5 ms)
+#   kernel: NVRM: Xid (PCI:0000:01:00): 109, pid=…, name=cy_sample_rts-a, … CTX SWITCH TIMEOUT
+# and on the fix:
+#   rts map render … frames=1200 … validation_errors=0     (validation on)
+#   rts map render … frames=1200                            (validation off)
+#   rts-map-180/330/960/1150.png byte-identical to the stage_atlas run's.

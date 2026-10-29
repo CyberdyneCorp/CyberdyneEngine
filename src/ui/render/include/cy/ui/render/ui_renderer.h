@@ -48,7 +48,7 @@
 // ================================================================================================
 //
 //     renderer.create(device, {width, height, output_format});
-//     renderer.upload_atlas(page, pixels...);           // outside a frame: a glyph or image page
+//     renderer.upload_atlas(page, pixels...);           // a glyph or image page, copied next frame
 //     // per frame:
 //     flatten(store, viewport, buffer, report, &text);  // cy::ui
 //     renderer.submit(buffer, scale);
@@ -122,18 +122,21 @@ public:
     [[nodiscard]] bool ready() const noexcept { return device_ != nullptr; }
 
     /// Make `pixels` atlas page `page`: one byte a texel for `rhi::Format::R8Unorm` (glyph
-    /// coverage), four for `Rgba8Unorm` (a premultiplied image, red in the low byte). Runs a graph
-    /// of its own and waits for it, so call it OUTSIDE a frame; replaces whatever the page held.
+    /// coverage), four for `Rgba8Unorm` (a premultiplied image, red in the low byte). Replaces
+    /// whatever the page held. A new texture now; its texels are copied in the NEXT frame's graph,
+    /// as `stage_atlas`'s are, so call it between frames or before the frame declares the
+    /// interface's stage. It begins no device frame and submits nothing: a device frame begun
+    /// outside the game's own advanced the frame ring under every other system's per-slot state,
+    /// and the frame after it lost the device (`fix-ui-atlas-upload-frame`).
     [[nodiscard]] Status upload_atlas(u16 page, rhi::Format format, u32 width, u32 height,
                                       Span<const u8> pixels) noexcept;
     [[nodiscard]] bool has_atlas(u16 page) const noexcept;
-    /// Replace an uploaded page's texels in the NEXT frame's graph: no submission of its own, no
-    /// wait, no new texture — what a page that changes while the game runs (a minimap) wants. The
-    /// texels are kept until the frame declares the interface's stage, copied into that frame
-    /// slot's staging buffer there, and moved into the page by a transfer pass every interface pass
-    /// reads after. `pixels` is the page's own extent and format (`upload_atlas` made it); staging
-    /// a page twice before a frame keeps the later texels. InvalidArgument for a page never
-    /// uploaded or texels of another size.
+    /// Replace an uploaded page's texels in the NEXT frame's graph, in the texture it has — what a
+    /// page that changes while the game runs (a minimap) wants. The texels are kept until the
+    /// frame declares the interface's stage, copied into that frame slot's staging buffer there,
+    /// and moved into the page by a transfer pass every interface pass reads after. `pixels` is the
+    /// page's own extent and format (`upload_atlas` made it); staging a page twice before a frame
+    /// keeps the later texels. InvalidArgument for a page never uploaded or texels of another size.
     [[nodiscard]] Status stage_atlas(u16 page, Span<const u8> pixels) noexcept;
 
     /// This frame's interface: `buffer` flattened in reference units, drawn at `scale` pixels per
@@ -173,6 +176,9 @@ private:
         rhi::Format format = rhi::Format::Rgba8Unorm;
         u32 width = 0;
         u32 height = 0;
+        /// Whether a frame's graph has copied texels in: until then the page holds nothing and is
+        /// imported undefined.
+        bool copied = false;
     };
 
     /// A page's texels waiting for the next frame, and that frame's copy of them.
@@ -183,6 +189,8 @@ private:
         Array<u8> texels;
         /// One staging buffer per frame in flight, made the first time the page is staged.
         rhi::BufferHandle staging[rhi::kMaxFramesInFlight];
+        /// The size those buffers were made for: a page re-made at another size drops them.
+        usize staging_bytes = 0;
         /// This frame's: the page imported into the graph, and the slot its texels went to.
         rendering::ResourceId resource = rendering::kInvalidResource;
         u32 slot = 0;
@@ -205,6 +213,13 @@ private:
     [[nodiscard]] bool declare_groups(rendering::RenderGraph& graph) noexcept;
     /// Declare this frame's staged page copies; false when one could not be made.
     [[nodiscard]] bool declare_staged(rendering::RenderGraph& graph) noexcept;
+    /// One page's copy, from this frame slot's staging buffer.
+    [[nodiscard]] bool declare_copy(rendering::RenderGraph& graph, StagedPage& staged,
+                                    u32 slot) noexcept;
+    /// A texture and its view for a page, holding nothing until a frame copies texels in.
+    [[nodiscard]] Expected<AtlasPage, Error> make_page(rhi::Format format, u32 width,
+                                                       u32 height) noexcept;
+    void release_staging(StagedPage& staged) noexcept;
     /// Every page this frame copies, read by `builder`'s pass as a fragment shader reads it.
     void read_staged(rendering::PassBuilder& builder) const noexcept;
     static void record_staged(const rendering::PassContext& context, void* user) noexcept;

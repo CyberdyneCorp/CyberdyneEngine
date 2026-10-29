@@ -195,6 +195,8 @@ and after every tick stands each soldier's node where its unit stands.
 ```
 just run-sample rts-api --battle                                 1200 frames, headless, then the report
 cy_sample_rts-api --battle --render <dir> --map frontier.cypak   drawn on the RTS test map
+    --minimap-upload                                             the minimap's page re-made with
+                                                                 upload_atlas each time (the control)
 just capture-rts-battle                                          the images and the video below
 ctest -R 'game_backend_lockstep|rts_api_sample|rts_map|rts_api_map|cross_leg'
 ```
@@ -216,7 +218,8 @@ blasts' lights beside the sun. **The HUD's minimap becomes topographic** — the
 its heights, painted colours, roads and lake with a contour every metre (`map/map_minimap.*`,
 `cy::rendering-minimap`), blue's fog over it, the battle's units and buildings as icons — redrawn
 where the fog moved every sixth frame and staged into the HUD's page inside the frame
-(`UiRenderer::stage_atlas`).
+(`UiRenderer::stage_atlas`). `--minimap-upload` re-makes the page with `upload_atlas` instead, the
+path that once lost the device (`fix-ui-atlas-upload-frame`); both draw the same pictures.
 
 ![The minimap at frame 1150](../../docs/design/images/rts-battle-minimap.png)
 ![The Frontier's minimap, baked](../../docs/design/images/rts-topographic-minimap.png)

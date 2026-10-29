@@ -9359,6 +9359,13 @@ case = "(j) a staged page changes in the next frame, with no submission of its o
 note = "`UiRenderer::stage_atlas` on the device: the frame after the stage shows the new texels, the device begins exactly one frame for it, the next frame still shows them, and a page never uploaded or texels of the wrong size are refused. samples/13-rts-api's battle redraws its topographic minimap this way."
 
 [[coverage]]
+row = "ui-system"
+requirement = "Atlas uploads leave the frame ring to the game"
+evidence = "test:integration.ui_atlas_upload"
+case = "the game's frames take the slots in order however often a page is re-made"
+note = "On the null device, every leg: `create` and `upload_atlas` begin no frame and submit nothing; frame n runs in slot n mod frames-in-flight with a page re-made between frames; the next frame's graph copies a made or re-made page in once and the frame after copies nothing. Red on the old `upload_atlas`, which ran its copy in a device frame of its own and lost the device on the RTS battle (`fix-ui-atlas-upload-frame`)."
+
+[[coverage]]
 row = "vfx-system"
 requirement = "Retired instance slots fit what they are reused for"
 evidence = "test:integration.vfx"
