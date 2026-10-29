@@ -11,6 +11,7 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/lockstep_session.cpp
+        src/lockstep_combat.cpp
         src/lockstep_backend.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::abi cy::movement cy::gameplay cy::navigation cy::core-detmath
@@ -42,7 +43,7 @@ if(CY_BUILD_TESTS)
         cy_add_test(
             NAME game_backend_lockstep
             KIND integration
-            SOURCES "${tests_dir}/test_lockstep_backend.cpp"
+            SOURCES "${tests_dir}/test_lockstep_backend.cpp" "${tests_dir}/test_lockstep_combat.cpp"
             DEPENDENCIES cy::game-backend-lockstep)
         target_include_directories(cy_test_integration_game_backend_lockstep
                                    PRIVATE "${CMAKE_SOURCE_DIR}/src/movement/tests")

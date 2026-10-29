@@ -23,9 +23,11 @@ if(TARGET cy::import AND TARGET cy::foliage AND TARGET cy::terrain)
             map/map_meshes.cpp
             map/map_cook.cpp
             map/map_load.cpp
+            map/map_minimap.cpp
         PUBLIC_DEPENDENCIES
             cy::core-assets
             cy::core-jobs
+            cy::rendering-minimap
             cy::terrain
         PRIVATE_DEPENDENCIES
             cy::environment
@@ -66,15 +68,19 @@ if(TARGET cy::import AND TARGET cy::foliage AND TARGET cy::terrain)
             NAME rts_map
             KIND integration
             SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rts_map.cpp"
+                    "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
             DEPENDENCIES cy_sample_rts_map cy::core-base cy::core-memory cy::gameplay-fog
+                         cy::rendering-minimap cy::rendering-fog-of-war cy::game-backend-lockstep
             DEFINITIONS
                 CY_RTS_MAP_SOURCE="${CY_RTS_MAP_SOURCE}"
                 CY_RTS_MAP_CONTENT_ROOT="${CMAKE_SOURCE_DIR}"
                 CY_RTS_MAP_PACKAGE="${CY_RTS_MAP_PACKAGE}"
                 CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
-        # host/fog_grid.h: the grid a run on the map builds, header-only and free of the host.
+        # host/fog_grid.h: the grid a run on the map builds, header-only and free of the host; and
+        # host/battle.h, where the battle stands on it.
         target_include_directories(cy_test_integration_rts_map
-                                   PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
+                                   PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host"
+                                           "${CMAKE_SOURCE_DIR}/tests/render")
         add_dependencies(cy_test_integration_rts_map cy_rts_map_package)
     endif()
 endif()
@@ -154,6 +160,7 @@ cy_add_module(
         host/worker_rig.cpp
         host/illumination.cpp
         host/fog.cpp
+        host/battle_host.cpp
     PRIVATE_DEFINITIONS
         "CY_RTS_API_MODULE_LIBRARY=\"${CY_RTS_API_MODULE_LIBRARY}\""
         "CY_RTS_API_MODULE_MANIFEST=\"${CY_RTS_API_MODULE_MANIFEST}\""
@@ -170,6 +177,7 @@ cy_add_module(
         cy::game-backend-ui
         cy::game-backend-illumination
         cy::game-backend-fog
+        cy::game-backend-lights
         cy::rendering-gi
         cy::graph
         cy::physics-reference
@@ -180,6 +188,19 @@ cy_add_module(
         cy::servers-camera
         cy::servers-physics)
 add_dependencies(cy_sample_rts-api cy_sample_rts-api_game)
+
+# ABI 1.16's battle looks like one only with the VFX runtime: its five effects are authored as the
+# first-person sample's are, with src/vfx/tests/effects.h's `StageBuilder`. Without CY_VFX the
+# battle is fought, counted and lit all the same, and the game finds no effect to play.
+if(CY_VFX)
+    target_sources(cy_sample_rts-api PRIVATE
+                   host/battle_effects.cpp
+                   "${CMAKE_SOURCE_DIR}/src/vfx/tests/effects.cpp")
+    target_link_libraries(cy_sample_rts-api PRIVATE
+                          cy::game-backend-effects cy::vfx cy::vfx-compiler)
+    target_include_directories(cy_sample_rts-api PRIVATE "${CMAKE_SOURCE_DIR}/src/vfx/tests")
+    target_compile_definitions(cy_sample_rts-api PRIVATE CY_RTS_API_EFFECTS=1)
+endif()
 
 # `--render <dir>` (issue #35, the live half): the session drawn every frame on a device and lit by
 # the engine's device GI. The field is the pipeline suites' one scene, compiled here as
@@ -203,7 +224,8 @@ if(CY_RENDERER_VULKAN)
         target_sources(cy_sample_rts-api PRIVATE host/map_render.cpp)
         target_link_libraries(cy_sample_rts-api PRIVATE
                               cy_sample_rts_map cy::rendering-skinning cy::rendering-occlusion
-                              cy::rendering-lighting cy::rendering-material cy::ui-render)
+                              cy::rendering-lighting cy::rendering-material cy::rendering-minimap
+                              cy::ui-render)
         target_compile_definitions(cy_sample_rts-api PRIVATE CY_RTS_API_MAP=1)
         add_dependencies(cy_sample_rts-api cy_rts_map_package)
     endif()
@@ -223,9 +245,12 @@ if(CY_BUILD_TESTS)
         NAME rts_api_sample
         KIND integration
         SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rts_api_sample.cpp"
+        # host/battle.h's C++ twin, which the Swift-driven battle's numbers are held to.
+        DEPENDENCIES cy::game-backend-lockstep
         DEFINITIONS CY_SAMPLE_RTS_API="$<TARGET_FILE:cy_sample_rts-api>")
     target_include_directories(cy_test_integration_rts_api_sample
-                               PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke")
+                               PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke"
+                                       "${CMAKE_CURRENT_SOURCE_DIR}/host")
     add_dependencies(cy_test_integration_rts_api_sample cy_sample_rts-api)
 
     # render.rts_api_hud: the Swift HUD against samples/13-rts-selection's C++ HUD, on a device.
@@ -311,7 +336,9 @@ if(CY_BUILD_TESTS)
                     CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
             target_include_directories(cy_test_smoke_rts_api_map
                                        PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke"
-                                               "${CMAKE_SOURCE_DIR}/tests/render")
+                                               "${CMAKE_SOURCE_DIR}/tests/render"
+                                               "${CMAKE_CURRENT_SOURCE_DIR}/host")
+            target_link_libraries(cy_test_smoke_rts_api_map PRIVATE cy::game-backend-lockstep)
             add_dependencies(cy_test_smoke_rts_api_map cy_sample_rts-api cy_rts_map_package)
             set_tests_properties(smoke.rts_api_map PROPERTIES
                                  SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine"

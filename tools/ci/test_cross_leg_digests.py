@@ -61,6 +61,10 @@ BASE = {
     "detmath-company-ticks": "420",
     "detmath-company-digest": "a61e5414c179f54a",
     "detmath-company-final-hash": "64606123d75e9118",
+    "detmath-battle-units": "40",
+    "detmath-battle-ticks": "1200",
+    "detmath-battle-digest": "5eed0fba771e0016",
+    "detmath-battle-final-hash": "0b5e55ed0f1a5700",
 }
 
 
@@ -220,6 +224,15 @@ CASES = (
       leg(label="b", arch="arm64", detmath_company_ticks="0")], ("--detmath",), 2,
      "agrees with every other digest of an empty workload"),
 
+    ("the sample's battle disagreeing between architectures is a finding under --detmath",
+     [leg(label="a"), leg(label="b", arch="arm64", detmath_battle_digest="0123456789abcdef")],
+     ("--detmath",), 1, "detmath-battle-digest"),
+    ("a battle whose last tick disagrees is a finding, even when the folds agree",
+     [leg(label="a"), leg(label="b", arch="arm64", detmath_battle_final_hash="0123456789abcdef")],
+     ("--detmath",), 1, "detmath-battle-final-hash"),
+    ("a leg whose publisher predates the battle digest is refused by name under --detmath",
+     [leg(label="a", detmath_battle_digest=None), leg(label="b", arch="arm64")], ("--detmath",), 2,
+     "no 'detmath-battle-digest'"),
     ("a leg whose publisher predates the company digest is refused by name under --detmath",
      [leg(label="a", detmath_company_digest=None), leg(label="b", arch="arm64")], ("--detmath",), 2,
      "no 'detmath-company-digest'"),

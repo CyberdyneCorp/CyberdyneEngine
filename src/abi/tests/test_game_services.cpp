@@ -310,7 +310,26 @@ CY_TEST_CASE("the 1.15 table appends effects and decals after every 1.14 entry")
     }
     CY_CHECK_EQ(offsetof(CyInterface, effect_find) + sizeof(void*),
                 offsetof(CyInterface, effect_play));
-    CY_CHECK_EQ(offsetof(CyInterface, decal_status) + sizeof(void*), sizeof(CyInterface));
+    CY_CHECK_EQ(offsetof(CyInterface, decal_status) + sizeof(void*),
+                offsetof(CyInterface, lockstep_arm));
+}
+
+CY_TEST_CASE("the 1.16 table appends lockstep combat after every 1.15 entry") {
+    const CyInterface& iface = table();
+    CY_CHECK_GE(iface.header.abi_minor, 16U);
+    CY_CHECK_EQ(iface.header.table_size, sizeof(CyInterface));
+    const bool entries[] = {
+        iface.lockstep_arm != nullptr,       iface.lockstep_fortify != nullptr,
+        iface.lockstep_combatant != nullptr, iface.lockstep_structure != nullptr,
+        iface.lockstep_events != nullptr,    iface.lockstep_projectiles != nullptr,
+    };
+    CY_CHECK_EQ(sizeof(entries) / sizeof(entries[0]), 6U);
+    for (const bool set : entries) {
+        CY_CHECK(set);
+    }
+    CY_CHECK_EQ(offsetof(CyInterface, lockstep_arm) + sizeof(void*),
+                offsetof(CyInterface, lockstep_fortify));
+    CY_CHECK_EQ(offsetof(CyInterface, lockstep_projectiles) + sizeof(void*), sizeof(CyInterface));
 }
 
 CY_TEST_CASE("each scheduler stage runs in the phase cy_abi.h states") {

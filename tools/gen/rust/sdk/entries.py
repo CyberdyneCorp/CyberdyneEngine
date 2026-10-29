@@ -443,6 +443,20 @@ ENTRIES: dict[str, Entry] = {
                          doc="A decal projected onto the world: an impact's mark."),
     "decal_status": Entry(("engine", "into"), result="fallible",
                           doc="The decal budget: live, capacity, spawned, evicted."),
+    # 1.16: combat in the lockstep path
+    "lockstep_arm": Entry(("engine", "unit", "desc"), result="fallible",
+                          doc="Give a lockstep unit health and a weapon before the first tick."),
+    "lockstep_fortify": Entry(("engine", "desc", "into"), result="fallible",
+                              doc="Place a structure in the lockstep session before its first tick."),
+    "lockstep_combatant": Entry(("engine", "unit", "into"), result="fallible",
+                                doc="A lockstep unit's health, target, stance and kills."),
+    "lockstep_structure": Entry(("engine", "structure", "into"), result="fallible",
+                                doc="A lockstep structure's health."),
+    "lockstep_events": Entry(("engine", "first", "into", "capacity", "count"), result="fallible",
+                             doc="The combat events from a sequence number on: blows, flights, "
+                                 "hits, deaths."),
+    "lockstep_projectiles": Entry(("engine", "into", "capacity", "count"), result="fallible",
+                                  doc="The lockstep session's projectiles in flight."),
 }
 
 RESULT_KINDS = frozenset({"value", "fallible"})

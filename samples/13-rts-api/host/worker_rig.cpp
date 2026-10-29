@@ -34,8 +34,11 @@ namespace graph = cy::graph;
 /// run and nothing persists a reference to them, so a minted id would buy nothing.
 constexpr AssetId kSkeletonId{0x13A0'0000'0000'0001ULL, 1};
 constexpr AssetId kProgramId{0x13A0'0000'0000'0001ULL, 2};
-constexpr AssetId kClipIds[] = {
-    {0x13A0'0000'0000'0001ULL, 10}, {0x13A0'0000'0000'0001ULL, 11}, {0x13A0'0000'0000'0001ULL, 12}};
+constexpr AssetId kClipIds[] = {{0x13A0'0000'0000'0001ULL, 10},
+                                {0x13A0'0000'0000'0001ULL, 11},
+                                {0x13A0'0000'0000'0001ULL, 12},
+                                {0x13A0'0000'0000'0001ULL, 13},
+                                {0x13A0'0000'0000'0001ULL, 14}};
 
 enum Joint : u16 { kRoot, kHips, kSpine, kHead, kArmLeft, kArmRight, kLegLeft, kLegRight, kJoints };
 static_assert(kJoints == kWorkerJoints, "the header's joint count is the skeleton's");
@@ -69,6 +72,9 @@ constexpr StateRow kStates[] = {
     {"idle", "worker_idle", 2.0F, true},
     {"walk", "worker_walk", 1.0F, true},
     {"cheer", "worker_cheer", 0.8F, false},
+    // ABI 1.16's battle: a blow struck over and over, and a fall that stays down.
+    {"attack", "worker_attack", 0.6F, true},
+    {"die", "worker_die", 1.0F, false},
 };
 constexpr u32 kStateCount = sizeof(kStates) / sizeof(kStates[0]);
 
@@ -129,6 +135,32 @@ template <class Angle>
         if (authored) {
             authored = clip.add_event(Name::intern("footstep"), 0.75F);
         }
+    } else if (state == "attack") {
+        // The right arm drawn back and brought down, the body leaning into the blow.
+        authored = key_rotation(clip, kArmRight, across, [](f32 time) noexcept {
+            return -1.5F + (1.3F * std::sin(time / 0.6F * kTau));
+        });
+        if (authored) {
+            authored = key_rotation(clip, kSpine, across, [](f32 time) noexcept {
+                return 0.18F * std::sin(time / 0.6F * kTau);
+            });
+        }
+    } else if (state == "die") {
+        // Over backwards about the feet in seven tenths of a second, eased, and lying there.
+        authored = key_rotation(clip, kRoot, across, [](f32 time) noexcept {
+            const f32 t = std::fmin(time / 0.7F, 1.0F);
+            return -1.45F * t * t * (3.0F - (2.0F * t));
+        });
+        if (authored) {
+            authored = key_rotation(clip, kArmLeft, forward, [](f32 time) noexcept {
+                return -0.9F * std::fmin(time / 0.7F, 1.0F);
+            });
+        }
+        if (authored) {
+            authored = key_rotation(clip, kArmRight, forward, [](f32 time) noexcept {
+                return 0.9F * std::fmin(time / 0.7F, 1.0F);
+            });
+        }
     } else {
         // Both arms up over the first half, held there.
         const auto raise = [](f32 sign) noexcept {
@@ -169,7 +201,7 @@ template <class Angle>
     return literal;
 }
 
-/// The three states, each one clip, and no transition between them: the game picks the state.
+/// The states, each one clip, and no transition between them: the game picks the state.
 [[nodiscard]] cy::Expected<graph::pose::PoseProgram, cy::Error> compile_program(
     cy::Allocator& allocator) noexcept {
     graph::NodeRegistry registry(allocator);

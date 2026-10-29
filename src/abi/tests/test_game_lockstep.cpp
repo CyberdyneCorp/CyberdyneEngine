@@ -135,7 +135,7 @@ CY_TEST_CASE("lockstep: the arguments a thunk refuses before a backend sees them
 
     const cy::abi::game::PhaseScope fixed(fixture.host.game.clock, CY_PHASE_FIXED_UPDATE);
     CyLockstepOrder order = move();
-    order.kind = 2;
+    order.kind = CY_LOCKSTEP_ORDER_ATTACK + 1U;
     CY_CHECK_EQ(iface.lockstep_order(fixture.engine(), &order), CY_RESULT_INVALID_ARGUMENT);
     CY_CHECK_EQ(iface.lockstep_order(fixture.engine(), nullptr), CY_RESULT_INVALID_ARGUMENT);
     CY_CHECK_EQ(fixture.lockstep.orders, 0U);

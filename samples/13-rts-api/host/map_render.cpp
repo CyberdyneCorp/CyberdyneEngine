@@ -19,7 +19,9 @@
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/lighting/soft_shadows.h>
 #include <cy/rendering/material/standard.h>
+#include <cy/rendering/minimap/topographic.h>
 #include <cy/rendering/occlusion/occlusion_pass.h>
+#include <cy/rendering/particles/particle_renderer.h>
 #include <cy/rendering/pipeline/frame_recorder.h>
 #include <cy/rendering/pipeline/material_textures.h>
 #include <cy/rendering/skinning/frame_skinning.h>
@@ -41,6 +43,7 @@
 #include "golden.h"
 #include "illumination.h"
 #include "map_format.h"
+#include "map_minimap.h"
 #include "rts_host.h"
 
 namespace sample::rts {
@@ -88,6 +91,8 @@ constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Unorm;
 constexpr f32 kExposureStops = -11.0F;
 /// The stills, at the frames render.h writes its own.
 constexpr u64 kStills[] = {150, 250, 350, 420};
+/// A battle's stills: the armies closing, the melee, the watchtower's fall, the barracks burning.
+constexpr u64 kBattleStills[] = {180, 330, 960, 1150};
 constexpr u64 kWarmFrames = 10;
 /// The game's step: what the fog fades and the company's clips advance on.
 constexpr f32 kFrameSeconds = 1.0F / 60.0F;
@@ -99,6 +104,12 @@ constexpr u32 kMaxWorkers = 8;
 constexpr u32 kCompanySize = 16;
 constexpr u32 kRaiders = 2;
 constexpr u32 kFigures = kMaxWorkers + kCompanySize + kRaiders;
+/// ABI 1.16's battle: room for every unit it enlists, and red's two buildings.
+constexpr u32 kBattleSlots = 48;
+static_assert(kBattleSlots >= battle::kUnits, "the frame has a figure for every battle unit");
+constexpr u32 kBattleFigures = kMaxWorkers + kBattleSlots + kRaiders;
+/// The battle's topographic minimap's extent: half a metre a texel over the map.
+constexpr u32 kTopoTexels = 256;
 constexpr u32 kJoints = 8;
 /// Where an unused figure or a hidden camp member waits: far under the map.
 constexpr Vec3 kParked{16.0F, -200.0F, 16.0F};
@@ -316,28 +327,34 @@ void build_foliage(const MapContent& content, Streams& streams, std::vector<Foli
 // --- The figures' poses
 // -----------------------------------------------------------------------------
 
+/// What a figure the game does not animate is doing, and so which of the rig's clips it shows.
+enum class Motion : u8 { Idle = 0, Walk, Attack, Fall };
+
 /// The worker rig's clips sampled here, for the figures the game does not animate: the company,
-/// whose units walk while the session moves them, and the camp's raiders, who stand.
+/// whose units walk while the session moves them, the battle's soldiers, who also strike and fall,
+/// and the camp's raiders, who stand.
 class FigurePoser {
 public:
     explicit FigurePoser(cy::Allocator& allocator) noexcept : allocator_(&allocator) {}
 
     [[nodiscard]] Status bind(const cy::animation::AnimationRig& rig) noexcept {
         rig_ = &rig;
+        constexpr const char* kNames[] = {"worker_idle", "worker_walk", "worker_attack",
+                                          "worker_die"};
         const cy::Span<const cy::animation::Clip* const> clips = rig.clips();
         for (const cy::animation::Clip* clip : clips) {
-            if (clip == nullptr) {
-                continue;
-            }
-            if (clip->name() == cy::Name::intern("worker_idle")) {
-                idle_ = clip;
-            } else if (clip->name() == cy::Name::intern("worker_walk")) {
-                walk_ = clip;
+            for (u32 motion = 0; motion < 4U && clip != nullptr; ++motion) {
+                if (clip->name() == cy::Name::intern(kNames[motion])) {
+                    clips_[motion] = clip;
+                }
             }
         }
-        if (idle_ == nullptr || walk_ == nullptr) {
+        if (clips_[0] == nullptr || clips_[1] == nullptr) {
             return cy::fail(cy::ErrorCode::NotFound, "the worker rig has no idle or walk clip");
         }
+        // A rig without the battle's two clips strikes and falls standing.
+        clips_[2] = clips_[2] == nullptr ? clips_[0] : clips_[2];
+        clips_[3] = clips_[3] == nullptr ? clips_[0] : clips_[3];
         const u16 joints = rig.skeleton().joint_count();
         local_.assign(joints, cy::Transform{});
         model_.assign(joints, cy::Transform{});
@@ -346,12 +363,17 @@ public:
 
     /// The skinning matrices of `walking` or idle at `time`, into `out` (`kJoints` of them).
     void pose(bool walking, f32 time, Mat4* out) noexcept {
+        pose(walking ? Motion::Walk : Motion::Idle, time, out);
+    }
+
+    /// The skinning matrices of `motion` at `time`, into `out`.
+    void pose(Motion motion, f32 time, Mat4* out) noexcept {
         const cy::animation::Skeleton& skeleton = rig_->skeleton();
         const cy::animation::JointMask& mask = skeleton.retained(0);
         skeleton.reference_pose(cy::Span<cy::Transform>(local_.data(), local_.size()));
         cy::animation::ClipCursor cursor(*allocator_);
         cy::animation::SampleStats stats;
-        const cy::animation::Clip* clip = walking ? walk_ : idle_;
+        const cy::animation::Clip* clip = clips_[static_cast<u32>(motion)];
         (void)clip->sample(time, mask, cursor,
                            cy::Span<cy::Transform>(local_.data(), local_.size()), stats);
         skeleton.to_model(cy::Span<const cy::Transform>(local_.data(), local_.size()), mask,
@@ -363,8 +385,7 @@ public:
 private:
     cy::Allocator* allocator_;
     const cy::animation::AnimationRig* rig_ = nullptr;
-    const cy::animation::Clip* idle_ = nullptr;
-    const cy::animation::Clip* walk_ = nullptr;
+    const cy::animation::Clip* clips_[4] = {};
     std::vector<cy::Transform> local_;
     std::vector<cy::Transform> model_;
 };
@@ -417,7 +438,8 @@ struct MapRenderer::State {
           poser(memory),
           ui(memory),
           ui_buffer(memory),
-          lights(memory) {}
+          lights(memory),
+          particles(memory) {}
 
     /// One placed instance: a mesh, its world placement, its tint and how it draws.
     struct Instance {
@@ -497,9 +519,23 @@ struct MapRenderer::State {
     u32 worker_mesh_index_base = 0;
     i32 worker_uv_base = 0;
     std::vector<map::MeshPart> worker_parts;
-    Heading headings[kFigures];
+    /// The figures the frame has room for: workers, the lockstep session's units, the raiders.
+    u32 figures = kFigures;
+    u32 lockstep_slots = kCompanySize;
+    std::vector<Heading> headings;
     std::vector<Mat4> poses;
     f32 clock = 0.0F;
+
+    // ABI 1.16's battle, when the host fights one: red's two buildings, the clock each fallen
+    // figure fell at, the effects' particles and the lights the game's blasts hold, and the
+    // topographic minimap over the whole map.
+    bool battle = false;
+    u32 battle_buildings[battle::kBuildingCount] = {};
+    std::vector<f32> fell_at;
+    rendering::particles::ParticleRenderer effect;
+    cy::Array<rendering::particles::ParticleInstance> particles;
+    std::unique_ptr<cy::rendering::minimap::TopographicMinimap> topo;
+    std::vector<cy::rendering::minimap::MinimapIcon> icons;
 
     // The view.
     Mat4 view = Mat4::identity();
@@ -587,13 +623,22 @@ struct MapRenderer::State {
         if (!grid) {
             return cy::make_unexpected(grid.error());
         }
+        // A battle's blasts flash lights of their own beside the sun.
+        const u32 light_capacity = battle ? 16U + kBattleLightCapacity : 16U;
         const pipeline::BindingCapacity capacity = pipeline::BindingCapacity::for_grid(
             *grid, description.max_draws, description.max_instances, description.material_capacity,
-            16);
+            light_capacity);
         if (Status made = bindings.initialize(*device, pipelines, capacity); !made) {
             return made;
         }
-        return recorder.initialize(pipelines, bindings);
+        if (Status made = recorder.initialize(pipelines, bindings); !made) {
+            return made;
+        }
+#if defined(CY_RTS_API_EFFECTS)
+        return battle ? effect.initialize(*device, pipelines, kBattleParticleRing) : cy::ok();
+#else
+        return cy::ok();
+#endif
     }
 
     [[nodiscard]] Status upload_buffer(const char* name, const void* data, u64 bytes,
@@ -864,10 +909,10 @@ struct MapRenderer::State {
         // THE SKINNED WORKER, once, and a figure of it for every unit the frame has room for.
         rendering::skinning::SkinnedSceneDescription description;
         description.max_mesh_vertices = static_cast<u32>(worker.positions.size());
-        description.max_instance_vertices = static_cast<u32>(worker.positions.size()) * kFigures;
-        description.max_pose_matrices = kJoints * kFigures * 2U;
+        description.max_instance_vertices = static_cast<u32>(worker.positions.size()) * figures;
+        description.max_pose_matrices = kJoints * figures * 2U;
         description.max_meshes = 1;
-        description.max_instances = kFigures;
+        description.max_instances = figures;
         if (Status made = skins.create(*device, description); !made) {
             return made;
         }
@@ -924,13 +969,8 @@ struct MapRenderer::State {
         meshes.push_back(figure);
         const auto figure_mesh = static_cast<u32>(meshes.size() - 1U);
         first_figure = static_cast<u32>(instances.size());
-        for (u32 which = 0; which < kFigures; ++which) {
-            u32 team = 1;
-            if (which >= kMaxWorkers + kCompanySize) {
-                team = 2;
-            } else if (which >= kMaxWorkers + (kCompanySize / 2U)) {
-                team = 3;
-            }
+        for (u32 which = 0; which < figures; ++which) {
+            const u32 team = figure_team(which);
             if (Status placed = add_instance(figure_mesh, Mat4::from_translation(kParked),
                                              Vec3{1.0F, 1.0F, 1.0F}, team);
                 !placed) {
@@ -960,8 +1000,24 @@ struct MapRenderer::State {
             !placed) {
             return placed;
         }
+        if (battle) {
+            // Red's buildings, drawn from the kit where the session placed them.
+            const u32 barracks_mesh = kit + content.props.find("barracks");
+            const u32 meshes_of[battle::kBuildingCount] = {tower_mesh, barracks_mesh};
+            for (u32 building = 0; building < battle::kBuildingCount; ++building) {
+                battle_buildings[building] = static_cast<u32>(instances.size());
+                if (Status placed =
+                        add_instance(meshes_of[building], Mat4::from_translation(kParked),
+                                     Vec3{1.0F, 1.0F, 1.0F}, 2);
+                    !placed) {
+                    return placed;
+                }
+            }
+        }
         rows.resize(instances.size());
-        poses.assign(static_cast<usize>(kFigures) * kJoints, Mat4::identity());
+        poses.assign(static_cast<usize>(figures) * kJoints, Mat4::identity());
+        headings.assign(figures, Heading{});
+        fell_at.assign(figures, -1.0F);
         report.instances = static_cast<u32>(instances.size());
 
         pipeline::GeometrySource source;
@@ -972,6 +1028,27 @@ struct MapRenderer::State {
         source.user = this;
         recorder.set_geometry(source);
         return cy::ok();
+    }
+
+    /// The side figure `which` is drawn as: blue's workers; the company's two groups, or each
+    /// battle unit's own team; red's raiders.
+    [[nodiscard]] u32 figure_team(u32 which) const noexcept {
+        if (which < kMaxWorkers) {
+            return 1;
+        }
+        if (which >= kMaxWorkers + lockstep_slots) {
+            return 2;
+        }
+        const u32 member = which - kMaxWorkers;
+        if (!battle) {
+            return member >= kCompanySize / 2U ? 3U : 1U;
+        }
+        const cy::game_backend::LockstepSession* session = host->lockstep();
+        if (session == nullptr) {
+            return 1;
+        }
+        const auto state = session->combatant(member);
+        return state && state->armed && state->team == battle::kRed ? 2U : 1U;
     }
 
     [[nodiscard]] Status create_targets() noexcept {
@@ -1080,6 +1157,15 @@ struct MapRenderer::State {
             forward = cy::normalize(from.camera_forward());
             fov = from.camera_fov();
             focus = from.camera_focus();
+        } else if (battle) {
+            // A slow half orbit round the battle, low enough to see the blows and the blasts.
+            const f32 t = static_cast<f32>(frame) / static_cast<f32>(battle::kTicks);
+            const f32 angle = -0.5F + (1.4F * t);
+            focus = Vec3{14.0F + (10.0F * t), 0.0F, -41.0F};
+            const Vec3 offset{std::sin(angle) * 24.0F, 26.0F, std::cos(angle) * 24.0F};
+            eye = focus + offset;
+            forward = cy::normalize(focus - eye);
+            fov = 0.8F;
         } else {
             // A slow orbit over the level and the company's field, looking down as an RTS does,
             // steep enough that the map's edge never comes into the frame.
@@ -1144,49 +1230,18 @@ struct MapRenderer::State {
         clock += kFrameSeconds;
         report.enemies_shown = 0;
         report.enemies_hidden = 0;
-        for (u32 which = 0; which < kFigures; ++which) {
+        for (u32 which = 0; which < figures; ++which) {
             Mat4* pose = poses.data() + (static_cast<usize>(which) * kJoints);
             Vec3 at = kParked;
             const f32* heading = nullptr;
             f32 stated = 0.0F;
             if (which < kMaxWorkers) {
-                if (which < from.unit_count()) {
-                    const CyEntity unit = from.unit(which);
-                    at = from.unit_position(unit);
-                    const cy::Span<const Mat4> animated = from.unit_pose(unit);
-                    if (animated.size() >= kJoints) {
-                        std::copy(animated.begin(), animated.begin() + kJoints, pose);
-                    } else {
-                        poser.pose(false, clock, pose);
-                    }
-                } else {
-                    poser.pose(false, clock, pose);
-                }
-            } else if (which < kMaxWorkers + kCompanySize) {
-                cy::game_backend::LockstepUnitState unit;
-                if (from.company_unit(which - kMaxWorkers, unit)) {
-                    const auto one = static_cast<f64>(cy::detmath::Fixed::kOneRaw);
-                    const f32 x =
-                        static_cast<f32>(static_cast<f64>(unit.position.x.raw) / one) + company_x;
-                    const f32 z =
-                        static_cast<f32>(static_cast<f64>(unit.position.y.raw) / one) + company_z;
-                    at = Vec3{x, ground(x, z), z};
-                    if (!company_shown(from, which - kMaxWorkers, at)) {
-                        at = kParked;
-                    }
-                    const f64 turn = static_cast<f64>(unit.heading.raw) / 4294967296.0;
-                    const f32 h = static_cast<f32>(turn * 2.0 * std::numbers::pi);
-                    stated = std::atan2(std::cos(h), std::sin(h));
-                    heading = unit.moving ? &stated : nullptr;
-                    poser.pose(unit.moving, clock + (0.13F * static_cast<f32>(which)), pose);
-                } else {
-                    poser.pose(false, clock, pose);
-                }
+                place_worker(from, which, pose, at);
+            } else if (which < kMaxWorkers + lockstep_slots) {
+                heading = place_lockstep(from, which, pose, at, stated);
             } else {
                 poser.pose(false, clock + static_cast<f32>(which), pose);
-            }
-            if (which >= kMaxWorkers + kCompanySize) {
-                at = camp_position(from, which - (kMaxWorkers + kCompanySize));
+                at = camp_position(from, which - (kMaxWorkers + lockstep_slots));
                 ++(at.y == kParked.y ? report.enemies_hidden : report.enemies_shown);
                 stated = std::atan2(16.0F - at.x, 16.0F - at.z);
                 heading = &stated;
@@ -1198,13 +1253,13 @@ struct MapRenderer::State {
                 return moved;
             }
         }
-        // THE POSES, uploaded whole: twenty-six figures of eight joints is a few kilobytes.
+        // THE POSES, uploaded whole: a few dozen figures of eight joints is a few kilobytes.
         if (Status uploaded = skins.upload_poses(cy::Span<const Mat4>(poses.data(), poses.size()),
                                                  0, static_cast<u32>(poses.size()));
             !uploaded) {
             return uploaded;
         }
-        for (u32 which = 0; which < kFigures; ++which) {
+        for (u32 which = 0; which < figures; ++which) {
             if (Status set =
                     skins.set_pose(instances[first_figure + which].skinned, which * kJoints);
                 !set) {
@@ -1214,10 +1269,151 @@ struct MapRenderer::State {
         return cy::ok();
     }
 
+    /// A worker of the game's: where its node stands, posed by the engine's animation system.
+    void place_worker(RtsHost& from, u32 which, Mat4* pose, Vec3& at) noexcept {
+        if (which >= from.unit_count()) {
+            poser.pose(false, clock, pose);
+            return;
+        }
+        const CyEntity unit = from.unit(which);
+        at = from.unit_position(unit);
+        const cy::Span<const Mat4> animated = from.unit_pose(unit);
+        if (animated.size() >= kJoints) {
+            std::copy(animated.begin(), animated.begin() + kJoints, pose);
+        } else {
+            poser.pose(false, clock, pose);
+        }
+    }
+
+    /// A unit of the lockstep session, on its field: walking or standing — and in a battle
+    /// striking, or fallen where it fell — drawn by blue's fog. Returns the heading it states.
+    [[nodiscard]] const f32* place_lockstep(RtsHost& from, u32 which, Mat4* pose, Vec3& at,
+                                            f32& stated) noexcept {
+        const u32 member = which - kMaxWorkers;
+        cy::game_backend::LockstepUnitState unit;
+        if (!from.company_unit(member, unit)) {
+            poser.pose(false, clock, pose);
+            return nullptr;
+        }
+        const auto one = static_cast<f64>(cy::detmath::Fixed::kOneRaw);
+        const f32 x = static_cast<f32>(static_cast<f64>(unit.position.x.raw) / one) + company_x;
+        const f32 z = static_cast<f32>(static_cast<f64>(unit.position.y.raw) / one) + company_z;
+        at = Vec3{x, ground(x, z), z};
+        if (!company_shown(from, member, at)) {
+            at = kParked;
+        }
+        const f64 turn = static_cast<f64>(unit.heading.raw) / 4294967296.0;
+        const f32 h = static_cast<f32>(turn * 2.0 * std::numbers::pi);
+        stated = std::atan2(std::cos(h), std::sin(h));
+        const f32 phase = clock + (0.13F * static_cast<f32>(which));
+        const Motion motion = battle ? battle_motion(from, member, unit) : idle_or_walk(unit);
+        if (motion == Motion::Fall) {
+            fell_at[which] = fell_at[which] < 0.0F ? clock : fell_at[which];
+            poser.pose(Motion::Fall, clock - fell_at[which], pose);
+            return &headings[which].yaw;
+        }
+        poser.pose(motion, phase, pose);
+        if (motion == Motion::Attack) {
+            // Facing what it strikes.
+            stated = attack_heading(from, member, at, stated);
+            return &stated;
+        }
+        return unit.moving ? &stated : nullptr;
+    }
+
+    [[nodiscard]] static Motion idle_or_walk(
+        const cy::game_backend::LockstepUnitState& unit) noexcept {
+        return unit.moving ? Motion::Walk : Motion::Idle;
+    }
+
+    /// What a battle unit is doing, from its combat state.
+    [[nodiscard]] static Motion battle_motion(
+        const RtsHost& from, u32 member, const cy::game_backend::LockstepUnitState& unit) noexcept {
+        const auto fighter = from.lockstep()->combatant(member);
+        if (!fighter || !fighter->armed) {
+            return idle_or_walk(unit);
+        }
+        if (!fighter->alive) {
+            return Motion::Fall;
+        }
+        if (fighter->engaged) {
+            return Motion::Attack;
+        }
+        return idle_or_walk(unit);
+    }
+
+    /// The yaw that faces a striking unit's target, or `otherwise`.
+    [[nodiscard]] static f32 attack_heading(const RtsHost& from, u32 member, Vec3 at,
+                                            f32 otherwise) noexcept {
+        const cy::game_backend::LockstepSession* session = from.lockstep();
+        const auto fighter = session->combatant(member);
+        if (!fighter || !fighter->target.some()) {
+            return otherwise;
+        }
+        cy::detmath::FixedVec2 target;
+        if (fighter->target.kind == cy::game_backend::LockstepTargetKind::Structure) {
+            const auto building = session->structure(fighter->target.index);
+            if (!building) {
+                return otherwise;
+            }
+            target = building->position;
+        } else {
+            const auto enemy = session->unit(fighter->target.index);
+            if (!enemy) {
+                return otherwise;
+            }
+            target = enemy->position;
+        }
+        const Vec3 there = field_to_level(target);
+        return std::atan2(there.x - at.x, there.z - at.z);
+    }
+
+    /// Red's buildings where the session placed them: drawn where blue has explored, darkened as
+    /// they are damaged, and sunk and tilted once they fall.
+    [[nodiscard]] Status place_buildings(const RtsHost& from) noexcept {
+        const cy::game_backend::LockstepSession* session = from.lockstep();
+        if (session == nullptr) {
+            return cy::ok();
+        }
+        for (u32 building = 0; building < battle::kBuildingCount; ++building) {
+            const auto state = session->structure(building);
+            Mat4 world = Mat4::from_translation(kParked);
+            Vec3 tint{1.0F, 1.0F, 1.0F};
+            if (state) {
+                Vec3 at = field_to_level(state->position);
+                at.y = ground(at.x, at.z);
+                const bool explored =
+                    !options.fog || from.fog().grid().at(kBlue, fog_raw(at.x), fog_raw(at.z)) !=
+                                        gfog::CellState::Unexplored;
+                const f32 left = state->max_health == 0 ? 0.0F
+                                                        : static_cast<f32>(state->health) /
+                                                              static_cast<f32>(state->max_health);
+                const f32 shade = 0.35F + (0.65F * left);
+                tint = Vec3{shade, shade * 0.95F, shade * 0.9F};
+                Mat4 placed = Mat4::from_translation(at);
+                if (!state->standing) {
+                    // A ruin: two thirds sunk into the ground, leaning, charred.
+                    placed = Mat4::from_translation(Vec3{at.x, at.y - 2.2F, at.z}) *
+                             tilt_matrix(0.32F, -0.18F);
+                    tint = Vec3{0.18F, 0.16F, 0.15F};
+                }
+                world = explored ? placed : Mat4::from_translation(kParked);
+            }
+            instances[battle_buildings[building]].tint = tint;
+            if (Status moved = move(battle_buildings[building], world); !moved) {
+                return moved;
+            }
+        }
+        return cy::ok();
+    }
+
     /// Whether company unit `member` is drawn: the first group is blue's own and always is; the
     /// second is another side's, drawn only where blue sees it now. Counted for the report.
     [[nodiscard]] bool company_shown(const RtsHost& from, u32 member, Vec3 at) noexcept {
-        const cy::gameplay::TeamId owner = member < kCompanySize / 2U ? kBlue : kCompanyRival;
+        cy::gameplay::TeamId owner = member < kCompanySize / 2U ? kBlue : kCompanyRival;
+        if (battle) {
+            owner = figure_team(kMaxWorkers + member) == 2U ? battle::kRed : kBlue;
+        }
         if (owner == kBlue) {
             return true;
         }
@@ -1271,9 +1467,12 @@ struct MapRenderer::State {
 
     /// The minimap's fog: blue's field over the level, composed into the atlas page the game's HUD
     /// shows on its minimap (ABI 1.10), as `render.rts_api_hud` composes it.
-    [[nodiscard]] Status minimap_page() noexcept {
+    [[nodiscard]] Status minimap_page(const RtsHost& from) noexcept {
         if (!options.fog || field == nullptr || frame % kMinimapFogEvery != 0U) {
             return cy::ok();
+        }
+        if (topo != nullptr) {
+            return topographic_page(from);
         }
         // The frame's own field over the level's square, the minimap's map: the two never disagree.
         if (Status composed = fow::compose_minimap_fog(
@@ -1287,6 +1486,116 @@ struct MapRenderer::State {
                                kMinimapFogTexels,
                                cy::Span<const u8>(reinterpret_cast<const u8*>(minimap_fog.data()),
                                                   minimap_fog.size() * sizeof(u32)));
+    }
+
+    /// ABI 1.16: what the battle adds to a frame — red's buildings, the lights the game's blasts
+    /// flash, and the particles its effects throw.
+    [[nodiscard]] Status battle_frame(const RtsHost& from) noexcept {
+        if (Status placed = place_buildings(from); !placed) {
+            return placed;
+        }
+        if (Status sized = lights.resize(1); !sized) {
+            return sized;
+        }
+        if (Status appended = from.battle()->append_lights(lights); !appended) {
+            return appended;
+        }
+        report.lights_peak = std::max(report.lights_peak, static_cast<u32>(lights.size() - 1U));
+        particles.clear();
+#if defined(CY_RTS_API_EFFECTS)
+        return from.battle()->publish_particles(eye, particles);
+#else
+        return cy::ok();
+#endif
+    }
+
+    /// The particles, drawn by the frame's transparent pass.
+    [[nodiscard]] Status attach_effects(u32 slot) noexcept {
+        recorder.clear_extensions();
+        effect.reset_report();
+        if (particles.empty()) {
+            return cy::ok();
+        }
+        if (Status uploaded = effect.upload(slot, particles.span()); !uploaded) {
+            return uploaded;
+        }
+        return recorder.add_extension(effect.extension());
+    }
+
+    /// ABI 1.16: the battle's minimap — the map baked from above, blue's fog over it, and the units
+    /// and buildings blue may see as icons — on the page the game's HUD shows.
+    [[nodiscard]] Status topographic_page(const RtsHost& from) noexcept {
+        battle_icons(from);
+        const auto started = std::chrono::steady_clock::now();
+        if (Status composed = topo->compose(
+                field->texels(), field->width(), field->height(), fog_placement,
+                cy::Span<const cy::rendering::minimap::MinimapIcon>(icons.data(), icons.size()));
+            !composed) {
+            return composed;
+        }
+        report.minimap_ms += since_ms(started);
+        report.minimap_composed += 1;
+        const cy::Span<const u32> image = topo->image();
+        const cy::Span<const u8> bytes(reinterpret_cast<const u8*>(image.data()),
+                                       image.size() * 4U);
+        // Made once; from then on replaced inside the frame's own graph, with no submission and
+        // no wait of its own, so a minimap redrawn while the battle runs costs the frame nothing
+        // but its copy.
+        if (!ui.has_atlas(kMinimapFogPage)) {
+            return ui.upload_atlas(kMinimapFogPage, rhi::Format::Rgba8Unorm, kTopoTexels,
+                                   kTopoTexels, bytes);
+        }
+        return ui.stage_atlas(kMinimapFogPage, bytes);
+    }
+
+    /// The icons blue's minimap shows: its own units always; red's only where blue sees them now;
+    /// red's buildings where blue has explored, a ruin once fallen.
+    void battle_icons(const RtsHost& from) noexcept {
+        using cy::rendering::minimap::IconShape;
+        using cy::rendering::minimap::MinimapIcon;
+        constexpr u32 kBlueIcon = 0x2F6BFFU;
+        constexpr u32 kRedIcon = 0xE5392BU;
+        icons.clear();
+        const gfog::FogOfWar& grid = from.fog().grid();
+        for (u32 worker = 0; worker < from.unit_count(); ++worker) {
+            const Vec3 at = from.unit_position(from.unit(worker));
+            icons.push_back(MinimapIcon{at.x, at.z, kBlueIcon, IconShape::Dot, 2.2F, true});
+        }
+        const cy::game_backend::LockstepSession* session = from.lockstep();
+        for (u32 building = 0; session != nullptr && building < session->structures(); ++building) {
+            const auto state = session->structure(building);
+            const Vec3 at = field_to_level(state->position);
+            if (grid.at(kBlue, fog_raw(at.x), fog_raw(at.z)) == gfog::CellState::Unexplored) {
+                continue;
+            }
+            icons.push_back(MinimapIcon{at.x, at.z, state->standing ? kRedIcon : 0x3A3530U,
+                                        IconShape::Square, 3.5F, true});
+        }
+        for (u32 unit = 0; session != nullptr && unit < session->units(); ++unit) {
+            const auto fighter = session->combatant(unit);
+            const auto state = session->unit(unit);
+            if (!fighter || !state || !fighter->alive) {
+                continue;
+            }
+            const Vec3 at = field_to_level(state->position);
+            const bool red = fighter->team == battle::kRed;
+            if (red && !shown_by_fog(grid, kBlue, battle::kRed, at)) {
+                continue;
+            }
+            icons.push_back(
+                MinimapIcon{at.x, at.z, red ? kRedIcon : kBlueIcon, IconShape::Dot, 1.6F, true});
+        }
+    }
+
+    /// Bake the battle's minimap from the map: its heights, its painted colours, its roads and its
+    /// lake (map/map_minimap.h).
+    [[nodiscard]] Status bake_topographic(const MapContent& content) noexcept {
+        const map::MinimapBake bake = map::minimap_bake(content, minimap_region, kTopoTexels);
+        topo = std::make_unique<cy::rendering::minimap::TopographicMinimap>(*allocator);
+        const auto started = std::chrono::steady_clock::now();
+        const Status baked = topo->bake(bake.input, bake.style);
+        report.minimap_bake_ms = since_ms(started);
+        return baked;
     }
 
     // --- The frame's hooks, in the order the frame runs them -------------------------------------
@@ -1453,6 +1762,12 @@ struct MapRenderer::State {
         }
         const u32 slot = *began;
         graph.reset();
+        if (battle) {
+            if (Status attached = attach_effects(slot); !attached) {
+                (void)device->end_frame();
+                return attached;
+            }
+        }
         rendering::assembly::AssemblyView frame_view;
         frame_view.fov_y_radians = fov;
         frame_view.view = view;
@@ -1572,7 +1887,7 @@ struct MapRenderer::State {
             }
             ui_revision = text.atlas_revision();
         }
-        if (Status page = minimap_page(); !page) {
+        if (Status page = minimap_page(from); !page) {
             return page;
         }
         const Vec2 viewport = RtsHost::ui_viewport();
@@ -1631,6 +1946,7 @@ MapRenderer::~MapRenderer() {
         (void)device->wait_idle();
         State& state = *state_;
         state.ui.destroy();
+        state.effect.shutdown();
         state.gi.destroy();
         state.fog.destroy();
         state.occlusion.destroy();
@@ -1672,6 +1988,15 @@ cy::Status MapRenderer::start(RtsHost& host, const MapContent& content,
                                               content.layout.base_min_z, content.layout.base_max_z};
     state.company_x = content.layout.company_x;
     state.company_z = content.layout.company_z;
+    if (host.battle() != nullptr) {
+        // ABI 1.16: a figure for every battle unit, and the minimap over the whole map.
+        state.battle = true;
+        state.lockstep_slots = kBattleSlots;
+        state.figures = kBattleFigures;
+        const cy::Aabb whole = map::map_bounds(content);
+        state.minimap_region =
+            fow::MinimapRegion{whole.min.x, whole.max.x, whole.min.z, whole.max.z};
+    }
     state.sun_travel = content.layout.sun_travel;
     state.sun_lux = content.layout.sun_lux;
     if (Status made = state.create_device(); !made) {
@@ -1740,6 +2065,11 @@ cy::Status MapRenderer::start(RtsHost& host, const MapContent& content,
             return made;
         }
         state.minimap_fog.assign(static_cast<usize>(kMinimapFogTexels) * kMinimapFogTexels, 0U);
+        if (state.battle) {
+            if (Status baked = state.bake_topographic(content); !baked) {
+                return baked;
+            }
+        }
         state.fog_states.assign(static_cast<usize>(grid.width) * grid.height, 0U);
         if (Status made =
                 state.fog.create(*allocator_, *state.device,
@@ -1786,6 +2116,11 @@ cy::Status MapRenderer::frame(RtsHost& host) noexcept {
     if (Status moved = state.move(state.watchtower, Mat4::from_translation(tower)); !moved) {
         return moved;
     }
+    if (state.battle) {
+        if (Status looked = state.battle_frame(host); !looked) {
+            return looked;
+        }
+    }
     if (state.options.fog) {
         if (Status fogged = state.fog_field(host); !fogged) {
             return fogged;
@@ -1795,7 +2130,9 @@ cy::Status MapRenderer::frame(RtsHost& host) noexcept {
         return hud;
     }
     state.place_rows();
-    const bool still = std::ranges::find(kStills, state.frame) != std::end(kStills);
+    const bool still =
+        state.battle ? std::ranges::find(kBattleStills, state.frame) != std::end(kBattleStills)
+                     : std::ranges::find(kStills, state.frame) != std::end(kStills);
     const bool video = !state.options.video_directory.empty() &&
                        state.frame % std::max<u32>(state.options.video_every, 1U) == 0U;
     rendering::assembly::AssemblyReport assembled{};
@@ -1806,6 +2143,9 @@ cy::Status MapRenderer::frame(RtsHost& host) noexcept {
     MapRenderReport& report = state.report;
     report.frames = state.frame;
     report.draws = state.recorder.report().draws();
+    if (state.battle) {
+        report.particles_peak = std::max(report.particles_peak, state.effect.report().particles);
+    }
     report.skinned_draws = state.recorder.report().skinned_draws;
     if (state.frame > kWarmFrames && !still && !video) {
         report.timed += 1;
@@ -1869,6 +2209,18 @@ void MapRenderer::print_report() const noexcept {
         report.validation_errors, report.enemies_shown, report.enemies_hidden,
         state_->options.gi ? 1 : 0, state_->options.fog ? 1 : 0, state_->options.hud ? 1 : 0,
         state_->options.ambient_occlusion ? 1 : 0, state_->options.shadows ? 1 : 0);
+    if (state_->battle) {
+        const f64 composed = static_cast<f64>(std::max<u64>(report.minimap_composed, 1));
+        std::printf(
+            "rts map battle figures=%u particles_peak=%u lights_peak=%u minimap_texels=%u "
+            "minimap_bake_ms=%.2f minimap_compose_ms=%.3f minimap_composed=%llu "
+            "minimap_fog_passes=%llu minimap_reused=%llu\n",
+            state_->figures, report.particles_peak, report.lights_peak, kTopoTexels,
+            report.minimap_bake_ms, report.minimap_ms / composed,
+            static_cast<unsigned long long>(report.minimap_composed),
+            static_cast<unsigned long long>(state_->topo ? state_->topo->fog_passes() : 0U),
+            static_cast<unsigned long long>(state_->topo ? state_->topo->reused() : 0U));
+    }
 }
 
 }  // namespace sample::rts

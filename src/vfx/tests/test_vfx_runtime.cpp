@@ -25,6 +25,7 @@
 #include <ctime>
 #include <fstream>
 #include <string>
+#include <utility>
 
 using namespace cy;
 using namespace cy::vfx;
@@ -958,6 +959,56 @@ CY_TEST_CASE("a fire-and-forget burst with a spawn duration releases itself with
     CY_REQUIRE(still != nullptr);
     CY_CHECK(still->spawning);
     CY_CHECK_GT(still->live_particles, 0U);
+}
+
+CY_TEST_CASE("a retired slot is reused only by its own system, never one that would overrun it") {
+    // REGRESSION (found by samples/13-rts-api's battle, openspec/changes/add-rts-combat-and-
+    // minimap). A retired instance's slot was handed to ANY system with the same number of
+    // emitters. The slot's alive flags were sized for the first system's emitter capacities when
+    // the slot was made, and are never grown, so a larger system played into it read and wrote
+    // flags past its own range — the next slot's — and a system with more parameters wrote its
+    // words over the next instance's. Here: a small burst retires, a large effect is played, and
+    // its flags must not be the flags of the large effect still playing beside it; and the small
+    // slot still serves a system it fits.
+    Cooked small(1, 8);
+    Cooked large(1, 256);
+    CY_REQUIRE(small.ok);
+    CY_REQUIRE(large.ok);
+    SimulationWorld world(allocator());
+    CY_REQUIRE(world.initialize(small_world()).has_value());
+
+    EffectSpawn burst;
+    burst.release_on_completion = true;
+    burst.spawn_seconds = 0.02F;
+    auto retiring = world.play(*small, burst);
+    CY_REQUIRE(retiring.has_value());
+    EffectSpawn held;
+    auto beside = world.play(*large, held);
+    CY_REQUIRE(beside.has_value());
+    StepReport report;
+    for (u32 frame = 0; frame < 300U && world.find(*retiring) != nullptr; ++frame) {
+        CY_REQUIRE(world.step(1.0F / 60.0F, report).has_value());
+    }
+    CY_REQUIRE(world.find(*retiring) == nullptr);
+
+    auto fresh = world.play(*large, held);
+    CY_REQUIRE(fresh.has_value());
+    const EffectInstance* played = world.find(*fresh);
+    const EffectInstance* other = world.find(*beside);
+    CY_REQUIRE(played != nullptr);
+    CY_REQUIRE(other != nullptr);
+    const Span<const u8> mine = std::as_const(world).alive_flags(played->first_block);
+    const Span<const u8> theirs = std::as_const(world).alive_flags(other->first_block);
+    // Each instance has its full capacity of flags, and no flag is both instances'.
+    CY_CHECK_EQ(mine.size(), theirs.size());
+    const u8* mine_end = mine.data() + mine.size();
+    const u8* theirs_end = theirs.data() + theirs.size();
+    CY_CHECK((mine_end <= theirs.data() || theirs_end <= mine.data()));
+    // And the retired slot still serves a system it fits: played again, the small burst takes it
+    // rather than growing the world.
+    auto again = world.play(*small, burst);
+    CY_REQUIRE(again.has_value());
+    CY_CHECK_EQ(world.instances().size(), 3U);
 }
 
 CY_TEST_CASE("a spawn duration shorter than a sub-step still spawns once") {

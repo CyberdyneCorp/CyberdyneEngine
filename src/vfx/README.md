@@ -606,3 +606,14 @@ host loads project assets through this adapter, simulates the scene effects, and
 particles with the live preview. Editing an override on the same entity preserves its playing
 handle and compiled system. ABI 1.3 gives Swift gameplay typed set/get for one Play effect entity;
 the editor script runtime test runs a Swift module against two independent Engine instances.
+
+## A retired slot is reused only by what fits it
+
+A retired instance's slot keeps the alive flags its blocks were made with and the parameter words
+its system declared; neither is ever grown. Until `add-rts-combat-and-minimap` a slot was handed to
+any system with the same number of emitters, so a larger system played into a smaller one's slot
+ran its flags into the next block's and its parameters into the next instance's — the battle in
+samples/13-rts-api, whose two-emitter trail and explosion share an emitter count, found it.
+`SimulationWorld::reusable` now hands a slot only to a system whose every emitter's capacity fits
+the slot's flags and whose parameters fit its words; `integration.vfx`'s 'a retired slot is reused
+only by its own system, never one that would overrun it' is the regression.

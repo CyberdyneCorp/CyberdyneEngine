@@ -47,6 +47,16 @@ struct RtsCamera {
         placed = true
     }
 
+    /// Glide the focus toward `point` — a battle's front — closing a fifth of the gap each tenth of
+    /// a second, so the view follows an army without jumping with every step it takes.
+    mutating func follow(_ camera: Camera, _ point: Vec3, delta: Float) throws {
+        let share = min(1, 2 * delta)
+        focus.x += (point.x - focus.x) * share
+        focus.z += (point.z - focus.z) * share
+        try camera.setTarget(CameraTarget(focus: .position(focus)))
+        placed = true
+    }
+
     private func edge(_ position: Float, origin: Float, extent: Float) -> Float {
         if position < origin + edgeBand { return -1 }
         if position > origin + extent - edgeBand { return 1 }

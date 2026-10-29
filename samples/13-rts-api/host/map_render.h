@@ -23,6 +23,11 @@
 //                      level, walking or standing as the session says, the rig's clips sampled
 //                      here; the first group is blue's, the second another side's, drawn only where
 //                      blue's fog of war shows it
+//   the battle         with `--battle` (ABI 1.16), the session's armed units in place of the
+//                      company — striking, walking, falling and lying where they fell — red's two
+//                      buildings darkening as they are damaged and sunk once they fall, the effects
+//                      the game plays as particles and its blasts' lights; and on the HUD a
+//                      topographic minimap of the whole map (cy::rendering-minimap)
 //   the camp           two raiders and the watchtower, drawn by blue's sight (ABI 1.10)
 //   the crate          where its body is
 //
@@ -109,6 +114,13 @@ struct MapRenderReport {
     /// because it does not (the camp's raiders and the company's second group).
     cy::u32 enemies_shown = 0;
     cy::u32 enemies_hidden = 0;
+    /// ABI 1.16's battle: the most particles and lights a frame drew, and the topographic minimap
+    /// — its bake, and the compositions the HUD showed, their average cost.
+    cy::u32 particles_peak = 0;
+    cy::u32 lights_peak = 0;
+    cy::f64 minimap_bake_ms = 0.0;
+    cy::f64 minimap_ms = 0.0;
+    cy::u64 minimap_composed = 0;
 };
 
 /// The map's buildings and resources as the level's GI holds them (`HostOptions::extra_gi_boxes`):

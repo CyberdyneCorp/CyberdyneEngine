@@ -101,7 +101,7 @@ function(cy_abi_declare_tests)
     set(game_sources "${tests_dir}/test_game_services.cpp")
     foreach(group IN ITEMS time input camera physics navigation audio spawn systems scene bodies
                            character ui animation detmath lockstep illumination fog lights toolkit
-                           first_person effects decals)
+                           first_person effects decals lockstep_combat)
         if(EXISTS "${tests_dir}/test_game_${group}.cpp")
             list(APPEND game_sources "${tests_dir}/test_game_${group}.cpp")
         endif()

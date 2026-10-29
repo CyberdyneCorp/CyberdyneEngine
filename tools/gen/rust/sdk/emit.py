@@ -91,6 +91,11 @@ ENUM_SPECS = {
     "CyUiAction": ("UiAction", "CY_UI_ACTION_", "u32"),
     "CyUiAnimatedProperty": ("UiAnimatedProperty", "CY_UI_ANIMATE_", "u32"),
     "CyUiEasing": ("UiEasing", "CY_UI_EASING_", "u32"),
+    # ABI 1.16, combat in the lockstep path.
+    "CyLockstepWeapon": ("LockstepWeapon", "CY_LOCKSTEP_WEAPON_", "u32"),
+    "CyLockstepTargetKind": ("LockstepTargetKind", "CY_LOCKSTEP_TARGET_", "u32"),
+    "CyLockstepStance": ("LockstepStance", "CY_LOCKSTEP_STANCE_", "u32"),
+    "CyLockstepEventKind": ("LockstepEventKind", "CY_LOCKSTEP_EVENT_", "u32"),
 }
 
 # What each `CyResult` means to a caller who has to act on it. `native-abi` requires a failure to be

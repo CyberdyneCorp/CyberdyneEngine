@@ -335,6 +335,9 @@ private:
                                      ConsumedEvents (&out)[kMaxConsumedChannels]) const noexcept;
     [[nodiscard]] Status advance_cursors(u32 block, const ConsumedEvents* consumed, u32 count,
                                          u32 spawned) noexcept;
+    /// A retired instance whose blocks' alive flags and parameter words were made large enough for
+    /// `system`, or null: a slot is never grown, so a smaller one would overrun its neighbours.
+    [[nodiscard]] EffectInstance* reusable(const CompiledSystem& system) noexcept;
     /// One pool block per emitter. `reusing` replaces a retired instance's blocks in place rather
     /// than appending, which is what keeps the block, alive-flag and parameter arrays bounded.
     [[nodiscard]] Status acquire_blocks(const CompiledSystem& system, u32 first_block,

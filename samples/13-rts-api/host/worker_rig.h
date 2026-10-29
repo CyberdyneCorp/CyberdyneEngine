@@ -10,12 +10,14 @@
 // table by name. Nothing the game animates is the object the cook built: it is what the loader
 // read.
 //
-// THE RIG. Eight joints (a root, hips, spine, head, two arms, two legs) and three states:
+// THE RIG. Eight joints (a root, hips, spine, head, two arms, two legs) and five states:
 //
 //   idle    two seconds, looping: the spine sways.
 //   walk    one second, looping: the legs swing against the arms; a `footstep` event at each
 //           footfall, a quarter and three quarters through.
 //   cheer   0.8 s, held: both arms go up; a `cheer_done` event near its end.
+//   attack  0.6 s, looping: the right arm drawn back and brought down (ABI 1.16's battle).
+//   die     one second, held: over backwards about the feet, and lying there.
 //
 // The program has NO TRANSITIONS. Which state a worker is in is the Swift game's decision, made
 // with `Animator.play`, which crossfades to any state whatever the program says.

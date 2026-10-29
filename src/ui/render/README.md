@@ -79,6 +79,14 @@ hold both.
 grading's table upload does, and leaves the page in the sampled layout. Page 0 is one white texel,
 so a shape samples white and the set always holds a texture.
 
+**A page that changes while the game runs is staged into the frame.** `stage_atlas` keeps an
+uploaded page's texture and replaces its texels inside the next frame's graph: they are copied into
+the frame slot's staging buffer when the frame declares the interface's stage, and moved into the
+page by a transfer pass every interface pass of the frame reads after — no texture made, no
+submission and no wait of its own, where `upload_atlas` stalls the device every time. A minimap
+redrawn while the game runs is the case (samples/13-rts-api's battle); `render.ui` (j) holds the
+frame after a stage to the new texels and the device to one frame for it.
+
 **Text from a distance field is thresholded, not redrawn.** `BuiltinMaterial::GlyphField` samples a
 multi-channel distance field linearly, takes the median of red, green and blue as the distance, scales
 it to pixels by the row's `shape.z` (twice the face's range times the glyph's magnification), and

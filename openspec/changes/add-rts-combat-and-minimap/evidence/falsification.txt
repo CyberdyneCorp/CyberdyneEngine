@@ -1,0 +1,104 @@
+# Mutations applied to the shipped sources, each rebuilt (the Swift game module too, where the
+# mutation is in it), the targeted suite run whole, and the source restored and rebuilt.
+# Driver: apply -> ninja (the suite's targets) -> ctest -R <suite> -> restore.
+# Host: Linux, NVIDIA RTX 5060 (Vulkan 1.4), Development build, GCC 13, Swift 6.3.3.
+# Every mutation below turned its suite RED; the suites are green on the restored tree.
+
+== M0 a retired VFX slot reused by any system with the same number of emitters (the code before)
+   ^integration.vfx$: RED
+   TEST CASE:  a retired slot is reused only by its own system, never one that would overrun it
+   src/vfx/tests/test_vfx_runtime.cpp:1006: ERROR: CHECK( (mine_end <= theirs.data() || theirs_end <= mine.data()) ) is NOT correct!
+== M1 armour ignored: a hit deals the weapon's damage whole
+   integration.game_backend_lockstep: RED
+   TEST CASE:  combat: a melee duel's blows, points and death are the ones its specs give
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:192: ERROR: CHECK_EQ( damage[index].amount, expected[index].amount ) is NOT correct!
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:193: ERROR: CHECK_EQ( damage[index].health, expected[index].left ) is NOT correct!
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:192: ERROR: CHECK_EQ( damage[index].amount, expected[index].amount ) is NOT correct!
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:193: ERROR: CHECK_EQ( damage[index].health, expected[index].left ) is NOT correct!
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:201: ERROR: CHECK_EQ( battle.health(a), 40U ) is NOT correct!
+== M2 a projectile flies to where its target stood at launch, never homing
+   integration.game_backend_lockstep: RED
+   TEST CASE:  combat: a projectile homes on a target that moves, and lands where it now stands
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:255: ERROR: CHECK_GT( impacts[0].tick, 30U ) is NOT correct!
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:256: ERROR: CHECK( impacts[0].position.x > tenths(100) ) is NOT correct!
+== M3 a splash hits the shooter's own side
+   integration.game_backend_lockstep: RED
+   TEST CASE:  combat: a splash hits every enemy its radius touches, and never a friend
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:273: ERROR: CHECK_EQ( impacts[0].amount, 2U ) is NOT correct!
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:277: ERROR: CHECK_EQ( battle.health(friend_unit), 50U ) is NOT correct!
+== M4 the combat state left out of the state hash
+   integration.game_backend_lockstep: RED
+   TEST CASE:  combat: a follower armed differently disagrees from the first blow
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:548: ERROR: CHECK_NE( issuer.session->state_hash(), follower.session->state_hash() ) is NOT correct!
+== M5 an attack order never names its target: always an attack-move
+   integration.game_backend_lockstep: RED
+   TEST CASE:  combat: an attack names the enemy nearest its point; a plain move ignores enemies
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:348: ERROR: CHECK_EQ( damage.front().target.index, far_enemy ) is NOT correct!
+== M6 an attack-move that stopped to fight never takes its way up again
+   integration.game_backend_lockstep: RED
+   TEST CASE:  combat: an attack-move fights what it meets, then goes on to its point
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:332: ERROR: CHECK_LT( detmath::distance(state->position, at(360, 80)), Fixed::from_int(4) ) is NOT correct!
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:333: ERROR: CHECK_EQ( fighter->stance, game_backend::LockstepStance::Idle ) is NOT correct!
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:332: ERROR: CHECK_LT( detmath::distance(state->position, at(360, 80)), Fixed::from_int(4) ) is NOT correct!
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:333: ERROR: CHECK_EQ( fighter->stance, game_backend::LockstepStance::Idle ) is NOT correct!
+== M7 a full history overwrites its newest event rather than its oldest
+   integration.game_backend_lockstep: RED
+   TEST CASE:  combat: the event history keeps the latest, numbered, when a reader falls behind
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:581: ERROR: CHECK_EQ( held[index].sequence, made - 8U + index ) is NOT correct!
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:581: ERROR: CHECK_EQ( held[index].sequence, made - 8U + index ) is NOT correct!
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:581: ERROR: CHECK_EQ( held[index].sequence, made - 8U + index ) is NOT correct!
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:581: ERROR: CHECK_EQ( held[index].sequence, made - 8U + index ) is NOT correct!
+   src/game_backend/lockstep/tests/test_lockstep_combat.cpp:581: ERROR: CHECK_EQ( held[index].sequence, made - 8U + index ) is NOT correct!
+== M8 lockstep_arm accepted in any phase
+   ^unit.abi$: RED
+   TEST CASE:  lockstep combat: arming and fortifying are configuration, reading is anywhere
+   src/abi/tests/test_game_lockstep_combat.cpp:157: ERROR: CHECK_EQ( iface.lockstep_arm(fixture.engine(), 0, &arm), CY_RESULT_PERMISSION_DENIED ) is NOT correct!
+   src/abi/tests/test_game_lockstep_combat.cpp:157: ERROR: CHECK_EQ( iface.lockstep_arm(fixture.engine(), 0, &arm), CY_RESULT_PERMISSION_DENIED ) is NOT correct!
+   src/abi/tests/test_game_lockstep_combat.cpp:176: ERROR: CHECK_EQ( fixture.lockstep.armed, 1U ) is NOT correct!
+== M9 a contour line drawn on the lower texel of the pair
+   unit.render_minimap: RED
+   TEST CASE:  minimap: a line on every texel a level crosses below, and nowhere else
+   src/rendering/minimap/tests/test_topographic.cpp:113: ERROR: CHECK_EQ( got != Contour::None, crossed ) is NOT correct!
+   src/rendering/minimap/tests/test_topographic.cpp:113: ERROR: CHECK_EQ( got != Contour::None, crossed ) is NOT correct!
+   src/rendering/minimap/tests/test_topographic.cpp:113: ERROR: CHECK_EQ( got != Contour::None, crossed ) is NOT correct!
+   src/rendering/minimap/tests/test_topographic.cpp:113: ERROR: CHECK_EQ( got != Contour::None, crossed ) is NOT correct!
+   src/rendering/minimap/tests/test_topographic.cpp:113: ERROR: CHECK_EQ( got != Contour::None, crossed ) is NOT correct!
+== M10 the incremental fog redraws a changed cell but not its neighbours
+   unit.render_minimap: RED
+   TEST CASE:  minimap: redrawing only the changed cells is the whole fog stage, texel for texel
+   src/rendering/minimap/tests/test_topographic.cpp:395: ERROR: CHECK_EQ( differing, 0U ) is NOT correct!
+   src/rendering/minimap/tests/test_topographic.cpp:395: ERROR: CHECK_EQ( differing, 0U ) is NOT correct!
+   src/rendering/minimap/tests/test_topographic.cpp:395: ERROR: CHECK_EQ( differing, 0U ) is NOT correct!
+   src/rendering/minimap/tests/test_topographic.cpp:395: ERROR: CHECK_EQ( differing, 0U ) is NOT correct!
+   src/rendering/minimap/tests/test_topographic.cpp:395: ERROR: CHECK_EQ( differing, 0U ) is NOT correct!
+== M11 explored ground drawn as baked rather than greyed
+   unit.render_minimap: RED
+   TEST CASE:  minimap: through the fog, visible is the bake, explored grey, unexplored black
+   src/rendering/minimap/tests/test_topographic.cpp:268: ERROR: CHECK_EQ( red(remembered), green(remembered) ) is NOT correct!
+   src/rendering/minimap/tests/test_topographic.cpp:269: ERROR: CHECK_EQ( green(remembered), blue(remembered) ) is NOT correct!
+   src/rendering/minimap/tests/test_topographic.cpp:271: ERROR: CHECK_EQ( static_cast<f32>(red(remembered)), std::round(luma * 0.55F) ) is NOT correct!
+== M12 a staged page's copy never recorded
+   ^render.ui$: RED
+   TEST CASE:  (j) a staged page changes in the next frame, with no submission of its own
+   src/ui/render/tests/test_ui_device.cpp:597: ERROR: CHECK_EQ( run.pixels()[centre] & 0xFFFFFFU, 0xE61E14U ) is NOT correct!
+   src/ui/render/tests/test_ui_device.cpp:600: ERROR: CHECK_EQ( run.pixels()[centre] & 0xFFFFFFU, 0xE61E14U ) is NOT correct!
+== M13 the Swift game plays every event, seen or not
+   integration.rts_api_sample: RED
+   TEST CASE:  samples/13-rts-api: ABI 1.16 — a battle fought in fixed point, read and drawn by sight
+   samples/13-rts-api/tests/test_rts_api_sample.cpp:564: ERROR: CHECK( hidden > 0.0 ) is NOT correct!
+== M14 the Swift catapult's splash a quarter metre short of the twin's
+   integration.rts_api_sample: RED
+   TEST CASE:  samples/13-rts-api: ABI 1.16 — a battle fought in fixed point, read and drawn by sight
+   samples/13-rts-api/tests/test_rts_api_sample.cpp:537: ERROR: CHECK_EQ( hex_after(battle, "digest="), sample::rts::battle::kBattleDigest ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_sample.cpp:538: ERROR: CHECK_EQ( hex_after(battle, "follower="), sample::rts::battle::kBattleDigest ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_sample.cpp:544: ERROR: CHECK_EQ( number_after(battle, "damage="), static_cast<double>(twin.damage) ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_sample.cpp:545: ERROR: CHECK_EQ( number_after(battle, "events="), static_cast<double>(twin.events) ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_sample.cpp:551: ERROR: CHECK_EQ( number_after(fight, "damage="), static_cast<double>(twin.damage) ) is NOT correct!
+== M15 the twin's push ordered a tick late
+   determinism.cross_leg: RED
+   TEST CASE:  cross-leg: the sample's battle is the committed session, on this leg
+   tests/determinism/test_cross_leg.cpp:571: ERROR: CHECK_EQ( battle.digest, sample::rts::battle::kBattleDigest ) is NOT correct!
+== M16 the battle's particles never attached to the frame
+   smoke.rts_api_map: RED
+   TEST CASE:  samples/13-rts-api: the battle on the RTS test map, drawn, and its frame budget
+   samples/13-rts-api/tests/test_rts_api_map.cpp:250: ERROR: CHECK_GT( number_after(look, "particles_peak="), 100.0 ) is NOT correct!

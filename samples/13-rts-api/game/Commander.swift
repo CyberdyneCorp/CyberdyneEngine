@@ -13,7 +13,8 @@
 //   onUIEvent      (frame)       the HUD's Build button was clicked (ABI 1.6), before `onUpdate`
 //   onFixedUpdate  (fixed step)  hand the recorded order to navigation, hear arrivals, build,
 //                                play each unit's animation from what its agent is doing, and
-//                                order the lockstep company (ABI 1.8, Company.swift)
+//                                order the lockstep company (ABI 1.8, Company.swift) — or, when
+//                                the level has a battlefield, the battle (ABI 1.16, Battle.swift)
 //
 // ABI 1.9: the base's light (Lighting.swift) — a GI volume placed in `onCreate`, the beacon put out
 // and lit again from `onUpdate`, and the light read where it falls.
@@ -92,6 +93,11 @@ final class Commander: Behaviour {
 
     /// ABI 1.8: the lockstep company, ordered in fixed point (Company.swift).
     private var company = Company()
+    /// ABI 1.16: the battle, when the level has a battlefield (Battle.swift). The company's field
+    /// is the battle's then, and the company is not enlisted.
+    private var battle: Battle?
+    /// What the minimap's square is: the level, or the whole map with a battle.
+    private var minimap = MinimapFrame(minX: 0, minZ: 0, size: 32)
     /// ABI 1.9: the base's light (Lighting.swift).
     private var lighting = BaseLighting()
     /// ABI 1.10: what each side sees (Fog.swift).
@@ -130,7 +136,19 @@ final class Commander: Behaviour {
             try enlist(unit, health: hp)
         }
         hud = try mountHud()
-        _ = try company.enlist()
+        minimap = MinimapFrame(minX: 0, minZ: 0, size: mapSize)
+        if SceneTree.find(Content.battlefield) != nil {
+            var fight = Battle()
+            try fight.create(soldier: Spawn.prefab(Content.soldier))
+            battle = fight
+            minimap = .frontier
+            try hud?.showWholeMap()
+            if let front = try fight.front() {
+                camera = RtsCamera(focus: front, speed: panSpeed, edgeBand: edgeBand)
+            }
+        } else {
+            _ = try company.enlist()
+        }
         try lighting.create()
         Log.info("Commander: \(squad.count) units ready, \(company.units.count) in the company")
     }
@@ -165,7 +183,12 @@ final class Commander: Behaviour {
         let keys = try Input.action(Content.pan).axis2
         let viewport = try active.view().viewport
         let direction = camera.direction(keys: keys, pointer: pointer, viewport: viewport)
-        try camera.pan(active, direction: direction, delta: Float(delta))
+        if let front = try battle?.front() {
+            // A battle: the camera follows blue's army, the way a spectator's would.
+            try camera.follow(active, front, delta: Float(delta))
+        } else {
+            try camera.pan(active, direction: direction, delta: Float(delta))
+        }
 
         let onHud = try hud != nil && UI.hitTest(pointer.position) != nil
         if pointer.pressed.contains(.left) && !onHud {
@@ -183,7 +206,16 @@ final class Commander: Behaviour {
                 cheered.insert(event.entity)
             }
         }
-        let campDots = try fogReady ? fog.frame(mapSize: mapSize) : []
+        let campDots = try fogReady ? fog.frame(minimap: minimap) : []
+        if var fight = battle {
+            // What the frame played is counted with it, so the report the host reads after the
+            // last frame has every effect, light and cue in it.
+            try fight.frame()
+            battle = fight
+            if let world {
+                try publishBattle(fight.tally, in: world)
+            }
+        }
         try hud?.show(model(campDots))
         try lighting.frame()
     }
@@ -204,7 +236,11 @@ final class Commander: Behaviour {
         }
         pendingOrder = nil
         lighting.askFromFixedStep()
-        try company.step()
+        if battle != nil {
+            try battle?.step()
+        } else {
+            try company.step()
+        }
         for unit in squad {
             try listen(to: unit)
         }
@@ -317,7 +353,7 @@ final class Commander: Behaviour {
         }
         for unit in squad.prefix(RtsHud.minimapDots) {
             let at = try NavAgent(unit).state.position
-            model.dots.append(.init(x: at.x / mapSize, y: at.z / mapSize, team: .player))
+            model.dots.append(.init(x: minimap.x(at.x), y: minimap.y(at.z), team: .player))
         }
         // The camp's dots, as blue's fog allows: after the squad's, within the minimap's sixteen.
         model.dots.append(contentsOf: campDots.prefix(RtsHud.minimapDots - model.dots.count))
@@ -326,8 +362,8 @@ final class Commander: Behaviour {
         // The view the rig frames, about 16 by 12 metres round the focus.
         let focus = camera.focus
         model.camera = UIRect(
-            x: (focus.x - 8) / mapSize, y: (focus.z - 6) / mapSize, width: 16 / mapSize,
-            height: 12 / mapSize)
+            x: minimap.x(focus.x - 8), y: minimap.y(focus.z - 6), width: 16 / minimap.size,
+            height: 12 / minimap.size)
         return model
     }
 
@@ -362,6 +398,24 @@ final class Commander: Behaviour {
         try world.setFloat(fog.farHiddenAtStart, entity, report, field: reportFields.fogFarHidden)
         try world.setFloat(fog.enemyDots, entity, report, field: reportFields.fogEnemyDots)
         try world.setFloat(fog.refused, entity, report, field: reportFields.fogRefused)
+        if let tally = battle?.tally {
+            try publishBattle(tally, in: world)
+        }
+    }
+
+    private func publishBattle(_ tally: BattleTally, in world: World) throws {
+        let values: [(Float, UInt32)] = [
+            (tally.soldiers, reportFields.battleSoldiers),
+            (tally.orders, reportFields.battleOrders),
+            (tally.events, reportFields.battleEvents), (tally.damage, reportFields.battleDamage),
+            (tally.deaths, reportFields.battleDeaths), (tally.fallen, reportFields.battleFallen),
+            (tally.shown, reportFields.battleShown), (tally.hidden, reportFields.battleHidden),
+            (tally.effects, reportFields.battleEffects), (tally.lights, reportFields.battleLights),
+            (tally.sounds, reportFields.battleSounds), (tally.trails, reportFields.battleTrails),
+        ]
+        for (value, field) in values {
+            try world.setFloat(value, entity, report, field: field)
+        }
     }
 }
 
@@ -411,4 +465,16 @@ private struct ReportFields {
     let fogFarHidden = RtsReport.field("fogFarHidden")
     let fogEnemyDots = RtsReport.field("fogEnemyDots")
     let fogRefused = RtsReport.field("fogRefused")
+    let battleSoldiers = RtsReport.field("battleSoldiers")
+    let battleOrders = RtsReport.field("battleOrders")
+    let battleEvents = RtsReport.field("battleEvents")
+    let battleDamage = RtsReport.field("battleDamage")
+    let battleDeaths = RtsReport.field("battleDeaths")
+    let battleFallen = RtsReport.field("battleFallen")
+    let battleShown = RtsReport.field("battleShown")
+    let battleHidden = RtsReport.field("battleHidden")
+    let battleEffects = RtsReport.field("battleEffects")
+    let battleLights = RtsReport.field("battleLights")
+    let battleSounds = RtsReport.field("battleSounds")
+    let battleTrails = RtsReport.field("battleTrails")
 }

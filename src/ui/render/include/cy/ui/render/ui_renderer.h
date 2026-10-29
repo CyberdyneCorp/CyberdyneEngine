@@ -58,6 +58,7 @@
 #include <cy/backends/rhi/handles.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
+#include <cy/core/memory/array.h>
 #include <cy/rendering/forward/frame.h>
 #include <cy/rendering/graph/graph.h>
 #include <cy/ui/paint.h>
@@ -126,6 +127,14 @@ public:
     [[nodiscard]] Status upload_atlas(u16 page, rhi::Format format, u32 width, u32 height,
                                       Span<const u8> pixels) noexcept;
     [[nodiscard]] bool has_atlas(u16 page) const noexcept;
+    /// Replace an uploaded page's texels in the NEXT frame's graph: no submission of its own, no
+    /// wait, no new texture — what a page that changes while the game runs (a minimap) wants. The
+    /// texels are kept until the frame declares the interface's stage, copied into that frame
+    /// slot's staging buffer there, and moved into the page by a transfer pass every interface pass
+    /// reads after. `pixels` is the page's own extent and format (`upload_atlas` made it); staging
+    /// a page twice before a frame keeps the later texels. InvalidArgument for a page never
+    /// uploaded or texels of another size.
+    [[nodiscard]] Status stage_atlas(u16 page, Span<const u8> pixels) noexcept;
 
     /// This frame's interface: `buffer` flattened in reference units, drawn at `scale` pixels per
     /// unit — `ui::resolve_scale`'s answer. Writes the frame slot's rows and arguments; call once a
@@ -161,6 +170,22 @@ private:
     struct AtlasPage {
         rhi::TextureHandle texture;
         rhi::TextureViewHandle view;
+        rhi::Format format = rhi::Format::Rgba8Unorm;
+        u32 width = 0;
+        u32 height = 0;
+    };
+
+    /// A page's texels waiting for the next frame, and that frame's copy of them.
+    struct StagedPage {
+        UiRenderer* renderer = nullptr;
+        u16 page = 0;
+        bool pending = false;
+        Array<u8> texels;
+        /// One staging buffer per frame in flight, made the first time the page is staged.
+        rhi::BufferHandle staging[rhi::kMaxFramesInFlight];
+        /// This frame's: the page imported into the graph, and the slot its texels went to.
+        rendering::ResourceId resource = rendering::kInvalidResource;
+        u32 slot = 0;
     };
 
     /// What a group pass's record callback is handed: the renderer and the group's index.
@@ -178,6 +203,11 @@ private:
                u32 flags) noexcept;
     /// Declare the opacity groups' passes. False when one could not be declared.
     [[nodiscard]] bool declare_groups(rendering::RenderGraph& graph) noexcept;
+    /// Declare this frame's staged page copies; false when one could not be made.
+    [[nodiscard]] bool declare_staged(rendering::RenderGraph& graph) noexcept;
+    /// Every page this frame copies, read by `builder`'s pass as a fragment shader reads it.
+    void read_staged(rendering::PassBuilder& builder) const noexcept;
+    static void record_staged(const rendering::PassContext& context, void* user) noexcept;
     [[nodiscard]] Status create_buffers() noexcept;
     void destroy_page(AtlasPage& page) noexcept;
     [[nodiscard]] Expected<rhi::DescriptorSetHandle, Error> set_for(
@@ -212,6 +242,7 @@ private:
     u32 slot_ = 0;
 
     AtlasPage pages_[kMaxAtlasPages];
+    StagedPage staged_[kMaxAtlasPages];
 
     // This frame's target, from `declare`.
     rendering::ResourceId target_ = rendering::kInvalidResource;

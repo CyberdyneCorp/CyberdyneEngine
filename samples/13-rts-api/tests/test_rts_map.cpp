@@ -13,6 +13,14 @@
 //   the fog covers the map        the fog of war's grid a run on the map builds covers the cooked
 //                                 terrain and the level, and a unit of another side far from
 //                                 blue's sight, or off the grid, is not drawn
+//   the battle's ground           ABI 1.16's battle stands on the company's field where the map
+//                                 places it, and its minimap covers the map's whole terrain
+//   the topographic minimap       baked from the cooked heights, every contour line on a texel the
+//                                 interval's level crosses and none elsewhere, the lake drawn as
+//                                 water and its shore lined, roads laid; and through blue's fog of
+//                                 war, the ground a worker sees drawn as baked, what it saw grey,
+//                                 and the rest black
+//                                 (docs/design/images/rts-topographic-minimap.png is the bake)
 //   refusals                      a damaged payload, an asset loaded as the wrong kind, a newer
 //                                 format, a truncated payload and a malformed source each fail and
 //                                 say why
@@ -29,11 +37,17 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include <cy/rendering/fog_of_war/visibility_field.h>
+
+#include "battle.h"
 #include "fog_grid.h"
+#include "golden.h"
 #include "map_cook.h"
 #include "map_load.h"
+#include "map_minimap.h"
 #include "map_source.h"
 
 namespace {
@@ -305,6 +319,206 @@ CY_TEST_CASE("samples/13-rts-api map: a unit of another side far from blue's sig
     // Beside the worker, it is; and blue's own units always are.
     CY_CHECK(sample::rts::shown_by_fog(fog, kBlue, kRival, Vec3{18.0F, 0.0F, 17.0F}));
     CY_CHECK(sample::rts::shown_by_fog(fog, kBlue, kBlue, company));
+}
+
+CY_TEST_CASE("samples/13-rts-api map: the battle stands on the company's field, its map whole") {
+    MapContent map;
+    LoadReport load;
+    std::string detail;
+    CY_REQUIRE(load_map(cy::system_allocator(cy::MemoryDomain::Assets), CY_RTS_MAP_PACKAGE, map,
+                        load, detail)
+                   .has_value());
+    // host/battle.h places the field and sizes a headless battle's fog by these numbers, and
+    // game/Battle.swift and game/Contract.swift state them again: they are the map's.
+    CY_CHECK_EQ(map.layout.company_x, sample::rts::battle::kFieldX);
+    CY_CHECK_EQ(map.layout.company_z, sample::rts::battle::kFieldZ);
+    const cy::Aabb whole = map_bounds(map);
+    CY_CHECK_EQ(whole.min.x, sample::rts::battle::kMapMinX);
+    CY_CHECK_EQ(whole.min.z, sample::rts::battle::kMapMinZ);
+    CY_CHECK_EQ(whole.max.x - whole.min.x, sample::rts::battle::kMapSize);
+    CY_CHECK_EQ(whole.max.z - whole.min.z, sample::rts::battle::kMapSize);
+    // The battle is fought on the field's flattened ground.
+    for (const sample::rts::battle::Squad& squad : sample::rts::battle::kSquads) {
+        const Vec3 at{sample::rts::battle::kFieldX + (static_cast<f32>(squad.x_quarters) * 0.25F),
+                      0.0F,
+                      sample::rts::battle::kFieldZ + (static_cast<f32>(squad.z_quarters) * 0.25F)};
+        CY_CHECK_LT(std::fabs(map.terrain.height_at(at.x, at.z)), 0.05F);
+    }
+}
+
+namespace {
+
+namespace mm = cy::rendering::minimap;
+namespace fow = cy::rendering::fog_of_war;
+
+constexpr cy::u32 kMinimapTexels = 256;
+
+[[nodiscard]] mm::MinimapRegion whole_map(const MapContent& map) noexcept {
+    const cy::Aabb whole = map_bounds(map);
+    return mm::MinimapRegion{whole.min.x, whole.max.x, whole.min.z, whole.max.z};
+}
+
+[[nodiscard]] cy::Status save_rgba(const std::string& path, const std::vector<cy::u32>& texels,
+                                   cy::u32 extent) {
+    cy::render_test::Image image(cy::system_allocator(cy::MemoryDomain::Renderer));
+    if (cy::Status adopted = cy::render_test::adopt(
+            image, cy::Span<const cy::u32>(texels.data(), texels.size()), extent, extent);
+        !adopted) {
+        return adopted;
+    }
+    return cy::render_test::write_png(path.c_str(), image);
+}
+
+}  // namespace
+
+CY_TEST_CASE("samples/13-rts-api map: the minimap's contours lie where the map's heights cross") {
+    // THE CONTOUR PLACEMENT, AGAINST THE MAP. The bake's heights under each texel are the cooked
+    // terrain's, read here through the map's own `height_at`; for every pair of neighbouring
+    // texels a level of the interval lies between, the higher one carries a line (an index line
+    // when the level is a fifth), and no texel carries one that no level crosses.
+    MapContent map;
+    LoadReport load;
+    std::string detail;
+    CY_REQUIRE(load_map(cy::system_allocator(cy::MemoryDomain::Assets), CY_RTS_MAP_PACKAGE, map,
+                        load, detail)
+                   .has_value());
+    const mm::MinimapRegion region = whole_map(map);
+    const MinimapBake bake = minimap_bake(map, region, kMinimapTexels);
+    const std::size_t count = static_cast<std::size_t>(kMinimapTexels) * kMinimapTexels;
+    std::vector<f32> heights(count);
+    for (cy::u32 row = 0; row < kMinimapTexels; ++row) {
+        for (cy::u32 column = 0; column < kMinimapTexels; ++column) {
+            const cy::Vec2 at =
+                mm::texel_point(region, kMinimapTexels, kMinimapTexels, column, row);
+            heights[(static_cast<std::size_t>(row) * kMinimapTexels) + column] =
+                map.terrain.height_at(at.x, at.y);
+        }
+    }
+    std::vector<mm::Contour> contours(count);
+    CY_REQUIRE(mm::classify_contours({heights.data(), heights.size()}, kMinimapTexels,
+                                     kMinimapTexels, bake.style, {contours.data(), contours.size()})
+                   .has_value());
+    const f32 interval = bake.style.contour_interval;
+    const auto level = [interval](f32 h) {
+        return static_cast<cy::i64>(
+            std::floor(static_cast<double>(h) / static_cast<double>(interval)));
+    };
+    const f32 water = map.layout.water_level;
+    cy::u32 lines = 0;
+    cy::u32 shore = 0;
+    cy::u32 misplaced = 0;
+    for (cy::u32 row = 0; row < kMinimapTexels; ++row) {
+        for (cy::u32 column = 0; column < kMinimapTexels; ++column) {
+            const f32 here = heights[(static_cast<std::size_t>(row) * kMinimapTexels) + column];
+            bool crossed = false;
+            bool wet_beside = false;
+            const int steps[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+            for (const auto& step : steps) {
+                const int c = static_cast<int>(column) + step[0];
+                const int r = static_cast<int>(row) + step[1];
+                if (c < 0 || r < 0 || !std::cmp_less(c, kMinimapTexels) ||
+                    !std::cmp_less(r, kMinimapTexels)) {
+                    continue;
+                }
+                const f32 there = heights[(static_cast<std::size_t>(r) * kMinimapTexels) +
+                                          static_cast<std::size_t>(c)];
+                wet_beside = wet_beside || there < water;
+                crossed = crossed || level(there) < level(here);
+            }
+            const mm::Contour got =
+                contours[(static_cast<std::size_t>(row) * kMinimapTexels) + column];
+            if (here < water) {
+                misplaced += got != mm::Contour::None ? 1U : 0U;
+                continue;
+            }
+            if (wet_beside) {
+                misplaced += got != mm::Contour::Shore ? 1U : 0U;
+                ++shore;
+                continue;
+            }
+            misplaced += (got != mm::Contour::None) != crossed ? 1U : 0U;
+            lines += got != mm::Contour::None ? 1U : 0U;
+        }
+    }
+    std::fprintf(stderr, "minimap contours: %u line texels, %u shore texels, %u misplaced\n", lines,
+                 shore, misplaced);
+    CY_CHECK_EQ(misplaced, 0U);
+    // The map's hills give it contours, and its lake a shore.
+    CY_CHECK_GT(lines, 1000U);
+    CY_CHECK_GT(shore, 50U);
+
+    // THE BAKE draws them: a line is darker than the ground beside it, the lake is water.
+    std::vector<cy::u32> baked(count);
+    CY_REQUIRE(
+        mm::bake_topographic(bake.input, bake.style, {baked.data(), baked.size()}).has_value());
+    CY_CHECK(save_rgba(binary("rts-topographic-minimap.png"), baked, kMinimapTexels).has_value());
+    const cy::Vec2 lake = {-31.0F, 24.0F};  // the lake's two lobes meet near here
+    const auto lake_column = static_cast<cy::u32>(
+        (lake.x - region.left_x) / (region.right_x - region.left_x) * kMinimapTexels);
+    const auto lake_row = static_cast<cy::u32>((lake.y - region.top_z) /
+                                               (region.bottom_z - region.top_z) * kMinimapTexels);
+    CY_REQUIRE(map.terrain.height_at(lake.x, lake.y) < water);
+    const cy::u32 lake_texel =
+        baked[(static_cast<std::size_t>(lake_row) * kMinimapTexels) + lake_column];
+    CY_CHECK_GT((lake_texel >> 16U) & 0xFFU, lake_texel & 0xFFU);  // blue over red
+}
+
+CY_TEST_CASE("samples/13-rts-api map: the minimap is blue's fog over the map, black where unseen") {
+    MapContent map;
+    LoadReport load;
+    std::string detail;
+    CY_REQUIRE(load_map(cy::system_allocator(cy::MemoryDomain::Assets), CY_RTS_MAP_PACKAGE, map,
+                        load, detail)
+                   .has_value());
+    const mm::MinimapRegion region = whole_map(map);
+    const MinimapBake bake = minimap_bake(map, region, kMinimapTexels);
+    mm::TopographicMinimap minimap(cy::system_allocator(cy::MemoryDomain::Renderer));
+    CY_REQUIRE(minimap.bake(bake.input, bake.style).has_value());
+
+    // Blue's worker at the level's centre, seeing 7 m, walked there from (8, 16): the grid a run
+    // on the map builds, as the frame's field packs it.
+    namespace gfog = cy::gameplay::fog;
+    const gfog::FogGridDescription grid = sample::rts::fog_grid_over(map_bounds(map));
+    gfog::FogOfWar fog(cy::system_allocator(cy::MemoryDomain::World));
+    CY_REQUIRE(fog.create(grid).has_value());
+    gfog::FogUnit worker;
+    worker.id = 1;
+    worker.team = 1;
+    worker.x_raw = sample::rts::fog_raw(8.0F);
+    worker.z_raw = sample::rts::fog_raw(16.0F);
+    worker.reveal_radius_raw = sample::rts::fog_raw(7.0F);
+    CY_REQUIRE(fog.update({&worker, 1}, 1).has_value());
+    worker.x_raw = sample::rts::fog_raw(24.0F);
+    CY_REQUIRE(fog.update({&worker, 1}, 2).has_value());
+    std::vector<cy::u8> states(static_cast<std::size_t>(grid.width) * grid.height);
+    CY_REQUIRE(fog.write_states(1, {states.data(), states.size()}).has_value());
+    fow::VisibilityField field(cy::system_allocator(cy::MemoryDomain::Renderer));
+    CY_REQUIRE(field.create(grid.width, grid.height).has_value());
+    CY_REQUIRE(field.set_states({states.data(), states.size()}).has_value());
+    field.snap();
+    const cy::Aabb covered = sample::rts::fog_grid_bounds(grid);
+    const fow::FogGridPlacement placement{covered.min.x, covered.min.z, 1.0F};
+    CY_REQUIRE(minimap.compose(field.texels(), grid.width, grid.height, placement, {}).has_value());
+
+    const auto texel_at = [&](f32 x, f32 z) {
+        const auto column = static_cast<cy::u32>((x - region.left_x) /
+                                                 (region.right_x - region.left_x) * kMinimapTexels);
+        const auto row = static_cast<cy::u32>((z - region.top_z) /
+                                              (region.bottom_z - region.top_z) * kMinimapTexels);
+        return (static_cast<std::size_t>(row) * kMinimapTexels) + column;
+    };
+    // Where the worker stands now: the bake itself.
+    const std::size_t seen = texel_at(24.25F, 16.25F);
+    CY_CHECK_EQ(minimap.fogged()[seen], minimap.base()[seen]);
+    // Where it stood: grey, its channels equal, darker than the bake.
+    const std::size_t remembered = texel_at(8.25F, 16.25F);
+    const cy::u32 grey = minimap.fogged()[remembered];
+    CY_CHECK_EQ(grey & 0xFFU, (grey >> 8U) & 0xFFU);
+    CY_CHECK_EQ(grey & 0xFFU, (grey >> 16U) & 0xFFU);
+    CY_CHECK_GT(grey & 0xFFU, 0U);
+    // The far corners, never seen: black.
+    CY_CHECK_EQ(minimap.fogged()[texel_at(-40.0F, 60.0F)], 0xFF00'0000U);
+    CY_CHECK_EQ(minimap.fogged()[texel_at(70.0F, -60.0F)], 0xFF00'0000U);
 }
 
 CY_TEST_CASE("samples/13-rts-api map: damaged, mistyped, newer and truncated assets are refused") {

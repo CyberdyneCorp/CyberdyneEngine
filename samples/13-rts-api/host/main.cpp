@@ -19,6 +19,10 @@
 //   just run-sample rts-api --map <frontier.cypak>
 //                                              the session headless on the map: its GI boxes and
 //                                              the fog grid over its ground, nothing drawn
+//   just run-sample rts-api --battle           ABI 1.16: the game fights a battle on the company's
+//                                              field instead of patrolling it, for
+//                                              `battle::kTicks` frames; with `--render <dir> --map`
+//                                              it is drawn, with the topographic minimap
 //
 // The report is one line per claim, and tests/test_rts_api_sample.cpp reads it. Every number comes
 // from the engine (the servers and the adapters) or from the game's `RtsReport`; none is computed
@@ -36,6 +40,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "battle.h"
 #include "company.h"
 #include "rts_host.h"
 #include "script.h"
@@ -113,6 +118,36 @@ struct MapFlags {
 #endif
     }
 };
+
+/// ABI 1.16: the battle, as the session holds it, and what the game made of it.
+void print_battle(const Observation& now) noexcept {
+    const sample::rts::BattleObservation& battle = now.battle;
+    if (!battle.on) {
+        return;
+    }
+    std::printf(
+        "rts battle   units=%u structures=%u ticks=%llu commands=%llu events=%llu damage=%llu "
+        "blue=%u red=%u standing=%u peak_projectiles=%u disagreements=%u digest=%016llx "
+        "follower=%016llx committed=%016llx\n",
+        battle.units, battle.structures, static_cast<unsigned long long>(battle.ticks),
+        static_cast<unsigned long long>(battle.commands),
+        static_cast<unsigned long long>(battle.events),
+        static_cast<unsigned long long>(battle.damage), battle.blue_alive, battle.red_alive,
+        battle.standing, battle.peak_projectiles, battle.disagreements,
+        static_cast<unsigned long long>(battle.digest),
+        static_cast<unsigned long long>(battle.follower_digest),
+        static_cast<unsigned long long>(sample::rts::battle::kBattleDigest));
+    const sample::rts::BattleObservation::Game& game = battle.game;
+    std::printf(
+        "rts fight    soldiers=%.0f orders=%.0f events=%.0f damage=%.0f deaths=%.0f fallen=%.0f "
+        "shown=%.0f hidden=%.0f effects=%.0f played=%llu lights=%.0f spawned=%llu "
+        "lights_peak=%u sounds=%.0f trails=%.0f particles_peak=%u\n",
+        wide(game.soldiers), wide(game.orders), wide(game.events), wide(game.damage),
+        wide(game.deaths), wide(game.fallen), wide(game.shown), wide(game.hidden),
+        wide(game.effects), static_cast<unsigned long long>(battle.effects), wide(game.lights),
+        static_cast<unsigned long long>(battle.lights), battle.lights_peak, wide(game.sounds),
+        wide(game.trails), battle.particles_peak);
+}
 
 void print_report(RtsHost& host, const Findings& seen) noexcept {
     const Observation now = host.observe();
@@ -203,6 +238,7 @@ void print_report(RtsHost& host, const Findings& seen) noexcept {
         now.fog.tower_sight, wide(now.fog.radius), wide(now.fog.game_cells),
         wide(now.fog.tower_seen), wide(now.fog.tower_ghost), wide(now.fog.raiders_seen),
         wide(now.fog.far_hidden), wide(now.fog.enemy_dots), wide(now.fog.refused));
+    print_battle(now);
 }
 
 }  // namespace
@@ -230,6 +266,8 @@ int main(int argc, char** argv) {
             options.systems = false;
         } else if (std::strcmp(argv[index], "--no-ui") == 0) {
             options.ui = false;
+        } else if (std::strcmp(argv[index], "--battle") == 0) {
+            options.battle = true;
         } else if (std::strcmp(argv[index], "--headless") != 0) {
             std::fprintf(stderr, "rts-api: unknown argument '%s'\n", argv[index]);
             return 2;
@@ -314,7 +352,10 @@ int main(int argc, char** argv) {
     (void)render_fog;
 #endif
     sample::rts::Player player(host);
-    for (cy::u64 frame = 0; frame < sample::rts::Player::kFrames; ++frame) {
+    // A battle runs its own length; the scripted player's hand is done by frame 420 either way.
+    const cy::u64 frames =
+        options.battle ? sample::rts::battle::kTicks : sample::rts::Player::kFrames;
+    for (cy::u64 frame = 0; frame < frames; ++frame) {
         const cy::Status injected = player.before_frame(frame);
         cy::Status ran = injected ? host.frame() : injected;
 #if defined(CY_RTS_API_RENDER)

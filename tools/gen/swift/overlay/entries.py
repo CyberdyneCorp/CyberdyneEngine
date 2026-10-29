@@ -281,6 +281,13 @@ ENTRIES: dict[str, Entry] = {
     "decal_find_material": Entry(("engine", "name", "into"), result="throwing"),
     "decal_spawn": Entry(("engine", "desc", "into"), result="throwing"),
     "decal_status": Entry(("engine", "into"), result="throwing"),
+    # 1.16: combat in the lockstep path
+    "lockstep_arm": Entry(("engine", "unit", "desc"), result="throwing"),
+    "lockstep_fortify": Entry(("engine", "desc", "into"), result="throwing"),
+    "lockstep_combatant": Entry(("engine", "unit", "into"), result="throwing"),
+    "lockstep_structure": Entry(("engine", "structure", "into"), result="throwing"),
+    "lockstep_events": Entry(("engine", "first", "into", "capacity", "count"), result="throwing"),
+    "lockstep_projectiles": Entry(("engine", "into", "capacity", "count"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

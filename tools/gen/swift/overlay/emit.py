@@ -103,6 +103,11 @@ ENUM_SPECS = {
     "CyUiAction": ("UIAction", "CY_UI_ACTION_", "UInt32"),
     "CyUiAnimatedProperty": ("UIAnimatedProperty", "CY_UI_ANIMATE_", "UInt32"),
     "CyUiEasing": ("UIEasing", "CY_UI_EASING_", "UInt32"),
+    # ADDED AT ABI 1.16 with combat in the lockstep path.
+    "CyLockstepWeapon": ("LockstepWeapon", "CY_LOCKSTEP_WEAPON_", "UInt32"),
+    "CyLockstepTargetKind": ("LockstepTargetKind", "CY_LOCKSTEP_TARGET_", "UInt32"),
+    "CyLockstepStance": ("LockstepStance", "CY_LOCKSTEP_STANCE_", "UInt32"),
+    "CyLockstepEventKind": ("LockstepEventKind", "CY_LOCKSTEP_EVENT_", "UInt32"),
 }
 
 
@@ -231,6 +236,11 @@ def enums(description: dict) -> str:
         ("CyUiAction", "/// `CyUiAction`: a semantic interface action, for `ui_navigate`."),
         ("CyUiAnimatedProperty", "/// `CyUiAnimatedProperty`: the paint property an animation drives."),
         ("CyUiEasing", "/// `CyUiEasing`: how an animation's time becomes progress."),
+        # ABI 1.16.
+        ("CyLockstepWeapon", "/// `CyLockstepWeapon`: how an armed lockstep unit attacks."),
+        ("CyLockstepTargetKind", "/// `CyLockstepTargetKind`: what a lockstep unit attacks."),
+        ("CyLockstepStance", "/// `CyLockstepStance`: what an armed lockstep unit is doing."),
+        ("CyLockstepEventKind", "/// `CyLockstepEventKind`: what a lockstep tick's combat did."),
     ))
     return f"""{BANNER}
 {status}

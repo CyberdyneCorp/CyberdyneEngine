@@ -1493,11 +1493,20 @@ pub enum LockstepOrderKind {
     Move = 0,
     /// `CY_LOCKSTEP_ORDER_STOP` = 1.
     Stop = 1,
+    /// `CY_LOCKSTEP_ORDER_ATTACK_MOVE` = 2.
+    AttackMove = 2,
+    /// `CY_LOCKSTEP_ORDER_ATTACK` = 3.
+    Attack = 3,
 }
 
 impl LockstepOrderKind {
     /// Every value, in declaration order. Lets a caller enumerate without a range.
-    pub const ALL: [LockstepOrderKind; 2] = [LockstepOrderKind::Move, LockstepOrderKind::Stop];
+    pub const ALL: [LockstepOrderKind; 4] = [
+        LockstepOrderKind::Move,
+        LockstepOrderKind::Stop,
+        LockstepOrderKind::AttackMove,
+        LockstepOrderKind::Attack,
+    ];
 
     /// The value the ABI carries, or `None` when this build has no name for it.
     #[must_use]
@@ -1505,6 +1514,8 @@ impl LockstepOrderKind {
         match raw {
             0 => Some(LockstepOrderKind::Move),
             1 => Some(LockstepOrderKind::Stop),
+            2 => Some(LockstepOrderKind::AttackMove),
+            3 => Some(LockstepOrderKind::Attack),
             _ => None,
         }
     }
@@ -1521,6 +1532,8 @@ impl LockstepOrderKind {
         match self {
             LockstepOrderKind::Move => "CY_LOCKSTEP_ORDER_MOVE",
             LockstepOrderKind::Stop => "CY_LOCKSTEP_ORDER_STOP",
+            LockstepOrderKind::AttackMove => "CY_LOCKSTEP_ORDER_ATTACK_MOVE",
+            LockstepOrderKind::Attack => "CY_LOCKSTEP_ORDER_ATTACK",
         }
     }
 }
@@ -2478,6 +2491,226 @@ impl UiEasing {
             UiEasing::Ease => "CY_UI_EASING_EASE",
             UiEasing::Spring => "CY_UI_EASING_SPRING",
             UiEasing::Back => "CY_UI_EASING_BACK",
+        }
+    }
+}
+/// `CyLockstepWeapon`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum LockstepWeapon {
+    /// `CY_LOCKSTEP_WEAPON_MELEE` = 0.
+    Melee = 0,
+    /// `CY_LOCKSTEP_WEAPON_RANGED` = 1.
+    Ranged = 1,
+}
+
+impl LockstepWeapon {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [LockstepWeapon; 2] = [LockstepWeapon::Melee, LockstepWeapon::Ranged];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(LockstepWeapon::Melee),
+            1 => Some(LockstepWeapon::Ranged),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            LockstepWeapon::Melee => "CY_LOCKSTEP_WEAPON_MELEE",
+            LockstepWeapon::Ranged => "CY_LOCKSTEP_WEAPON_RANGED",
+        }
+    }
+}
+/// `CyLockstepTargetKind`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum LockstepTargetKind {
+    /// `CY_LOCKSTEP_TARGET_NONE` = 0.
+    None = 0,
+    /// `CY_LOCKSTEP_TARGET_UNIT` = 1.
+    Unit = 1,
+    /// `CY_LOCKSTEP_TARGET_STRUCTURE` = 2.
+    Structure = 2,
+}
+
+impl LockstepTargetKind {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [LockstepTargetKind; 3] = [
+        LockstepTargetKind::None,
+        LockstepTargetKind::Unit,
+        LockstepTargetKind::Structure,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(LockstepTargetKind::None),
+            1 => Some(LockstepTargetKind::Unit),
+            2 => Some(LockstepTargetKind::Structure),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            LockstepTargetKind::None => "CY_LOCKSTEP_TARGET_NONE",
+            LockstepTargetKind::Unit => "CY_LOCKSTEP_TARGET_UNIT",
+            LockstepTargetKind::Structure => "CY_LOCKSTEP_TARGET_STRUCTURE",
+        }
+    }
+}
+/// `CyLockstepStance`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum LockstepStance {
+    /// `CY_LOCKSTEP_STANCE_IDLE` = 0.
+    Idle = 0,
+    /// `CY_LOCKSTEP_STANCE_MOVE` = 1.
+    Move = 1,
+    /// `CY_LOCKSTEP_STANCE_ATTACK_MOVE` = 2.
+    AttackMove = 2,
+    /// `CY_LOCKSTEP_STANCE_ATTACK` = 3.
+    Attack = 3,
+}
+
+impl LockstepStance {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [LockstepStance; 4] = [
+        LockstepStance::Idle,
+        LockstepStance::Move,
+        LockstepStance::AttackMove,
+        LockstepStance::Attack,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(LockstepStance::Idle),
+            1 => Some(LockstepStance::Move),
+            2 => Some(LockstepStance::AttackMove),
+            3 => Some(LockstepStance::Attack),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            LockstepStance::Idle => "CY_LOCKSTEP_STANCE_IDLE",
+            LockstepStance::Move => "CY_LOCKSTEP_STANCE_MOVE",
+            LockstepStance::AttackMove => "CY_LOCKSTEP_STANCE_ATTACK_MOVE",
+            LockstepStance::Attack => "CY_LOCKSTEP_STANCE_ATTACK",
+        }
+    }
+}
+/// `CyLockstepEventKind`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum LockstepEventKind {
+    /// `CY_LOCKSTEP_EVENT_STRIKE` = 0.
+    Strike = 0,
+    /// `CY_LOCKSTEP_EVENT_LAUNCH` = 1.
+    Launch = 1,
+    /// `CY_LOCKSTEP_EVENT_IMPACT` = 2.
+    Impact = 2,
+    /// `CY_LOCKSTEP_EVENT_DAMAGE` = 3.
+    Damage = 3,
+    /// `CY_LOCKSTEP_EVENT_DEATH` = 4.
+    Death = 4,
+    /// `CY_LOCKSTEP_EVENT_DESTROYED` = 5.
+    Destroyed = 5,
+}
+
+impl LockstepEventKind {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [LockstepEventKind; 6] = [
+        LockstepEventKind::Strike,
+        LockstepEventKind::Launch,
+        LockstepEventKind::Impact,
+        LockstepEventKind::Damage,
+        LockstepEventKind::Death,
+        LockstepEventKind::Destroyed,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(LockstepEventKind::Strike),
+            1 => Some(LockstepEventKind::Launch),
+            2 => Some(LockstepEventKind::Impact),
+            3 => Some(LockstepEventKind::Damage),
+            4 => Some(LockstepEventKind::Death),
+            5 => Some(LockstepEventKind::Destroyed),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            LockstepEventKind::Strike => "CY_LOCKSTEP_EVENT_STRIKE",
+            LockstepEventKind::Launch => "CY_LOCKSTEP_EVENT_LAUNCH",
+            LockstepEventKind::Impact => "CY_LOCKSTEP_EVENT_IMPACT",
+            LockstepEventKind::Damage => "CY_LOCKSTEP_EVENT_DAMAGE",
+            LockstepEventKind::Death => "CY_LOCKSTEP_EVENT_DEATH",
+            LockstepEventKind::Destroyed => "CY_LOCKSTEP_EVENT_DESTROYED",
         }
     }
 }

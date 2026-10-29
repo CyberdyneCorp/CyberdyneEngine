@@ -412,6 +412,13 @@ void UiRenderer::destroy() noexcept {
             buffer = rhi::BufferHandle{};
         }
     };
+    for (StagedPage& staged : staged_) {
+        for (rhi::BufferHandle& buffer : staged.staging) {
+            release(buffer);
+        }
+        staged.pending = false;
+        staged.resource = rendering::kInvalidResource;
+    }
     for (u32 index = 0; index < rhi::kMaxFramesInFlight; ++index) {
         release(rows_[index]);
         release(arguments_[index]);
@@ -505,8 +512,98 @@ Status UiRenderer::upload_atlas(u16 page, rhi::Format format, u32 width, u32 hei
     }
     // The previous page is idle: the upload above waited for the device.
     destroy_page(pages_[page]);
-    pages_[page] = AtlasPage{*image, *made};
+    pages_[page] = AtlasPage{*image, *made, format, width, height};
+    // Texels staged for the old page are not this one's.
+    staged_[page].pending = false;
     return ok();
+}
+
+Status UiRenderer::stage_atlas(u16 page, Span<const u8> pixels) noexcept {
+    if (device_ == nullptr) {
+        return fail(ErrorCode::InvalidArgument, "ui renderer: not created");
+    }
+    if (page >= kMaxAtlasPages || !has_atlas(page)) {
+        return fail(ErrorCode::InvalidArgument,
+                    "ui renderer: a page is staged into only after upload_atlas made it");
+    }
+    const AtlasPage& existing = pages_[page];
+    if (pixels.size() !=
+        static_cast<usize>(existing.width) * existing.height * bytes_per_texel(existing.format)) {
+        return fail(ErrorCode::InvalidArgument,
+                    "ui renderer: staged texels are the page's own extent and format");
+    }
+    StagedPage& staged = staged_[page];
+    if (staged.texels.size() != pixels.size()) {
+        if (Status sized = staged.texels.resize(pixels.size()); !sized) {
+            return sized;
+        }
+    }
+    std::memcpy(staged.texels.data(), pixels.data(), pixels.size());
+    staged.renderer = this;
+    staged.page = page;
+    staged.pending = true;
+    return ok();
+}
+
+bool UiRenderer::declare_staged(RenderGraph& graph) noexcept {
+    const u32 slot = device_->frame_slot() % slots_;
+    for (u16 page = 0; page < kMaxAtlasPages; ++page) {
+        StagedPage& staged = staged_[page];
+        staged.resource = rendering::kInvalidResource;
+        if (!staged.pending) {
+            continue;
+        }
+        if (staged.staging[slot].is_null()) {
+            rhi::BufferDescription buffer;
+            buffer.name = "ui atlas staging";
+            buffer.size = staged.texels.size();
+            buffer.usage = rhi::BufferUsage::TransferSource;
+            buffer.memory = rhi::MemoryUse::Upload;
+            Expected<rhi::BufferHandle, Error> made = device_->create_buffer(buffer);
+            if (!made.has_value()) {
+                return false;
+            }
+            staged.staging[slot] = *made;
+        }
+        // THIS SLOT'S BUFFER: `begin_frame` waited for the frame that last read it.
+        void* mapped = device_->buffer_mapped_pointer(staged.staging[slot]);
+        if (mapped == nullptr) {
+            return false;
+        }
+        std::memcpy(mapped, staged.texels.data(), staged.texels.size());
+        const AtlasPage& atlas = pages_[page];
+        rendering::TextureRequest request;
+        request.name = "ui atlas page";
+        request.format = atlas.format;
+        request.width = atlas.width;
+        request.height = atlas.height;
+        // Resident in the sampled layout, as every upload and every frame since left it.
+        staged.resource = graph.import_texture(request, atlas.texture, rhi::ImageUse::SampledRead);
+        staged.slot = slot;
+        staged.pending = false;
+        graph.add_pass("ui atlas update", QueueKind::Graphics)
+            .write(staged.resource, Access::TransferWrite)
+            .record(&UiRenderer::record_staged, &staged);
+    }
+    return graph.status().has_value();
+}
+
+void UiRenderer::read_staged(rendering::PassBuilder& builder) const noexcept {
+    for (const StagedPage& staged : staged_) {
+        if (staged.resource != rendering::kInvalidResource) {
+            builder.read(staged.resource, Access::FragmentSampledRead);
+        }
+    }
+}
+
+void UiRenderer::record_staged(const PassContext& context, void* user) noexcept {
+    const auto* staged = static_cast<const StagedPage*>(user);
+    const AtlasPage& atlas = staged->renderer->pages_[staged->page];
+    rhi::BufferTextureCopy region;
+    region.texture_extent = rhi::Extent3D{atlas.width, atlas.height, 1};
+    context.commands->copy_buffer_to_texture(staged->staging[staged->slot],
+                                             context.executor->texture(staged->resource),
+                                             Span<const rhi::BufferTextureCopy>(&region, 1));
 }
 
 bool UiRenderer::has_atlas(u16 page) const noexcept {
@@ -588,11 +685,13 @@ PassId UiRenderer::declare(RenderGraph& graph, const ScreenSpaceStageInputs& inp
     }
 
     target_ = inputs.target;
-    if (!declare_groups(graph)) {
+    // Pages staged since the last frame are copied in first: every interface pass reads them.
+    if (!declare_staged(graph) || !declare_groups(graph)) {
         return rendering::kInvalidPass;
     }
     rendering::PassBuilder builder = graph.add_pass("ui", QueueKind::Graphics);
     builder.use(target_, Access::ColorAttachmentReadWrite);
+    read_staged(builder);
     read_sampled_groups(builder, list_.draws.span(), group_targets_,
                         static_cast<u32>(list_.groups.size()));
     return builder.record(&record_fn, this).id();
@@ -615,6 +714,7 @@ bool UiRenderer::declare_groups(RenderGraph& graph) noexcept {
         const UiGroupTarget& target = list_.groups[group];
         rendering::PassBuilder builder = graph.add_pass("ui opacity group", QueueKind::Graphics);
         builder.write(group_targets_[group], Access::ColorAttachmentWrite);
+        read_staged(builder);
         read_sampled_groups(builder,
                             list_.group_draws.span().subspan(target.first_draw, target.draw_count),
                             group_targets_, group);

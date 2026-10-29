@@ -1981,3 +1981,68 @@ capture-third-person *args:
         "${images}/third-person-features.png"
     echo "    ${images}/third-person-{run,ramp,wall,features}.png"
     echo "    docs/design/videos/third-person.mp4"
+
+# samples/13-rts-api's battle (ABI 1.16): the player's view at 1920x1080 at four moments of the
+# battle composed into docs/design/images/rts-battle.png, the HUD's topographic minimap at the last
+# of them (rts-battle-minimap.png), the minimap's bake with no fog over it
+# (rts-topographic-minimap.png, which integration.rts_map writes), and the battle filmed from the
+# player's camera at 1280x720, docs/design/videos/rts-battle.mp4. Needs a graphics device, Swift and
+# ffmpeg.
+# Photograph and film the RTS battle and its minimap. Usage: just capture-rts-battle [--profile <p>]
+capture-rts-battle *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/13-rts-api/cy_sample_rts-api"
+    package="${build_dir}/samples/13-rts-api/frontier.cypak"
+    map_test="${build_dir}/samples/13-rts-api/cy_test_integration_rts_map"
+    for needed in "${sample}" "${package}" "${map_test}"; do
+        if [ ! -e "${needed}" ]; then
+            echo "capture-rts-battle: ${needed} was not built." >&2
+            exit 1
+        fi
+    done
+    if ! command -v ffmpeg > /dev/null; then
+        echo "capture-rts-battle: ffmpeg is not installed." >&2
+        exit 1
+    fi
+    work="${build_dir}/rts-battle-capture"
+    rm -rf "${work}"
+    mkdir -p "${work}"/{game,film,frames} docs/design/images docs/design/videos
+
+    echo "==> game        the player's view at 1920x1080"
+    "${sample}" --battle --render "${work}/game" --map "${package}" --no-validation ${rest} \
+        > "${work}/game.log"
+    tail -n 2 "${work}/game.log"
+    if [ ! -e "${work}/game/rts-map-1150.png" ]; then
+        echo "capture-rts-battle: no frame was written (no graphics device?)"
+        exit 0
+    fi
+    echo "==> film        the player's view, every second frame at 1280x720"
+    "${sample}" --battle --render "${work}/film" --map "${package}" --no-validation \
+        --width 1280 --height 720 --video "${work}/frames" --video-every 2 ${rest} \
+        > "${work}/film.log"
+    ffmpeg -y -loglevel error -framerate 30 -pattern_type glob -i "${work}/frames/frame-*.png" \
+        -c:v libx264 -pix_fmt yuv420p -crf 26 -preset slow docs/design/videos/rts-battle.mp4
+    rm -rf "${work}/frames"
+    echo "==> minimap     the bake, from integration.rts_map"
+    (cd "${build_dir}/samples/13-rts-api" && "./cy_test_integration_rts_map" \
+        -tc="*minimap's contours*" > /dev/null)
+
+    images=docs/design/images
+    ffmpeg -y -loglevel error -i "${work}/game/rts-map-180.png" -i "${work}/game/rts-map-330.png" \
+        -i "${work}/game/rts-map-960.png" -i "${work}/game/rts-map-1150.png" \
+        -filter_complex "[0][1]hstack[top];[2][3]hstack[bottom];[top][bottom]vstack,scale=1920:1080" \
+        "${images}/rts-battle.png"
+    ffmpeg -y -loglevel error -i "${work}/game/rts-map-1150.png" \
+        -filter_complex "crop=290:290:1630:790,scale=580:580:flags=neighbor" \
+        "${images}/rts-battle-minimap.png"
+    ffmpeg -y -loglevel error -i "${build_dir}/samples/13-rts-api/rts-topographic-minimap.png" \
+        -vf "scale=512:512:flags=neighbor" "${images}/rts-topographic-minimap.png"
+    echo "    ${images}/rts-battle{,-minimap}.png ${images}/rts-topographic-minimap.png"
+    echo "    docs/design/videos/rts-battle.mp4"

@@ -1028,4 +1028,34 @@ public struct Interface: @unchecked Sendable {
     public func decalStatus(engine: CyEngine, into: UnsafeMutablePointer<CyDecalStatus>?) throws {
         try check(table.pointee.decal_status(engine, into))
     }
+
+    @inlinable
+    public func lockstepArm(engine: CyEngine, unit: UInt32, desc: UnsafePointer<CyLockstepCombatDesc>?) throws {
+        try check(table.pointee.lockstep_arm(engine, unit, desc))
+    }
+
+    @inlinable
+    public func lockstepFortify(engine: CyEngine, desc: UnsafePointer<CyLockstepStructureDesc>?, into: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.lockstep_fortify(engine, desc, into))
+    }
+
+    @inlinable
+    public func lockstepCombatant(engine: CyEngine, unit: UInt32, into: UnsafeMutablePointer<CyLockstepCombatant>?) throws {
+        try check(table.pointee.lockstep_combatant(engine, unit, into))
+    }
+
+    @inlinable
+    public func lockstepStructure(engine: CyEngine, structure: UInt32, into: UnsafeMutablePointer<CyLockstepStructure>?) throws {
+        try check(table.pointee.lockstep_structure(engine, structure, into))
+    }
+
+    @inlinable
+    public func lockstepEvents(engine: CyEngine, first: UInt64, into: UnsafeMutablePointer<CyLockstepEvent>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.lockstep_events(engine, first, into, capacity, count))
+    }
+
+    @inlinable
+    public func lockstepProjectiles(engine: CyEngine, into: UnsafeMutablePointer<CyLockstepProjectile>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.lockstep_projectiles(engine, into, capacity, count))
+    }
 }

@@ -2552,6 +2552,300 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
+    size_of::<ffi::CyLockstepCombatDesc>() == 64,
+    "CyLockstepCombatDesc is not 64 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyLockstepCombatDesc>() == 8,
+    "CyLockstepCombatDesc is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatDesc, struct_size) == 0,
+    "CyLockstepCombatDesc::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatDesc, team) == 4,
+    "CyLockstepCombatDesc::team is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatDesc, health) == 8,
+    "CyLockstepCombatDesc::health is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatDesc, armour) == 12,
+    "CyLockstepCombatDesc::armour is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatDesc, weapon) == 16,
+    "CyLockstepCombatDesc::weapon is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatDesc, damage) == 20,
+    "CyLockstepCombatDesc::damage is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatDesc, cooldown) == 24,
+    "CyLockstepCombatDesc::cooldown is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatDesc, reserved) == 28,
+    "CyLockstepCombatDesc::reserved is not at byte 28"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatDesc, range) == 32,
+    "CyLockstepCombatDesc::range is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatDesc, sight) == 40,
+    "CyLockstepCombatDesc::sight is not at byte 40"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatDesc, projectile_speed) == 48,
+    "CyLockstepCombatDesc::projectile_speed is not at byte 48"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatDesc, splash) == 56,
+    "CyLockstepCombatDesc::splash is not at byte 56"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyLockstepStructureDesc>() == 48,
+    "CyLockstepStructureDesc is not 48 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyLockstepStructureDesc>() == 8,
+    "CyLockstepStructureDesc is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStructureDesc, struct_size) == 0,
+    "CyLockstepStructureDesc::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStructureDesc, team) == 4,
+    "CyLockstepStructureDesc::team is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStructureDesc, entity) == 8,
+    "CyLockstepStructureDesc::entity is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStructureDesc, position) == 16,
+    "CyLockstepStructureDesc::position is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStructureDesc, radius) == 32,
+    "CyLockstepStructureDesc::radius is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStructureDesc, health) == 40,
+    "CyLockstepStructureDesc::health is not at byte 40"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStructureDesc, armour) == 44,
+    "CyLockstepStructureDesc::armour is not at byte 44"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyLockstepCombatant>() == 48,
+    "CyLockstepCombatant is not 48 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyLockstepCombatant>() == 4,
+    "CyLockstepCombatant is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatant, struct_size) == 0,
+    "CyLockstepCombatant::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatant, flags) == 4,
+    "CyLockstepCombatant::flags is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatant, team) == 8,
+    "CyLockstepCombatant::team is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatant, health) == 12,
+    "CyLockstepCombatant::health is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatant, max_health) == 16,
+    "CyLockstepCombatant::max_health is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatant, armour) == 20,
+    "CyLockstepCombatant::armour is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatant, cooldown) == 24,
+    "CyLockstepCombatant::cooldown is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatant, kills) == 28,
+    "CyLockstepCombatant::kills is not at byte 28"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatant, stance) == 32,
+    "CyLockstepCombatant::stance is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatant, target_kind) == 36,
+    "CyLockstepCombatant::target_kind is not at byte 36"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatant, target) == 40,
+    "CyLockstepCombatant::target is not at byte 40"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepCombatant, reserved) == 44,
+    "CyLockstepCombatant::reserved is not at byte 44"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyLockstepStructure>() == 48,
+    "CyLockstepStructure is not 48 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyLockstepStructure>() == 8,
+    "CyLockstepStructure is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStructure, struct_size) == 0,
+    "CyLockstepStructure::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStructure, team) == 4,
+    "CyLockstepStructure::team is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStructure, entity) == 8,
+    "CyLockstepStructure::entity is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStructure, position) == 16,
+    "CyLockstepStructure::position is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStructure, radius) == 32,
+    "CyLockstepStructure::radius is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStructure, health) == 40,
+    "CyLockstepStructure::health is not at byte 40"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStructure, max_health) == 44,
+    "CyLockstepStructure::max_health is not at byte 44"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyLockstepEvent>() == 80,
+    "CyLockstepEvent is not 80 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyLockstepEvent>() == 8,
+    "CyLockstepEvent is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepEvent, sequence) == 0,
+    "CyLockstepEvent::sequence is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepEvent, tick) == 8,
+    "CyLockstepEvent::tick is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepEvent, kind) == 16,
+    "CyLockstepEvent::kind is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepEvent, unit) == 20,
+    "CyLockstepEvent::unit is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepEvent, target_kind) == 24,
+    "CyLockstepEvent::target_kind is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepEvent, target) == 28,
+    "CyLockstepEvent::target is not at byte 28"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepEvent, amount) == 32,
+    "CyLockstepEvent::amount is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepEvent, health) == 36,
+    "CyLockstepEvent::health is not at byte 36"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepEvent, projectile) == 40,
+    "CyLockstepEvent::projectile is not at byte 40"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepEvent, team) == 44,
+    "CyLockstepEvent::team is not at byte 44"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepEvent, position) == 48,
+    "CyLockstepEvent::position is not at byte 48"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepEvent, toward) == 64,
+    "CyLockstepEvent::toward is not at byte 64"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyLockstepProjectile>() == 80,
+    "CyLockstepProjectile is not 80 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyLockstepProjectile>() == 8,
+    "CyLockstepProjectile is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepProjectile, id) == 0,
+    "CyLockstepProjectile::id is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepProjectile, shooter) == 4,
+    "CyLockstepProjectile::shooter is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepProjectile, team) == 8,
+    "CyLockstepProjectile::team is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepProjectile, target_kind) == 12,
+    "CyLockstepProjectile::target_kind is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepProjectile, target) == 16,
+    "CyLockstepProjectile::target is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepProjectile, reserved) == 20,
+    "CyLockstepProjectile::reserved is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepProjectile, launched) == 24,
+    "CyLockstepProjectile::launched is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepProjectile, origin) == 32,
+    "CyLockstepProjectile::origin is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepProjectile, position) == 48,
+    "CyLockstepProjectile::position is not at byte 48"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepProjectile, aim) == 64,
+    "CyLockstepProjectile::aim is not at byte 64"
+);
+
+const _: () = assert!(
     size_of::<ffi::CyInterfaceHeader>() == 16,
     "CyInterfaceHeader is not 16 bytes; the ABI description and rustc disagree"
 );
@@ -2577,8 +2871,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 1568,
-    "CyInterface is not 1568 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 1616,
+    "CyInterface is not 1616 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -3364,6 +3658,30 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, decal_status) == 1560,
     "CyInterface::decal_status is not at byte 1560"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, lockstep_arm) == 1568,
+    "CyInterface::lockstep_arm is not at byte 1568"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, lockstep_fortify) == 1576,
+    "CyInterface::lockstep_fortify is not at byte 1576"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, lockstep_combatant) == 1584,
+    "CyInterface::lockstep_combatant is not at byte 1584"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, lockstep_structure) == 1592,
+    "CyInterface::lockstep_structure is not at byte 1592"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, lockstep_events) == 1600,
+    "CyInterface::lockstep_events is not at byte 1600"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, lockstep_projectiles) == 1608,
+    "CyInterface::lockstep_projectiles is not at byte 1608"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -3410,7 +3728,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        194,
+        200,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }

@@ -80,7 +80,7 @@ struct BaseFog {
     }
 
     /// `onUpdate`: what blue knows of the camp, and the camp's dots for the minimap.
-    mutating func frame(mapSize: Float) throws -> [HudModel.Dot] {
+    mutating func frame(minimap: MinimapFrame) throws -> [HudModel.Dot] {
         frames += 1
         if frames == 1, let first = camp.first {
             do {
@@ -107,7 +107,8 @@ struct BaseFog {
             // A raider only while blue sees it; the tower where it was last seen. It never moves,
             // so where it stands is where it was seen.
             if sight != .hidden {
-                dots.append(.init(x: member.at.x / mapSize, y: member.at.z / mapSize, team: .enemy))
+                dots.append(
+                    .init(x: minimap.x(member.at.x), y: minimap.y(member.at.z), team: .enemy))
             }
         }
         raidersSeen = seen

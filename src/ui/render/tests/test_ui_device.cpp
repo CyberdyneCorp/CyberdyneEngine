@@ -275,6 +275,21 @@ public:
         return pixels_.size() == kPixels;
     }
 
+    /// Another frame of the same scene and interface, the interface flattened again: what a game's
+    /// next frame is.
+    [[nodiscard]] bool render_again() noexcept {
+        if (!draw_interface()) {
+            return false;
+        }
+        rendering::assembly::AssemblyReport report{};
+        if (!scene_.render(RecordMode::Callbacks, report).has_value() ||
+            !fixture_.device().wait_idle().has_value()) {
+            return false;
+        }
+        pixels_.assign(scene_.pixels().begin(), scene_.pixels().end());
+        return pixels_.size() == kPixels;
+    }
+
     [[nodiscard]] const std::vector<u32>& pixels() const noexcept { return pixels_; }
 
     /// An element at `x, y` in its parent's content box, `w` by `h`, filled with `colour`.
@@ -465,6 +480,35 @@ bool build_everything(UiRun& run) noexcept {
     return true;
 }
 
+/// One opaque colour on every texel of a 4x4 page, red in the low byte.
+[[nodiscard]] std::vector<u8> solid_page(u8 r, u8 g, u8 b) {
+    std::vector<u8> texels(64);
+    for (u32 index = 0; index < 16U; ++index) {
+        texels[(index * 4U) + 0U] = r;
+        texels[(index * 4U) + 1U] = g;
+        texels[(index * 4U) + 2U] = b;
+        texels[(index * 4U) + 3U] = 255U;
+    }
+    return texels;
+}
+
+/// A 64-pixel image of a solid red page, alone on the screen.
+bool build_solid_image(UiRun& run) noexcept {
+    const std::vector<u8> red = solid_page(220, 20, 20);
+    if (!run.renderer
+             .upload_atlas(kImagePage, rhi::Format::Rgba8Unorm, 4, 4,
+                           Span<const u8>(red.data(), red.size()))
+             .has_value()) {
+        return false;
+    }
+    const ElementId image = run.box(run.root, 100.0F, 100.0F, 64.0F, 64.0F, 0xFFFFFFFFU);
+    PaintData* paint = run.store.paint(image);
+    paint->material = material_index(BuiltinMaterial::Image);
+    paint->atlas = kImagePage;
+    paint->uv = ui::Rect{0.0F, 0.0F, 1.0F, 1.0F};
+    return true;
+}
+
 /// What a strategy game draws: the HUD and the developer console.
 bool build_hud(UiRun& run) noexcept {
     sample::rts::Hud& hud = run.hud;
@@ -526,6 +570,38 @@ CY_TEST_CASE(
         moved += static_cast<usize>(empty.pixels()[index] != bare[index]);
     }
     CY_CHECK_EQ(moved, 0U);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("(j) a staged page changes in the next frame, with no submission of its own") {
+    // A minimap the game redraws while it runs: `stage_atlas` replaces the page's texels inside
+    // the frame's own graph. The frame after the stage shows the new texels, the frame before shows
+    // the old, and the device began exactly one frame for each — `upload_atlas` begins, submits and
+    // waits for one of its own every time it is called.
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    UiRun run(fixture, true, &build_solid_image);
+    CY_REQUIRE(run.render());
+    const usize centre = at(132, 132);
+    CY_CHECK_EQ(run.pixels()[centre] & 0xFFFFFFU, 0x1414DCU);
+
+    const std::vector<u8> blue = solid_page(20, 30, 230);
+    CY_REQUIRE(
+        run.renderer.stage_atlas(kImagePage, Span<const u8>(blue.data(), blue.size())).has_value());
+    const u64 begun = fixture.device().statistics().frames_begun;
+    CY_REQUIRE(run.render_again());
+    CY_CHECK_EQ(fixture.device().statistics().frames_begun, begun + 1U);
+    CY_CHECK_EQ(run.pixels()[centre] & 0xFFFFFFU, 0xE61E14U);
+    // Staged once, drawn ever after: the next frame stages nothing and still shows it.
+    CY_REQUIRE(run.render_again());
+    CY_CHECK_EQ(run.pixels()[centre] & 0xFFFFFFU, 0xE61E14U);
+
+    // A page never uploaded, or texels of another size, are refused and change nothing.
+    CY_CHECK_FALSE(run.renderer.stage_atlas(kImagePage + 1U, Span<const u8>(blue.data(), 64U)));
+    CY_CHECK_FALSE(run.renderer.stage_atlas(kImagePage, Span<const u8>(blue.data(), 60U)));
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
 

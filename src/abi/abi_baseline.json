@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 15,
+    "minor": 16,
     "patch": 0
   },
   "functions": [
@@ -997,10 +997,40 @@
         "index": 194,
         "name": "decal_status",
         "type": "CyResult(*)(CyEngine, CyDecalStatus*)"
+      },
+      {
+        "index": 195,
+        "name": "lockstep_arm",
+        "type": "CyResult(*)(CyEngine, uint32_t, const CyLockstepCombatDesc*)"
+      },
+      {
+        "index": 196,
+        "name": "lockstep_fortify",
+        "type": "CyResult(*)(CyEngine, const CyLockstepStructureDesc*, uint32_t*)"
+      },
+      {
+        "index": 197,
+        "name": "lockstep_combatant",
+        "type": "CyResult(*)(CyEngine, uint32_t, CyLockstepCombatant*)"
+      },
+      {
+        "index": 198,
+        "name": "lockstep_structure",
+        "type": "CyResult(*)(CyEngine, uint32_t, CyLockstepStructure*)"
+      },
+      {
+        "index": 199,
+        "name": "lockstep_events",
+        "type": "CyResult(*)(CyEngine, uint64_t, CyLockstepEvent*, uint32_t, uint32_t*)"
+      },
+      {
+        "index": 200,
+        "name": "lockstep_projectiles",
+        "type": "CyResult(*)(CyEngine, CyLockstepProjectile*, uint32_t, uint32_t*)"
       }
     ],
     "name": "CyInterface",
-    "size": 1568
+    "size": 1616
   },
   "types": [
     {
@@ -4079,6 +4109,14 @@
         {
           "name": "CY_LOCKSTEP_ORDER_STOP",
           "value": 1
+        },
+        {
+          "name": "CY_LOCKSTEP_ORDER_ATTACK_MOVE",
+          "value": 2
+        },
+        {
+          "name": "CY_LOCKSTEP_ORDER_ATTACK",
+          "value": 3
         }
       ]
     },
@@ -6168,6 +6206,558 @@
       "size": 32
     },
     {
+      "kind": "enum",
+      "name": "CyLockstepWeapon",
+      "values": [
+        {
+          "name": "CY_LOCKSTEP_WEAPON_MELEE",
+          "value": 0
+        },
+        {
+          "name": "CY_LOCKSTEP_WEAPON_RANGED",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyLockstepTargetKind",
+      "values": [
+        {
+          "name": "CY_LOCKSTEP_TARGET_NONE",
+          "value": 0
+        },
+        {
+          "name": "CY_LOCKSTEP_TARGET_UNIT",
+          "value": 1
+        },
+        {
+          "name": "CY_LOCKSTEP_TARGET_STRUCTURE",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyLockstepStance",
+      "values": [
+        {
+          "name": "CY_LOCKSTEP_STANCE_IDLE",
+          "value": 0
+        },
+        {
+          "name": "CY_LOCKSTEP_STANCE_MOVE",
+          "value": 1
+        },
+        {
+          "name": "CY_LOCKSTEP_STANCE_ATTACK_MOVE",
+          "value": 2
+        },
+        {
+          "name": "CY_LOCKSTEP_STANCE_ATTACK",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyLockstepEventKind",
+      "values": [
+        {
+          "name": "CY_LOCKSTEP_EVENT_STRIKE",
+          "value": 0
+        },
+        {
+          "name": "CY_LOCKSTEP_EVENT_LAUNCH",
+          "value": 1
+        },
+        {
+          "name": "CY_LOCKSTEP_EVENT_IMPACT",
+          "value": 2
+        },
+        {
+          "name": "CY_LOCKSTEP_EVENT_DAMAGE",
+          "value": 3
+        },
+        {
+          "name": "CY_LOCKSTEP_EVENT_DEATH",
+          "value": 4
+        },
+        {
+          "name": "CY_LOCKSTEP_EVENT_DESTROYED",
+          "value": 5
+        }
+      ]
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "team",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "health",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "armour",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "weapon",
+          "offset": 16,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "damage",
+          "offset": 20,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "cooldown",
+          "offset": 24,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 28,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "range",
+          "offset": 32,
+          "size": 8,
+          "type": "CyFixed"
+        },
+        {
+          "alignment": 8,
+          "name": "sight",
+          "offset": 40,
+          "size": 8,
+          "type": "CyFixed"
+        },
+        {
+          "alignment": 8,
+          "name": "projectile_speed",
+          "offset": 48,
+          "size": 8,
+          "type": "CyFixed"
+        },
+        {
+          "alignment": 8,
+          "name": "splash",
+          "offset": 56,
+          "size": 8,
+          "type": "CyFixed"
+        }
+      ],
+      "name": "CyLockstepCombatDesc",
+      "size": 64
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "team",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "entity",
+          "offset": 8,
+          "size": 8,
+          "type": "CyEntity"
+        },
+        {
+          "alignment": 8,
+          "name": "position",
+          "offset": 16,
+          "size": 16,
+          "type": "CyFixedVec2"
+        },
+        {
+          "alignment": 8,
+          "name": "radius",
+          "offset": 32,
+          "size": 8,
+          "type": "CyFixed"
+        },
+        {
+          "alignment": 4,
+          "name": "health",
+          "offset": 40,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "armour",
+          "offset": 44,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyLockstepStructureDesc",
+      "size": 48
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "team",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "health",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "max_health",
+          "offset": 16,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "armour",
+          "offset": 20,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "cooldown",
+          "offset": 24,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "kills",
+          "offset": 28,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "stance",
+          "offset": 32,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "target_kind",
+          "offset": 36,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "target",
+          "offset": 40,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 44,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyLockstepCombatant",
+      "size": 48
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "team",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "entity",
+          "offset": 8,
+          "size": 8,
+          "type": "CyEntity"
+        },
+        {
+          "alignment": 8,
+          "name": "position",
+          "offset": 16,
+          "size": 16,
+          "type": "CyFixedVec2"
+        },
+        {
+          "alignment": 8,
+          "name": "radius",
+          "offset": 32,
+          "size": 8,
+          "type": "CyFixed"
+        },
+        {
+          "alignment": 4,
+          "name": "health",
+          "offset": 40,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "max_health",
+          "offset": 44,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyLockstepStructure",
+      "size": 48
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 8,
+          "name": "sequence",
+          "offset": 0,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 8,
+          "name": "tick",
+          "offset": 8,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 4,
+          "name": "kind",
+          "offset": 16,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "unit",
+          "offset": 20,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "target_kind",
+          "offset": 24,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "target",
+          "offset": 28,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "amount",
+          "offset": 32,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "health",
+          "offset": 36,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "projectile",
+          "offset": 40,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "team",
+          "offset": 44,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "position",
+          "offset": 48,
+          "size": 16,
+          "type": "CyFixedVec2"
+        },
+        {
+          "alignment": 8,
+          "name": "toward",
+          "offset": 64,
+          "size": 16,
+          "type": "CyFixedVec2"
+        }
+      ],
+      "name": "CyLockstepEvent",
+      "size": 80
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "id",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "shooter",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "team",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "target_kind",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "target",
+          "offset": 16,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 20,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "launched",
+          "offset": 24,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 8,
+          "name": "origin",
+          "offset": 32,
+          "size": 16,
+          "type": "CyFixedVec2"
+        },
+        {
+          "alignment": 8,
+          "name": "position",
+          "offset": 48,
+          "size": 16,
+          "type": "CyFixedVec2"
+        },
+        {
+          "alignment": 8,
+          "name": "aim",
+          "offset": 64,
+          "size": 16,
+          "type": "CyFixedVec2"
+        }
+      ],
+      "name": "CyLockstepProjectile",
+      "size": 80
+    },
+    {
       "alignment": 4,
       "kind": "struct",
       "members": [
@@ -7571,10 +8161,52 @@
           "offset": 1560,
           "size": 8,
           "type": "CyResult(*)(CyEngine, CyDecalStatus*)"
+        },
+        {
+          "alignment": 8,
+          "name": "lockstep_arm",
+          "offset": 1568,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint32_t, const CyLockstepCombatDesc*)"
+        },
+        {
+          "alignment": 8,
+          "name": "lockstep_fortify",
+          "offset": 1576,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const CyLockstepStructureDesc*, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "lockstep_combatant",
+          "offset": 1584,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint32_t, CyLockstepCombatant*)"
+        },
+        {
+          "alignment": 8,
+          "name": "lockstep_structure",
+          "offset": 1592,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint32_t, CyLockstepStructure*)"
+        },
+        {
+          "alignment": 8,
+          "name": "lockstep_events",
+          "offset": 1600,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint64_t, CyLockstepEvent*, uint32_t, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "lockstep_projectiles",
+          "offset": 1608,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyLockstepProjectile*, uint32_t, uint32_t*)"
         }
       ],
       "name": "CyInterface",
-      "size": 1568
+      "size": 1616
     },
     {
       "kind": "enum",

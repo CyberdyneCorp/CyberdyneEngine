@@ -90,11 +90,22 @@ CLAIMS = {
         "add-deterministic-math — the Swift sample's lockstep company, ordered in fixed point, "
         "between two architectures",
     ),
+    # ABI 1.16: samples/13-rts-api's battle — armed units, projectiles, splash and buildings in
+    # the same lockstep session, ordered by the Swift game. The legs run its C++ twin
+    # (host/battle.h); the sample's own test holds the Swift-driven battle to the same value.
+    "detmath-battle": (
+        ("detmath-battle-digest", "detmath-battle-final-hash"),
+        "detmath-battle-ticks",
+        "add-rts-combat-and-minimap — the Swift sample's battle, every hit and death, between two "
+        "architectures",
+    ),
 }
 
 #: The claims `--detmath` asks for, together: the kernel, the movement it computes, the lockstep
-#: session built on both, and the sample's company ordered through the ABI's lockstep path.
-DETMATH_CLAIMS = ("detmath", "detmath-movement", "detmath-lockstep", "detmath-company")
+#: session built on both, the sample's company ordered through the ABI's lockstep path, and the
+#: sample's battle fought in it.
+DETMATH_CLAIMS = ("detmath", "detmath-movement", "detmath-lockstep", "detmath-company",
+                  "detmath-battle")
 
 #: Fields a digest file must carry before it is compared at all. A file missing one is a publisher
 #: this comparator cannot read, never a leg that agreed.

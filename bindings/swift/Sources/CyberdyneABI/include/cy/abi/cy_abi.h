@@ -78,7 +78,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 15u
+#define CY_ABI_MINOR 16u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -1231,7 +1231,11 @@ typedef enum CyDetmathFunction {
 /* What an order tells a group of lockstep units to do. */
 typedef enum CyLockstepOrderKind {
     CY_LOCKSTEP_ORDER_MOVE = 0, /* plan a path to `target` and form up around it */
-    CY_LOCKSTEP_ORDER_STOP = 1  /* drop the path and stand */
+    CY_LOCKSTEP_ORDER_STOP = 1, /* drop the path and stand */
+    /* 1.16: armed units. Go to `target` fighting what comes within sight on the way; or go for
+     * the enemy standing nearest `target`, an attack-move to it when none stands within 3 m. */
+    CY_LOCKSTEP_ORDER_ATTACK_MOVE = 2,
+    CY_LOCKSTEP_ORDER_ATTACK = 3
 } CyLockstepOrderKind;
 
 /* A unit, as `lockstep_enlist` takes it. Zero `radius` and `max_speed` are the mover's defaults,
@@ -1879,6 +1883,152 @@ typedef struct CyDecalStatus {
     uint64_t spawned;  /* since the budget was bound */
     uint64_t evicted;  /* by a full budget, the spawned one included */
 } CyDecalStatus;
+
+/* --- 1.16: combat in the lockstep path -----------------------------------------------------------
+ *
+ * openspec/changes/add-rts-combat-and-minimap. ABI 1.8's lockstep session learns to FIGHT: a unit
+ * enlisted with `lockstep_enlist` is given health and a weapon with `lockstep_arm`, a building is
+ * placed with `lockstep_fortify`, and the two new order kinds send a group to fight —
+ * CY_LOCKSTEP_ORDER_ATTACK_MOVE to a point, engaging what it meets, and CY_LOCKSTEP_ORDER_ATTACK at
+ * the enemy standing nearest a point. Every tick the session decides targets, chases, melee blows,
+ * projectile launches, flights, hits, splash and deaths in integers and `CyFixed`
+ * (cy/game_backend/lockstep_combat.h), so every peer that executes the same command log computes
+ * the same battle and the state hash folds all of it.
+ *
+ * WHAT A GAME DRAWS IS READ, NEVER DECIDED. `lockstep_events` hands out what the ticks did — a blow
+ * struck, a projectile launched and where it landed, the damage and the health it left, a death, a
+ * building destroyed — each numbered from zero in the order the session made it, so a caller keeps
+ * a cursor and reads each once, from a frame update where effects, lights and sounds may play.
+ * `lockstep_projectiles` lists what is in flight, for a trail. Neither feeds back into a tick.
+ *
+ * Arming and fortifying are session configuration, [N] and before the first tick, as enlisting
+ * is: PERMISSION_DENIED after it. Reading answers in every phase. A host whose session nobody
+ * armed runs it exactly as before 1.16. */
+
+/* How an armed unit attacks. */
+typedef enum CyLockstepWeapon {
+    CY_LOCKSTEP_WEAPON_MELEE = 0, /* a blow that lands the tick it is struck */
+    CY_LOCKSTEP_WEAPON_RANGED = 1 /* a projectile that flies to its target */
+} CyLockstepWeapon;
+
+/* What a unit is attacking, or what an event names. */
+typedef enum CyLockstepTargetKind {
+    CY_LOCKSTEP_TARGET_NONE = 0,
+    CY_LOCKSTEP_TARGET_UNIT = 1,     /* `target` is a unit's enlistment index */
+    CY_LOCKSTEP_TARGET_STRUCTURE = 2 /* `target` is a structure's `lockstep_fortify` index */
+} CyLockstepTargetKind;
+
+/* What an armed unit is doing, as far as fighting goes. */
+typedef enum CyLockstepStance {
+    CY_LOCKSTEP_STANCE_IDLE = 0,        /* standing; fights what comes within its sight */
+    CY_LOCKSTEP_STANCE_MOVE = 1,        /* going where it was sent, ignoring enemies */
+    CY_LOCKSTEP_STANCE_ATTACK_MOVE = 2, /* going where it was sent, fighting on the way */
+    CY_LOCKSTEP_STANCE_ATTACK = 3       /* after the one target it was given, until it falls */
+} CyLockstepStance;
+
+/* What `lockstep_events` reports. */
+typedef enum CyLockstepEventKind {
+    CY_LOCKSTEP_EVENT_STRIKE = 0, /* `unit` struck `target` in melee, from `position` at `toward` */
+    CY_LOCKSTEP_EVENT_LAUNCH = 1, /* `projectile` left `unit` at `position`, aimed at `toward` */
+    CY_LOCKSTEP_EVENT_IMPACT = 2, /* `projectile` landed at `position`; `amount` enemies it hit */
+    CY_LOCKSTEP_EVENT_DAMAGE = 3, /* `target` lost `amount` to `unit`, leaving `health` */
+    CY_LOCKSTEP_EVENT_DEATH = 4,  /* unit `unit` of `team` died at `position` */
+    CY_LOCKSTEP_EVENT_DESTROYED = 5 /* structure `target` of `team` fell at `position` */
+} CyLockstepEventKind;
+
+/* An event or a projectile with no acting unit. */
+#define CY_LOCKSTEP_NO_UNIT 0xFFFFFFFFu
+
+/* A unit's health and weapon, as `lockstep_arm` takes it. A reach is the GAP between the two
+ * footprints, so a melee unit with a half-metre range strikes from half a metre off its target's
+ * edge whatever either one's radius. */
+typedef struct CyLockstepCombatDesc {
+    uint32_t struct_size;
+    uint32_t team;            /* units and structures of another team are enemies */
+    uint32_t health;          /* > 0 */
+    uint32_t armour;          /* taken off every hit; a hit always deals at least one point */
+    uint32_t weapon;          /* CyLockstepWeapon */
+    uint32_t damage;          /* points a hit deals before armour, > 0 */
+    uint32_t cooldown;        /* ticks between two attacks, > 0 */
+    uint32_t reserved;        /* zero */
+    CyFixed range;            /* metres of gap it attacks across, >= 0 */
+    CyFixed sight;            /* metres of gap it notices an enemy across, >= 0 */
+    CyFixed projectile_speed; /* metres a second, > 0 for a ranged weapon */
+    CyFixed splash; /* a ranged weapon's: 0 hits its target alone; otherwise every enemy within */
+} CyLockstepCombatDesc;
+
+/* A building, as `lockstep_fortify` takes it: a static target, and an obstacle units walk round. */
+typedef struct CyLockstepStructureDesc {
+    uint32_t struct_size;
+    uint32_t team;
+    CyEntity entity;      /* the scene entity that PRESENTS it, or CY_ENTITY_NULL; not hashed */
+    CyFixedVec2 position; /* x and world Z */
+    CyFixed radius;       /* its footprint, > 0 */
+    uint32_t health;      /* > 0 */
+    uint32_t armour;
+} CyLockstepStructureDesc;
+
+#define CY_LOCKSTEP_COMBATANT_ARMED 0x1u   /* `lockstep_arm` gave it a weapon */
+#define CY_LOCKSTEP_COMBATANT_ALIVE 0x2u   /* its health is above zero */
+#define CY_LOCKSTEP_COMBATANT_ENGAGED 0x4u /* its target was within its range on the last tick */
+#define CY_LOCKSTEP_COMBATANT_CHASING 0x8u /* it is following a path to its target */
+
+/* One unit's combat state, as the last tick left it. */
+typedef struct CyLockstepCombatant {
+    uint32_t struct_size;
+    uint32_t flags; /* CY_LOCKSTEP_COMBATANT_* */
+    uint32_t team;
+    uint32_t health;
+    uint32_t max_health;
+    uint32_t armour;
+    uint32_t cooldown;    /* ticks until it may attack again */
+    uint32_t kills;       /* units and structures it finished */
+    uint32_t stance;      /* CyLockstepStance */
+    uint32_t target_kind; /* CyLockstepTargetKind */
+    uint32_t target;
+    uint32_t reserved; /* zero */
+} CyLockstepCombatant;
+
+/* One structure's state. */
+typedef struct CyLockstepStructure {
+    uint32_t struct_size;
+    uint32_t team;
+    CyEntity entity;
+    CyFixedVec2 position;
+    CyFixed radius;
+    uint32_t health; /* zero once destroyed */
+    uint32_t max_health;
+} CyLockstepStructure;
+
+/* One thing a tick did. Passed in arrays, so fixed forever: no `struct_size`. */
+typedef struct CyLockstepEvent {
+    uint64_t sequence;    /* from zero, in the order the session made them */
+    uint64_t tick;        /* the tick that made it */
+    uint32_t kind;        /* CyLockstepEventKind */
+    uint32_t unit;        /* the unit that acted (or died), or CY_LOCKSTEP_NO_UNIT */
+    uint32_t target_kind; /* CyLockstepTargetKind */
+    uint32_t target;
+    uint32_t amount;     /* DAMAGE: points dealt; IMPACT: enemies hit */
+    uint32_t health;     /* DAMAGE: what the target has left */
+    uint32_t projectile; /* LAUNCH and IMPACT */
+    uint32_t team;       /* the acting side's; DEATH and DESTROYED: the fallen's */
+    CyFixedVec2 position;
+    CyFixedVec2 toward; /* STRIKE and LAUNCH: the target's position; IMPACT: where it was fired */
+} CyLockstepEvent;
+
+/* A projectile in flight. Passed in arrays: no `struct_size`. */
+typedef struct CyLockstepProjectile {
+    uint32_t id;
+    uint32_t shooter;
+    uint32_t team;
+    uint32_t target_kind; /* CyLockstepTargetKind */
+    uint32_t target;
+    uint32_t reserved;
+    uint64_t launched; /* the tick it left */
+    CyFixedVec2 origin;
+    CyFixedVec2 position;
+    CyFixedVec2 aim; /* where it is going: its target, or where its target fell */
+} CyLockstepProjectile;
 
 /* --- The interface table -----------------------------------------------------------------------
  *
@@ -2636,6 +2786,32 @@ typedef struct CyInterface {
     CyResult (*decal_spawn)(CyEngine engine, const CyDecalDesc* desc, CyDecal* out_decal);
     /* [N U] The decal budget. */
     CyResult (*decal_status)(CyEngine engine, CyDecalStatus* out_status);
+    /* --- 1.16: combat in the lockstep path (see CyLockstepCombatDesc's section) --- */
+
+    /* [N] Give unit `unit` health and a weapon, before the first tick. NOT_FOUND for a unit never
+     * enlisted; INVALID_ARGUMENT for no health, no damage, no cooldown, a negative reach, an
+     * unknown weapon, a ranged weapon with no projectile speed or a nonzero reserved word;
+     * PERMISSION_DENIED once the session has ticked. */
+    CyResult (*lockstep_arm)(CyEngine engine, uint32_t unit, const CyLockstepCombatDesc* desc);
+    /* [N] Place a structure, before the first tick; `*out_structure` is its index. INVALID_ARGUMENT
+     * for no health or no footprint; PERMISSION_DENIED once the session has ticked. */
+    CyResult (*lockstep_fortify)(CyEngine engine, const CyLockstepStructureDesc* desc,
+                                 uint32_t* out_structure);
+    /* [N F U] Unit `unit`'s combat state. NOT_FOUND for a unit never enlisted. */
+    CyResult (*lockstep_combatant)(CyEngine engine, uint32_t unit,
+                                   CyLockstepCombatant* out_combatant);
+    /* [N F U] Structure `structure`'s state. NOT_FOUND for one never fortified. */
+    CyResult (*lockstep_structure)(CyEngine engine, uint32_t structure,
+                                   CyLockstepStructure* out_structure);
+    /* [N F U] The events numbered `first` and after, oldest first, up to `capacity`; a null
+     * buffer with zero capacity asks for the count. The host keeps the most recent events of a
+     * bounded history: a caller that falls further behind sees a gap in the numbers. */
+    CyResult (*lockstep_events)(CyEngine engine, uint64_t first, CyLockstepEvent* out_events,
+                                uint32_t capacity, uint32_t* out_count);
+    /* [N F U] The projectiles in flight, in launch order, up to `capacity`; a null buffer with
+     * zero capacity asks for the count. */
+    CyResult (*lockstep_projectiles)(CyEngine engine, CyLockstepProjectile* out_projectiles,
+                                     uint32_t capacity, uint32_t* out_count);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -2788,6 +2964,14 @@ CY_ABI_STATIC_ASSERT(sizeof(CyFootPlacement) == 68, "CyFootPlacement is 68 bytes
 CY_ABI_STATIC_ASSERT(sizeof(CyEffectPlay) == 64, "CyEffectPlay is 64 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyDecalDesc) == 88, "CyDecalDesc is 88 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyDecalStatus) == 32, "CyDecalStatus is 32 bytes");
+
+/* 1.16 */
+CY_ABI_STATIC_ASSERT(sizeof(CyLockstepCombatDesc) == 64, "CyLockstepCombatDesc is 64 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyLockstepStructureDesc) == 48, "CyLockstepStructureDesc is 48 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyLockstepCombatant) == 48, "CyLockstepCombatant is 48 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyLockstepStructure) == 48, "CyLockstepStructure is 48 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyLockstepEvent) == 80, "CyLockstepEvent is 80 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyLockstepProjectile) == 80, "CyLockstepProjectile is 80 bytes");
 
 #ifdef __cplusplus
 }
