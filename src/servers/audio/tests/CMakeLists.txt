@@ -6,7 +6,8 @@
 # copied into a second file is a budget that drifts. src/servers/render/ and src/servers/camera/ do
 # the same.
 #
-# TWO SUITES, SPLIT BY WHAT THEY COST RATHER THAN BY WHAT THEY COVER:
+# THREE SUITES, SPLIT BY WHAT THEY COST RATHER THAN BY WHAT THEY COVER (audio_stream joined them
+# with issue #87's streaming):
 #
 #   audio_graph   the bus graph, the spatialisation functions, the command ring and the null
 #                 backend. All pure or nearly so, all well inside the unit budget.
@@ -53,7 +54,18 @@ function(cy_audio_declare_tests)
     cy_add_test(
         NAME audio_mixer
         KIND integration
-        SOURCES "${audio_tests_dir}/test_server.cpp"
+        SOURCES
+            "${audio_tests_dir}/test_server.cpp"
+            "${audio_tests_dir}/test_server_streams.cpp"
+        DEPENDENCIES cy::servers-audio)
+
+    # Issue #87: the cooked format, the resampler, loudness, the stream ring and the stream source
+    # over the built-in PCM decoder. Every byte decoded is one a case wrote, but a case converts or
+    # measures seconds of audio, which is milliseconds of arithmetic: integration, like audio_mixer.
+    cy_add_test(
+        NAME audio_stream
+        KIND integration
+        SOURCES "${audio_tests_dir}/test_stream.cpp"
         DEPENDENCIES cy::servers-audio)
 endfunction()
 

@@ -159,6 +159,18 @@ function(cy_import_declare_tests)
     target_compile_definitions(cy_test_integration_import_font PRIVATE
         CY_TEXT_FONTS_DIR="${CMAKE_SOURCE_DIR}/deps/fonts")
 
+    # `import_audio` cooks WAVs it writes and the encoded fixtures in content/audio/ through the
+    # miniaudio backend's decoders, resampling and measuring loudness over seconds of audio. With
+    # CY_AUDIO off it builds the one case that still means something: a source is refused naming the
+    # option. Issue #87.
+    cy_add_test(
+        NAME import_audio
+        KIND integration
+        SOURCES "${tests_dir}/test_audio.cpp"
+        DEPENDENCIES cy::import)
+    target_compile_definitions(cy_test_integration_import_audio PRIVATE
+        CY_AUDIO_CONTENT_DIR="${CMAKE_SOURCE_DIR}/content/audio")
+
     # `import_primitive` is integration for the reasons above and one more: its last case writes a
     # project to a scratch directory and cooks it three times, to prove a generated mesh is cached
     # and invalidated by the one key every other source uses. M8.a task 2.1.

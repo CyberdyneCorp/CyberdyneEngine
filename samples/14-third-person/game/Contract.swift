@@ -43,6 +43,8 @@ enum Content {
     static let jumpCue = "hero.jump"
     static let landCue = "hero.land"
     static let wind = "ambience.wind"
+    /// The streamed hillside bed the host cooks and registers as a track (issue #87).
+    static let windBed = "ambience.hillside"
     static let bird = "ambience.bird"
 
     /// The level's nodes.

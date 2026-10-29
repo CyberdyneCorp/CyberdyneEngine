@@ -49,7 +49,12 @@ f32 AudioAdapter::Ramp::advance(f32 delta) noexcept {
 
 AudioAdapter::AudioAdapter(audio::AudioServer& server, Allocator& allocator,
                            scene::SceneTree* tree) noexcept
-    : server_(server), tree_(tree), cues_(allocator), voices_(allocator), bus_fades_(allocator) {}
+    : server_(server),
+      tree_(tree),
+      tracks_(allocator),
+      cues_(allocator),
+      voices_(allocator),
+      bus_fades_(allocator) {}
 
 Status AudioAdapter::add_cue(Name name, audio::ClipHandle clip) noexcept {
     if (name.is_empty() || server_.clip(clip) == nullptr) {
@@ -283,6 +288,9 @@ void AudioAdapter::advance_buses(f32 delta_seconds) noexcept {
 
 void AudioAdapter::update(f32 delta_seconds) noexcept {
     advance_buses(delta_seconds);
+    if (streams_ != nullptr) {
+        streams_->pump();
+    }
     // Compacted in place, in order, so the voices are always visited in the order they started.
     usize kept = 0;
     for (const Voice& current : voices_) {
@@ -294,6 +302,124 @@ void AudioAdapter::update(f32 delta_seconds) noexcept {
     while (voices_.size() > kept) {
         voices_.pop_back();
     }
+}
+
+// --- Streams (ABI 1.18) --------------------------------------------------------------------------
+
+namespace {
+
+[[nodiscard]] audio::StreamId stream_of(CyAudioStream stream) noexcept {
+    return audio::StreamId{stream};
+}
+
+[[nodiscard]] CyResult no_player() noexcept {
+    return abi::report(CY_RESULT_UNAVAILABLE, "no stream player is bound to the audio adapter");
+}
+
+}  // namespace
+
+Status AudioAdapter::add_track(Name name, const audio::TrackSource& track) noexcept {
+    if (name.is_empty() || streams_ == nullptr) {
+        return fail(ErrorCode::InvalidArgument, "a track needs a name and a bound stream player");
+    }
+    if (Status added = streams_->add_track(name, track); !added) {
+        return added;
+    }
+    for (const Name& known : tracks_) {
+        if (known == name) {
+            return ok();
+        }
+    }
+    return tracks_.push_back(name);
+}
+
+Name AudioAdapter::track_name(CyAudioTrack track) const noexcept {
+    return (track == 0 || track > tracks_.size()) ? Name() : tracks_[track - 1];
+}
+
+CyResult AudioAdapter::find_track(const char* name, CyAudioTrack& out_track) noexcept {
+    if (streams_ == nullptr) {
+        return no_player();
+    }
+    const Name wanted = Name::find(name);
+    for (usize index = 0; index < tracks_.size(); ++index) {
+        if (!wanted.is_empty() && tracks_[index] == wanted) {
+            out_track = index + 1;
+            return CY_RESULT_OK;
+        }
+    }
+    return abi::report(CY_RESULT_NOT_FOUND, "audio_find_track: no track of that name");
+}
+
+CyResult AudioAdapter::stream_play(const CyAudioStreamPlay& play,
+                                   CyAudioStream& out_stream) noexcept {
+    if (streams_ == nullptr) {
+        return no_player();
+    }
+    const Name name = track_name(play.track);
+    if (name.is_empty()) {
+        return abi::report(CY_RESULT_NOT_FOUND, "audio_stream_play: no such track");
+    }
+    audio::StreamPlayOptions options;
+    options.bus = bus_of(play.bus);
+    options.volume = or_one(play.volume);
+    options.fade_in_seconds = play.fade_seconds;
+    options.start_seconds = play.start_seconds;
+    options.normalise = (play.flags & CY_AUDIO_STREAM_RAW_LEVEL) == 0U;
+    const Expected<audio::StreamId, Error> started =
+        (play.crossfade_from != 0)
+            ? streams_->crossfade(stream_of(play.crossfade_from), name, play.fade_seconds, options)
+            : streams_->play(name, options);
+    if (!started) {
+        return abi::report(started.error());
+    }
+    out_stream = started->value;
+    return CY_RESULT_OK;
+}
+
+CyResult AudioAdapter::stream_stop(CyAudioStream stream, f32 fade_out_seconds) noexcept {
+    if (streams_ == nullptr) {
+        return no_player();
+    }
+    const Status stopped = streams_->stop(stream_of(stream), fade_out_seconds);
+    return stopped ? CY_RESULT_OK : abi::report(stopped.error());
+}
+
+CyResult AudioAdapter::stream_seek(CyAudioStream stream, f64 seconds) noexcept {
+    if (streams_ == nullptr) {
+        return no_player();
+    }
+    const Status sought = streams_->seek(stream_of(stream), seconds);
+    return sought ? CY_RESULT_OK : abi::report(sought.error());
+}
+
+CyResult AudioAdapter::stream_set_volume(CyAudioStream stream, f32 volume,
+                                         f32 fade_seconds) noexcept {
+    if (streams_ == nullptr) {
+        return no_player();
+    }
+    const Status set = streams_->set_volume(stream_of(stream), volume, fade_seconds);
+    return set ? CY_RESULT_OK : abi::report(set.error());
+}
+
+CyResult AudioAdapter::stream_state(CyAudioStream stream, CyAudioStreamState& out_state) noexcept {
+    if (streams_ == nullptr) {
+        return no_player();
+    }
+    const audio::StreamReport report = streams_->report(stream_of(stream));
+    if (!report.live) {
+        return abi::report(CY_RESULT_NOT_FOUND, "audio_stream_state: the stream has ended");
+    }
+    const audio::TrackSource* track = streams_->track(report.track);
+    out_state.flags = streams_->playing(stream_of(stream)) ? CY_AUDIO_STREAM_PLAYING : 0U;
+    if (track != nullptr && track->header.looping) {
+        out_state.flags |= CY_AUDIO_STREAM_LOOPING;
+    }
+    out_state.position_seconds = report.position_seconds;
+    out_state.duration_seconds = (track != nullptr) ? track->header.seconds() : 0.0;
+    out_state.gain = report.gain;
+    out_state.underruns = report.underruns;
+    return CY_RESULT_OK;
 }
 
 void bind(cy::abi::Host& host, AudioAdapter* adapter) noexcept {

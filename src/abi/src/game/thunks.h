@@ -76,6 +76,15 @@ CyResult audio_stop(CyEngine engine, CyAudioVoice voice, float fade_out_seconds)
 bool audio_voice_playing(CyEngine engine, CyAudioVoice voice);
 CyResult audio_find_bus(CyEngine engine, const char* name, CyAudioBus* out_bus);
 CyResult audio_set_bus_volume(CyEngine engine, CyAudioBus bus, float volume, float fade_seconds);
+// 1.17: streamed tracks
+CyResult audio_find_track(CyEngine engine, const char* name, CyAudioTrack* out_track);
+CyResult audio_stream_play(CyEngine engine, const CyAudioStreamPlay* play,
+                           CyAudioStream* out_stream);
+CyResult audio_stream_stop(CyEngine engine, CyAudioStream stream, float fade_out_seconds);
+CyResult audio_stream_seek(CyEngine engine, CyAudioStream stream, double seconds);
+CyResult audio_stream_set_volume(CyEngine engine, CyAudioStream stream, float volume,
+                                 float fade_seconds);
+CyResult audio_stream_state(CyEngine engine, CyAudioStream stream, CyAudioStreamState* out_state);
 
 // --- spawning (C) ---------------------------------------------------------------------------
 CyResult spawn_resolve(CyEngine engine, const char* asset, CyPrefab* out_prefab);

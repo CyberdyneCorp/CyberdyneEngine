@@ -78,7 +78,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 17u
+#define CY_ABI_MINOR 18u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -2115,6 +2115,53 @@ typedef struct CyVideoMode {
     uint32_t width;
     uint32_t height;
 } CyVideoMode;
+/* --- 1.18: streamed music and ambience --------------------------------------------------------
+ *
+ * openspec/changes/add-audio-streaming-import. ABI 1.3 plays cues: short sounds decoded in memory.
+ * A track — music, an ambience bed — is STREAMED: decoded ahead by a job into a bounded ring
+ * buffer, so a ten-minute track holds a ring and a decoder and nothing that grows with its length.
+ * The host registers cooked tracks by name (`cy::game_backend::AudioAdapter::add_track`); a game
+ * finds one with `audio_find_track`, plays it with `audio_stream_play`, and moves between two with
+ * `crossfade_from`: the new stream fades in while the old one fades out, both curves equal-power
+ * and starting on the same sample, and the old one stops itself at the end of its fade.
+ *
+ * PRESENTATION, AS AUDIO IS. Every entry is [N F U]. While CY_TIME_RESIMULATING is set the writes
+ * (`play`, `stop`, `seek`, `set_volume`) answer OK and do nothing — `play` hands back a null
+ * stream — and a stream handle is not simulation state: a fixed step must not branch on one.
+ *
+ * Bus volumes are ABI 1.3's `audio_set_bus_volume`, which a stream routed to the bus obeys. */
+
+typedef uint64_t CyAudioTrack;  /* a cooked track the host registered; zero is null */
+typedef uint64_t CyAudioStream; /* one playing stream; zero is null, and an ended one never names
+                                   a later stream */
+
+/* Play the track at its own level, ignoring the loudness gain the importer measured for it. */
+#define CY_AUDIO_STREAM_RAW_LEVEL 0x1u
+
+/* Zero means "as authored" for `bus` (Master) and `volume` (1), as in `CyAudioPlay`. */
+typedef struct CyAudioStreamPlay {
+    uint32_t struct_size;
+    uint32_t flags; /* CY_AUDIO_STREAM_* */
+    CyAudioTrack track;
+    CyAudioBus bus;
+    CyAudioStream crossfade_from; /* fade this stream out while the new one fades in; or zero */
+    float volume;                 /* linear gain */
+    float fade_seconds;           /* the fade-in, and the crossfade's length */
+    double start_seconds;         /* where in the track to begin */
+} CyAudioStreamPlay;
+
+/* Where a stream is. */
+#define CY_AUDIO_STREAM_PLAYING 0x1u /* sounding, or about to once its ring is primed */
+#define CY_AUDIO_STREAM_LOOPING 0x2u /* the track loops */
+
+typedef struct CyAudioStreamState {
+    uint32_t struct_size;
+    uint32_t flags;          /* CY_AUDIO_STREAM_PLAYING, CY_AUDIO_STREAM_LOOPING */
+    double position_seconds; /* where the listener is in the track */
+    double duration_seconds; /* the played length of one pass */
+    float gain;              /* the stream's gain after its fades */
+    uint32_t underruns;      /* blocks its ring ran dry in, each played as silence */
+} CyAudioStreamState;
 
 /* --- The interface table -----------------------------------------------------------------------
  *
@@ -2948,6 +2995,29 @@ typedef struct CyInterface {
     /* [N U] The tooltip a widget shows when the pointer rests on it, or a gamepad focuses it
      * long enough; null or empty removes it. */
     CyResult (*ui_widget_set_tooltip)(CyEngine engine, CyUiElement widget, const char* utf8);
+    /* --- 1.18: streamed music and ambience (see CyAudioStreamPlay's section) --- */
+
+    /* [N F U] A track the host registered, by name. NOT_FOUND. */
+    CyResult (*audio_find_track)(CyEngine engine, const char* name, CyAudioTrack* out_track);
+    /* [N F U] Stream a track. INVALID_ARGUMENT for a negative or non-finite volume, fade or start;
+     * NOT_FOUND for a track the host did not hand out; OUT_OF_RANGE for a start past the track's
+     * end or no free stream; UNAVAILABLE when this build cannot decode the track's codec.
+     * `*out_stream` is null during a resimulated tick. */
+    CyResult (*audio_stream_play)(CyEngine engine, const CyAudioStreamPlay* play,
+                                  CyAudioStream* out_stream);
+    /* [N F U] Fade out over `fade_out_seconds` (zero: now) and stop. Idempotent: an ended stream is
+     * OK. */
+    CyResult (*audio_stream_stop)(CyEngine engine, CyAudioStream stream, float fade_out_seconds);
+    /* [N F U] Jump to `seconds` in the track: the old position fades out over one mixer block and
+     * the new one ramps in once the ring is primed. NOT_FOUND for an ended stream; OUT_OF_RANGE
+     * past the end. */
+    CyResult (*audio_stream_seek)(CyEngine engine, CyAudioStream stream, double seconds);
+    /* [N F U] Ramp the stream's linear gain over `fade_seconds`. NOT_FOUND for an ended stream. */
+    CyResult (*audio_stream_set_volume)(CyEngine engine, CyAudioStream stream, float volume,
+                                        float fade_seconds);
+    /* [N F U] A stream's position, length, gain and underruns. NOT_FOUND once it has ended. */
+    CyResult (*audio_stream_state)(CyEngine engine, CyAudioStream stream,
+                                   CyAudioStreamState* out_state);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -3112,6 +3182,9 @@ CY_ABI_STATIC_ASSERT(sizeof(CyLockstepProjectile) == 80, "CyLockstepProjectile i
 CY_ABI_STATIC_ASSERT(sizeof(CyInputRebind) == 116, "CyInputRebind is 116 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyVideoSettings) == 24, "CyVideoSettings is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyVideoMode) == 8, "CyVideoMode is 8 bytes");
+/* 1.18 */
+CY_ABI_STATIC_ASSERT(sizeof(CyAudioStreamPlay) == 48, "CyAudioStreamPlay is 48 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyAudioStreamState) == 32, "CyAudioStreamState is 32 bytes");
 
 #ifdef __cplusplus
 }

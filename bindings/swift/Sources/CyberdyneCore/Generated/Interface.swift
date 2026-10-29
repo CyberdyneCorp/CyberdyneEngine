@@ -1123,4 +1123,34 @@ public struct Interface: @unchecked Sendable {
     public func uiWidgetSetTooltip(engine: CyEngine, widget: CyUiElement, text: UnsafePointer<CChar>?) throws {
         try check(table.pointee.ui_widget_set_tooltip(engine, widget, text))
     }
+
+    @inlinable
+    public func audioFindTrack(engine: CyEngine, name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyAudioTrack>?) throws {
+        try check(table.pointee.audio_find_track(engine, name, into))
+    }
+
+    @inlinable
+    public func audioStreamPlay(engine: CyEngine, play: UnsafePointer<CyAudioStreamPlay>?, stream: UnsafeMutablePointer<CyAudioStream>?) throws {
+        try check(table.pointee.audio_stream_play(engine, play, stream))
+    }
+
+    @inlinable
+    public func audioStreamStop(engine: CyEngine, stream: CyAudioStream, fadeOut: Float) throws {
+        try check(table.pointee.audio_stream_stop(engine, stream, fadeOut))
+    }
+
+    @inlinable
+    public func audioStreamSeek(engine: CyEngine, stream: CyAudioStream, seconds: Double) throws {
+        try check(table.pointee.audio_stream_seek(engine, stream, seconds))
+    }
+
+    @inlinable
+    public func audioStreamSetVolume(engine: CyEngine, stream: CyAudioStream, volume: Float, fade: Float) throws {
+        try check(table.pointee.audio_stream_set_volume(engine, stream, volume, fade))
+    }
+
+    @inlinable
+    public func audioStreamState(engine: CyEngine, stream: CyAudioStream, into: UnsafeMutablePointer<CyAudioStreamState>?) throws {
+        try check(table.pointee.audio_stream_state(engine, stream, into))
+    }
 }

@@ -27,6 +27,29 @@ conversion, decoding, and streaming":
 | `ma_context` | device enumeration |
 | `ma_device` | the output stream and its realtime callback |
 | `ma_format_f32` at the engine's rate | the format, rate and channel conversion the specification allows a backend to do |
+| `ma_decoder` (`_init` with read/seek callbacks, `_read_pcm_frames`, `_seek_to_pcm_frame`, `_get_length_in_pcm_frames`, `_uninit`) and `ma_allocation_callbacks` | issue #87: decoding WAV, FLAC and MP3 (miniaudio's bundled dr_wav, dr_flac and dr_mp3) over an engine `AudioByteSource`, every allocation routed to the stream's allocator |
+
+## Decoding (issue #87)
+
+`miniaudio_codecs.h` declares `miniaudio_audio_codecs()`, this backend's `cy::audio::AudioCodecs`:
+
+| codec | through | seeks |
+|---|---|---|
+| PCM | the server's built-in decoder | by offset |
+| WAV, FLAC | `ma_decoder` (`src/codecs.cpp`) | `ma_decoder_seek_to_pcm_frame`, exact |
+| MP3 | `ma_decoder` | **by decoding**: dr_mp3's forward seek subtracts a position that counts the LAME delay from a target that does not, and lands one delay (1105 frames on the fixture) early. Backward seeks restart and are right, so the decoder restarts when the target is behind and decodes forward otherwise. `integration.audio_codecs`' 'mp3: a forward seek lands on its frame' is the regression case |
+| Ogg Vorbis | stb_vorbis's push API (`src/vorbis_decoder.cpp`), a pinned dependency of its own | by bisecting Ogg pages (checksums verified) for one at least two long blocks before the target, flushing and decoding forward; reopening near the start. Compared with a decode from the start, bit for bit |
+
+`open_source` reads a whole source file for the importer and also reports the file's loop: a WAV
+`smpl` chunk, or `LOOPSTART` with `LOOPLENGTH`/`LOOPEND` Vorbis comments in Ogg or FLAC.
+
+Memory is counted, not estimated: miniaudio's allocations go to the engine allocator with a size
+header, and stb_vorbis gets one arena — grown by doubling until the headers fit, then cut to what
+stb reports needing. Measured: a 44.1 kHz stereo Vorbis (q5) decoder holds 219 KB, FLAC 42 KB, MP3
+99 KB; decoding alone is under a tenth of a percent of one core per stream.
+
+`stb_vorbis.c` is included (header half only) by `src/vorbis_decoder.cpp` and nowhere else; the layer
+checker's `thirdparty` rule fails the build if another file includes it.
 
 **Not used, and named because the specification names them**: `ma_node_graph` (the engine has a bus
 graph), `ma_engine` (the engine has an `AudioServer`), and `ma_spatializer` / `ma_sound`'s 3D model

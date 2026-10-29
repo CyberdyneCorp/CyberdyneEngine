@@ -332,6 +332,57 @@ CY_TEST_CASE("the tracking allocator sees a red-zone overrun and a double free")
     CY_CHECK_EQ(tracker.double_frees(), 2u);
 }
 
+namespace {
+
+/// An upstream that hands out the same block every time, as a general-purpose heap does when a
+/// freed block is the best fit for the next request. What the regression below needs, made
+/// deterministic.
+class ReusingAllocator final : public cy::Allocator {
+public:
+    ReusingAllocator() noexcept : cy::Allocator(cy::MemoryDomain::Engine, "reusing") {}
+
+protected:
+    void* do_allocate(cy::usize size, cy::usize alignment) noexcept override {
+        (void)alignment;
+        return (size <= sizeof(storage_)) ? static_cast<void*>(storage_) : nullptr;
+    }
+    void* do_reallocate(void* pointer, cy::usize old_size, cy::usize new_size,
+                        cy::usize alignment) noexcept override {
+        return reallocate_by_copy(pointer, old_size, new_size, alignment);
+    }
+    void do_deallocate(void* pointer, cy::usize size, cy::usize alignment) noexcept override {
+        (void)pointer;
+        (void)size;
+        (void)alignment;
+    }
+
+private:
+    alignas(64) cy::u8 storage_[4096] = {};
+};
+
+}  // namespace
+
+CY_TEST_CASE("the tracking allocator frees a block whose address the heap handed out again") {
+    // REGRESSION (issue #87). The ring of recently freed pointers was never told when upstream gave
+    // a freed address back out, so the NEXT free of that address read as a double free: it was
+    // counted as one, the block stayed in live_bytes forever, and a stream whose decoder reopened
+    // at the same address reported a leak it did not have.
+    ReusingAllocator upstream;
+    cy::TrackingAllocator tracker(upstream, cy::MemoryDomain::Engine, "reused");
+    void* first = tracker.allocate(256, 16);
+    CY_REQUIRE(first != nullptr);
+    tracker.deallocate(first, 256, 16);
+    void* second = tracker.allocate(512, 16);
+    CY_REQUIRE(second == first);  // the same address, by construction of the upstream
+    CY_CHECK_EQ(tracker.live_bytes(), 512u);
+    tracker.deallocate(second, 512, 16);
+    CY_CHECK_EQ(tracker.live_bytes(), 0u);
+    CY_CHECK_EQ(tracker.double_frees(), 0u);
+    // And a real double free of it is still one.
+    tracker.deallocate(second, 512, 16);
+    CY_CHECK_EQ(tracker.double_frees(), 1u);
+}
+
 CY_TEST_CASE("a capture mode is declared rather than always on") {
     cy::TrackingAllocator tracker(cy::default_allocator(), cy::MemoryDomain::Engine, "sampled");
     CY_CHECK_EQ(tracker.capture_mode(), cy::CaptureMode::Full);

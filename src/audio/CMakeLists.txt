@@ -34,6 +34,27 @@ cy_add_module(
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::core-values)
 
+# Issue #87: the stream player — tracks, refill jobs, crossfades, seeks — over the server's streams.
+#
+# A MODULE OF ITS OWN, AND THE REASON IS A DEFECT THIS ONE DOES NOT FIX. cy_audio above declares
+# `cy::audio::SimulationTier`, `TierBudgets` and `EffectKind` (tiers.h, effects.h) and the server
+# declares different types of the same names in the same namespace (voice.h, server.h, bus.h). No
+# binary linked both until the stream player — which needs the server — joined this directory, and
+# the editor's suites then failed to link on two definitions of `effect_kind_name(EffectKind)`.
+# Keeping the player out of cy_audio keeps the two apart, as they have always been; reconciling the
+# acoustics half's copies with the server's is its own change (see the module README).
+cy_add_module(
+    NAME cy_audio_streaming
+    LAYER scene
+    ALIAS cy::audio-streaming
+    TYPE STATIC
+    SOURCES
+        src/streaming.cpp
+    PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    PUBLIC_DEPENDENCIES cy::core-assets cy::core-base cy::core-memory cy::core-values
+                        cy::servers-audio
+    PRIVATE_DEPENDENCIES cy::core-jobs cy::core-math)
+
 # The Steam Audio dependency, when the option is on. The wrapper target cmake/dependencies.cmake
 # publishes is `cy::dep::steam_audio`; nothing above src/acoustics.cpp links it, and no header here
 # names one of its types.

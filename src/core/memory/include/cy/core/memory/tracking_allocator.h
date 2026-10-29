@@ -198,6 +198,9 @@ private:
     /// counter, so the fall-through is deliberate rather than an omission.
     [[nodiscard]] bool was_recently_freed(const void* pointer) const noexcept;
     void remember_free(const void* pointer) noexcept;
+    /// The address is live again: upstream handed it back out, so freeing it next is not a double
+    /// free.
+    void forget_free(const void* pointer) noexcept;
 
     Allocator* upstream_;
     Header* live_ = nullptr;  // newest first

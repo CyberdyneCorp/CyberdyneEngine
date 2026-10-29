@@ -1,0 +1,114 @@
+# Mutations applied to the shipped sources, each rebuilt, the targeted suite run whole, and the
+# source restored and rebuilt. Driver: apply -> ninja (the suite's targets) -> run the suite's binary
+# -> restore. The first three failing assertions of each run are shown.
+# Host: Linux, NVIDIA RTX 5060, Development build (-O2), GCC 13.
+# Every mutation below turned its suite RED; the suites are green on the restored tree.
+#
+# M0 is the defect this change fixes in the tracking allocator, re-applied: the regression case is
+# red on the code before. M6 is the defect the crossfade case found in the stream player while it
+# was being written (a stopping stream starved of refills, its fade cut to silence), re-applied.
+# M9 removes the engine's workaround for dr_mp3's forward seek.
+
+== M0 the tracking allocator never forgets a freed address the heap hands out again (the code before)
+   unit.memory: RED
+   TEST CASE:  the tracking allocator frees a block whose address the heap handed out again
+   src/core/memory/tests/test_allocators.cpp:379: ERROR: CHECK_EQ( tracker.live_bytes(), 0u ) is NOT correct!
+   src/core/memory/tests/test_allocators.cpp:380: ERROR: CHECK_EQ( tracker.double_frees(), 0u ) is NOT correct!
+   src/core/memory/tests/test_allocators.cpp:383: ERROR: CHECK_EQ( tracker.double_frees(), 1u ) is NOT correct!
+== M1 the resampler reads one phase row and never interpolates to the next
+   integration.audio_stream: RED
+   TEST CASE:  resampler: 44.1 to 48 kHz keeps a sine's frequency, level and timing
+   src/servers/audio/tests/test_stream.cpp:224: ERROR: CHECK_LT( worst, 1e-4 ) is NOT correct!
+== M2 loudness without the K-weighting's high shelf
+   integration.audio_stream: RED
+   TEST CASE:  loudness: a stereo 1 kHz sine at -23 dBFS reads -23 LUFS (EBU Tech 3341)
+   src/servers/audio/tests/test_stream.cpp:264: ERROR: CHECK( (measured->integrated_lufs) == ::cy::test::within(-23.0F, 0.1F) ) is NOT correct!
+== M3 a loop wraps one frame past its start
+   integration.audio_stream: RED
+   TEST CASE:  stream source: a loop wraps sample-accurately, with no frame lost or repeated
+   src/servers/audio/tests/test_stream.cpp:323: ERROR: CHECK( out[index * 2] == ramp_value(source) ) is NOT correct!
+   integration.audio_streaming: RED
+   TEST CASE:  streaming: a loop is crossed again and again with no frame lost or repeated
+   src/audio/tests/test_streaming.cpp:390: ERROR: CHECK_EQ( wrong, 0U ) is NOT correct!
+== M4 a short ring plays silence but counts nothing
+   integration.audio_mixer: RED
+   TEST CASE:  streams: a ring that runs dry plays silence and counts the underrun
+   src/servers/audio/tests/test_server_streams.cpp:108: ERROR: CHECK_EQ( status.underruns, 2U ) is NOT correct!
+   src/servers/audio/tests/test_server_streams.cpp:112: ERROR: CHECK_EQ( mixer.server.statistics().stream_underruns, 2U ) is NOT correct!
+   src/servers/audio/tests/test_server_streams.cpp:113: ERROR: CHECK_EQ( mixer.server.statistics().stream_underrun_frames, (kBlock - 40) + kBlock ) is NOT correct!
+   integration.audio_streaming: RED
+   TEST CASE:  streaming: starved past the ring, a stream plays silence, says so, and recovers
+   src/audio/tests/test_streaming.cpp:256: ERROR: CHECK_GT( starved.underruns, 0U ) is NOT correct!
+   src/audio/tests/test_streaming.cpp:261: ERROR: CHECK( diagnosed ) is NOT correct!
+   src/audio/tests/test_streaming.cpp:266: ERROR: CHECK_GT( rig.server.statistics().stream_underruns, 0U ) is NOT correct!
+== M5 the equal-power curve is a straight line
+   integration.audio_mixer: RED
+   TEST CASE:  streams: an equal-power crossfade holds the summed power at one, frame by frame
+   src/servers/audio/tests/test_server_streams.cpp:158: ERROR: CHECK_EQ( wrong, 0U ) is NOT correct!
+   integration.audio_streaming: RED
+   TEST CASE:  streaming: a crossfade is equal-power and both ramps start in the same block
+   src/audio/tests/test_streaming.cpp:448: ERROR: CHECK_EQ( wrong, 0U ) is NOT correct!
+== M6 a stopping stream is no longer refilled (the defect the crossfade case found)
+   integration.audio_streaming: RED
+   TEST CASE:  streaming: a crossfade is equal-power and both ramps start in the same block
+   src/audio/tests/test_streaming.cpp:448: ERROR: CHECK_EQ( wrong, 0U ) is NOT correct!
+== M7 a flush drops the ring without the one-block fade
+   integration.audio_mixer: RED
+   TEST CASE:  streams: a flush fades out across one block, drops the ring and primes again
+   src/servers/audio/tests/test_server_streams.cpp:180: ERROR: CHECK( (mixer.output[0]) == ::cy::test::within(1.0F - (1.0F / kBlock), 1e-6F) ) is NOT correct!
+   src/servers/audio/tests/test_server_streams.cpp:181: ERROR: CHECK_EQ( mixer.output[(kBlock - 1) * kStereo], 0.0F ) is NOT correct!
+== M8 priming counts as an underrun
+   integration.audio_mixer: RED
+   TEST CASE:  streams: a stream sounds once primed, and waiting to prime is not an underrun
+   src/servers/audio/tests/test_server_streams.cpp:83: ERROR: CHECK_EQ( mixer.server.stream_status(*stream).underruns, 0U ) is NOT correct!
+   TEST CASE:  streams: a flush fades out across one block, drops the ring and primes again
+   src/servers/audio/tests/test_server_streams.cpp:186: ERROR: CHECK_EQ( status.underruns, 0U ) is NOT correct!
+== M9 MP3 seeks through dr_mp3's own forward seek (the engine's workaround removed)
+   integration.audio_codecs: RED
+   TEST CASE:  mp3: a forward seek lands on its frame, where dr_mp3's own lands one delay early
+   src/backends/audio-miniaudio/tests/test_codecs.cpp:103: ERROR: CHECK( got[index] == whole.samples[(frame * 2) + index] ) is NOT correct!
+   src/backends/audio-miniaudio/tests/test_codecs.cpp:103: ERROR: CHECK( got[index] == whole.samples[(frame * 2) + index] ) is NOT correct!
+   src/backends/audio-miniaudio/tests/test_codecs.cpp:103: ERROR: CHECK( got[index] == whole.samples[(frame * 2) + index] ) is NOT correct!
+== M10 a Vorbis seek delivers the first packet with a known position whole, not from the target
+   integration.audio_codecs: RED
+   TEST CASE:  vorbis: a seek anywhere lands on the samples a decode from the start delivers
+   src/backends/audio-miniaudio/tests/test_codecs.cpp:103: ERROR: CHECK( got[index] == whole.samples[(frame * 2) + index] ) is NOT correct!
+   src/backends/audio-miniaudio/tests/test_codecs.cpp:103: ERROR: CHECK( got[index] == whole.samples[(frame * 2) + index] ) is NOT correct!
+   src/backends/audio-miniaudio/tests/test_codecs.cpp:103: ERROR: CHECK( got[index] == whole.samples[(frame * 2) + index] ) is NOT correct!
+== M11 miniaudio's size headers left out of a decoder's count
+   integration.audio_codecs: RED
+   TEST CASE:  decoders: every byte a decoder holds is counted, and none of it grows with use
+   src/backends/audio-miniaudio/tests/test_codecs.cpp:254: ERROR: CHECK_LE( tracker.live_bytes(), resident ) is NOT correct!
+   src/backends/audio-miniaudio/tests/test_codecs.cpp:254: ERROR: CHECK_LE( tracker.live_bytes(), resident ) is NOT correct!
+== M12 the importer ignores the 3D-source option
+   integration.import_audio: RED
+   TEST CASE:  audio: a stereo WAV for a 3D source cooks mono, of the expected length, loop kept
+   tools/import/tests/test_audio.cpp:98: ERROR: CHECK_EQ( view.header.channels, 1 ) is NOT correct!
+   tools/import/tests/test_audio.cpp:101: ERROR: CHECK_EQ( view.payload.size(), 48000U * sizeof(i16) ) is NOT correct!
+   tools/import/tests/test_audio.cpp:114: ERROR: CHECK( (got) == ::cy::test::within(expected, 2e-3F) ) is NOT correct!
+== M13 the importer keeps loop points in source frames across a rate change
+   integration.import_audio: RED
+   TEST CASE:  audio: a stereo WAV for a 3D source cooks mono, of the expected length, loop kept
+   tools/import/tests/test_audio.cpp:103: ERROR: CHECK_EQ( view.header.loop_start, 4800U ) is NOT correct!
+== M14 normalisation gain uncapped by the target peak
+   integration.import_audio: RED
+   TEST CASE:  audio: loudness is measured, and normalising writes a gain capped at the peak
+   tools/import/tests/test_audio.cpp:189: ERROR: CHECK( (view.header.peak_dbfs + view.header.gain_db) == ::cy::test::within(-1.0F, 1e-4F) ) is NOT correct!
+   tools/import/tests/test_audio.cpp:190: ERROR: CHECK( reported(capped, "audio-gain-capped") ) is NOT correct!
+== M15 audio_stream_play plays during a resimulated tick
+   unit.abi: RED
+   TEST CASE:  audio streams: while resimulating, the writes succeed and do nothing
+   src/abi/tests/test_game_audio_streams.cpp:209: ERROR: CHECK_EQ( stream, 0U ) is NOT correct!
+   src/abi/tests/test_game_audio_streams.cpp:213: ERROR: CHECK_EQ( fixture.audio.calls, 0 ) is NOT correct!
+   src/abi/tests/test_game_audio_streams.cpp:216: ERROR: CHECK_EQ( fixture.audio.calls, 1 ) is NOT correct!
+== M16 the adapter ignores crossfade_from: the old stream keeps playing
+   integration.game_backend_audio_streams: RED
+   TEST CASE:  audio backend: a track streams, crossfades to another, seeks and reports itself
+   src/game_backend/tests/test_audio_streams.cpp:153: ERROR: CHECK_EQ( fixture.audio.output[0], 0.0F ) is NOT correct!
+   src/game_backend/tests/test_audio_streams.cpp:157: ERROR: CHECK_EQ( table().audio_stream_state(&fixture.audio.host, left, &state), CY_RESULT_NOT_FOUND ) is NOT correct!
+== M17 the ring writes past what the reader has freed
+   integration.audio_stream: RED
+   TEST CASE:  stream ring: frames come out in order across the wrap, and a full ring refuses
+   src/servers/audio/tests/test_stream.cpp:280: ERROR: CHECK_EQ( ring.write(first, 4), 4U ) is NOT correct!
+   src/servers/audio/tests/test_stream.cpp:284: ERROR: CHECK_EQ( ring.write(second, 6), 4U ) is NOT correct!
+   src/servers/audio/tests/test_stream.cpp:285: ERROR: CHECK_EQ( ring.writable_frames(), 0U ) is NOT correct!

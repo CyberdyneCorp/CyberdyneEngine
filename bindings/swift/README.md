@@ -449,6 +449,14 @@ rebinding flow; `InputProfile.save()`, `load(_:)` and `reset()` keep the player'
 reads the player's files; `Widget.setTooltip(_:)` gives a widget a tooltip. Every call is refused
 from `onFixedUpdate`. `MenusTests.swift` checks them through `FakeEngine`; `samples/16-menus` is the
 worked example, and [the Swift guide](../../docs/guides/swift.md) has the walkthrough.
+## Streamed music and ambience (ABI 1.18)
+
+`Audio.swift` gains streamed tracks (issue #87): `Audio.track(_:)` resolves a track the host
+registered, `Audio.stream(_:options:)` plays it (`StreamOptions`: volume, bus, fade-in, start,
+`rawLevel`), `Audio.crossfade(from:to:seconds:options:)` fades one track into another on the same
+sample, and an `AudioStream` stops, seeks, ramps its volume and reports its `StreamState` (nil once it
+has ended). `AudioStreamTests.swift` drives each through `FakeEngine`. `samples/14-third-person`'s
+`Ambience.swift` streams the hillside bed and falls back to its in-memory loop when the host has none.
 
 ## What is thinner than `swift-scripting` asks for
 

@@ -111,6 +111,8 @@ AudioServer::AudioServer(Allocator& allocator) noexcept
       voices_(allocator),
       clips_(allocator),
       listeners_(allocator),
+      streams_(allocator),
+      stream_scratch_(allocator),
       bus_buffers_(allocator),
       levels_(allocator),
       voice_scratch_(allocator),
@@ -188,6 +190,8 @@ void AudioServer::shutdown() noexcept {
     voices_.clear();
     clips_.clear();
     listeners_.clear();
+    streams_.clear();
+    stream_scratch_.clear();
     bus_buffers_.clear();
     levels_.clear();
     voice_scratch_.clear();
@@ -207,6 +211,12 @@ Status AudioServer::allocate_buffers() noexcept {
         return sized;
     }
     if (Status sized = listeners_.resize(config_.listener_capacity); !sized) {
+        return sized;
+    }
+    if (Status sized = streams_.resize(config_.stream_capacity); !sized) {
+        return sized;
+    }
+    if (Status sized = stream_scratch_.resize(block * kMaxChannels); !sized) {
         return sized;
     }
     // EVERY BUFFER THE MIXER TOUCHES IS ALLOCATED HERE, because the thread that would otherwise
@@ -622,6 +632,8 @@ void AudioServer::update(f32 delta_seconds) noexcept {
         }
     }
 
+    update_streams();
+
     Listener fallback;
     const Listener* listener = primary_listener();
     const Listener& active = (listener == nullptr) ? fallback : *listener;
@@ -787,6 +799,10 @@ void AudioServer::render_callback(f32* frames, u32 frame_count, u32 channels, vo
 void AudioServer::drain_commands() noexcept {
     AudioCommand command;
     while (commands_.pop(command)) {
+        if (command.kind >= CommandKind::StreamStart && command.kind < CommandKind::Count) {
+            apply_stream_command(command);
+            continue;
+        }
         const u32 index = command.voice.index();
         if (command.kind == CommandKind::SetBusVolume || index >= voices_.size()) {
             continue;
@@ -834,6 +850,10 @@ void AudioServer::drain_commands() noexcept {
             case CommandKind::SetPosition:
             case CommandKind::SetOcclusion:
             case CommandKind::SetBusVolume:
+            case CommandKind::StreamStart:
+            case CommandKind::StreamFade:
+            case CommandKind::StreamFlush:
+            case CommandKind::StreamStop:
             case CommandKind::Count:
                 // The parameter changes travel in the published mix state rather than as commands:
                 // they are recomputed every update anyway, and a queue entry per parameter per
@@ -1098,6 +1118,7 @@ void AudioServer::mix_block(u32 block_frames, u32 channels, u32 published) noexc
         }
     }
 
+    mix_streams(block_frames, channels);
     process_buses(block_frames, channels);
 }
 

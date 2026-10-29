@@ -1719,6 +1719,52 @@ pub struct CyVideoMode {
     pub height: u32,
 }
 
+/// `CyAudioTrack`, the ABI's alias for `uint64_t`.
+pub type CyAudioTrack = u64;
+
+/// `CyAudioStream`, the ABI's alias for `uint64_t`.
+pub type CyAudioStream = u64;
+
+/// `CyAudioStreamPlay` — 48 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyAudioStreamPlay {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `CyAudioTrack` at byte 8.
+    pub track: CyAudioTrack,
+    /// `CyAudioBus` at byte 16.
+    pub bus: CyAudioBus,
+    /// `CyAudioStream` at byte 24.
+    pub crossfade_from: CyAudioStream,
+    /// `float` at byte 32.
+    pub volume: f32,
+    /// `float` at byte 36.
+    pub fade_seconds: f32,
+    /// `double` at byte 40.
+    pub start_seconds: f64,
+}
+
+/// `CyAudioStreamState` — 32 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyAudioStreamState {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `double` at byte 8.
+    pub position_seconds: f64,
+    /// `double` at byte 16.
+    pub duration_seconds: f64,
+    /// `float` at byte 24.
+    pub gain: f32,
+    /// `uint32_t` at byte 28.
+    pub underruns: u32,
+}
+
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -1733,7 +1779,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 1720 bytes, 8-byte aligned.
+/// `CyInterface` — 1768 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -2410,6 +2456,22 @@ pub struct CyInterface {
     /// `CyResult(*)(CyEngine, CyUiElement, const char*)` at byte 1712.
     pub ui_widget_set_tooltip:
         Option<unsafe extern "C" fn(CyEngine, CyUiElement, *const ::std::ffi::c_char) -> i32>,
+    /// `CyResult(*)(CyEngine, const char*, CyAudioTrack*)` at byte 1720.
+    pub audio_find_track:
+        Option<unsafe extern "C" fn(CyEngine, *const ::std::ffi::c_char, *mut CyAudioTrack) -> i32>,
+    /// `CyResult(*)(CyEngine, const CyAudioStreamPlay*, CyAudioStream*)` at byte 1728.
+    pub audio_stream_play:
+        Option<unsafe extern "C" fn(CyEngine, *const CyAudioStreamPlay, *mut CyAudioStream) -> i32>,
+    /// `CyResult(*)(CyEngine, CyAudioStream, float)` at byte 1736.
+    pub audio_stream_stop: Option<unsafe extern "C" fn(CyEngine, CyAudioStream, f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyAudioStream, double)` at byte 1744.
+    pub audio_stream_seek: Option<unsafe extern "C" fn(CyEngine, CyAudioStream, f64) -> i32>,
+    /// `CyResult(*)(CyEngine, CyAudioStream, float, float)` at byte 1752.
+    pub audio_stream_set_volume:
+        Option<unsafe extern "C" fn(CyEngine, CyAudioStream, f32, f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyAudioStream, CyAudioStreamState*)` at byte 1760.
+    pub audio_stream_state:
+        Option<unsafe extern "C" fn(CyEngine, CyAudioStream, *mut CyAudioStreamState) -> i32>,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -2665,5 +2727,11 @@ impl CyInterface {
         user_data_write: None,
         user_data_read: None,
         ui_widget_set_tooltip: None,
+        audio_find_track: None,
+        audio_stream_play: None,
+        audio_stream_stop: None,
+        audio_stream_seek: None,
+        audio_stream_set_volume: None,
+        audio_stream_state: None,
     };
 }

@@ -179,6 +179,9 @@ MINIAUDIO = ("miniaudio", "src/backends/audio-miniaudio/", "cy::audio::AudioBack
 # builds `CY_AUDIO_STEAM_AUDIO` for the first time, so it is the milestone that owes the check.
 ONNXRUNTIME = ("ONNX Runtime", "src/ml/src/", "cy::ml::InferenceBackend")
 PHONON = ("Steam Audio", "src/audio/src/", "cy::audio::AcousticsBackend")
+# Issue #87. stb_vorbis is included as `stb_vorbis.c` with STB_VORBIS_HEADER_ONLY — the library's
+# own convention for its declarations — by the audio backend's Vorbis decoder and nowhere else.
+STB_VORBIS = ("stb_vorbis", "src/backends/audio-miniaudio/", "cy::audio::AudioCodecs")
 
 # M11.e (issue #86). The text stack: four libraries and one backend module. `text-and-fonts` states
 # the rule as a requirement — "no HarfBuzz, ICU, or FreeType type SHALL appear outside the backend" —
@@ -201,6 +204,7 @@ THIRD_PARTY_FILES = {
     "onnxruntime_c_api.h": ONNXRUNTIME,
     "onnxruntime_cxx_api.h": ONNXRUNTIME,
     "phonon.h": PHONON,
+    "stb_vorbis.c": STB_VORBIS,
 }
 
 # --- The barrier rule (task 2.2.4) ------------------------------------------------------------------

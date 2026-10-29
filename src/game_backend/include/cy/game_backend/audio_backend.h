@@ -14,11 +14,17 @@
 // HANDLES. `CyAudioCue` carries a `ClipHandle`'s bits, `CyAudioBus` a `BusHandle`'s and
 // `CyAudioVoice` a `VoiceHandle`'s, generation included. Nothing is looked up by address, so a
 // voice whose slot was reused answers "not playing", and stopping it touches nobody else's sound.
+//
+// STREAMS (ABI 1.18, issue #87). With a `cy::audio::StreamPlayer` bound (`bind_streams`), the
+// adapter answers the streamed-track entries: tracks are named with `add_track`, a `CyAudioTrack`
+// is the track's place in that table plus one, and a `CyAudioStream` is the player's `StreamId`,
+// which is never reused — so an ended stream never names a later one. `update()` pumps the player.
 
 #pragma once
 
 #include <cy/abi/game/audio.h>
 #include <cy/abi/host.h>
+#include <cy/audio/streaming.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/array.h>
@@ -50,8 +56,14 @@ public:
     [[nodiscard]] Status add_cue(Name name, audio::ClipHandle clip) noexcept;
 
     /// Once per frame, game thread: advance fades, move attached voices to their entities, and
-    /// forget voices the mixer finished.
+    /// forget voices the mixer finished. Pumps the bound stream player.
     void update(f32 delta_seconds) noexcept;
+
+    /// Answer the streamed-track entries with `player`, borrowed; null unbinds, and the entries
+    /// answer UNAVAILABLE again.
+    void bind_streams(audio::StreamPlayer* player) noexcept { streams_ = player; }
+    /// Name a cooked track for `audio_find_track`, and register it with the bound player.
+    [[nodiscard]] Status add_track(Name name, const audio::TrackSource& track) noexcept;
 
     /// Voices the adapter is still fading or moving. For a test and for diagnostics.
     [[nodiscard]] usize tracked_voices() const noexcept { return voices_.size(); }
@@ -64,6 +76,16 @@ public:
     [[nodiscard]] CyResult find_bus(const char* name, CyAudioBus& out_bus) noexcept override;
     [[nodiscard]] CyResult set_bus_volume(CyAudioBus bus, f32 volume,
                                           f32 fade_seconds) noexcept override;
+    [[nodiscard]] CyResult find_track(const char* name, CyAudioTrack& out_track) noexcept override;
+    [[nodiscard]] CyResult stream_play(const CyAudioStreamPlay& play,
+                                       CyAudioStream& out_stream) noexcept override;
+    [[nodiscard]] CyResult stream_stop(CyAudioStream stream,
+                                       f32 fade_out_seconds) noexcept override;
+    [[nodiscard]] CyResult stream_seek(CyAudioStream stream, f64 seconds) noexcept override;
+    [[nodiscard]] CyResult stream_set_volume(CyAudioStream stream, f32 volume,
+                                             f32 fade_seconds) noexcept override;
+    [[nodiscard]] CyResult stream_state(CyAudioStream stream,
+                                        CyAudioStreamState& out_state) noexcept override;
 
 private:
     struct Cue {
@@ -110,8 +132,12 @@ private:
     [[nodiscard]] bool advance_voice(Voice& voice, f32 delta_seconds) noexcept;
     void advance_buses(f32 delta_seconds) noexcept;
 
+    [[nodiscard]] Name track_name(CyAudioTrack track) const noexcept;
+
     audio::AudioServer& server_;
     scene::SceneTree* tree_;
+    audio::StreamPlayer* streams_ = nullptr;
+    Array<Name> tracks_;
     Array<Cue> cues_;
     Array<Voice> voices_;
     Array<BusFade> bus_fades_;

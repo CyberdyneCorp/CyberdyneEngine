@@ -130,6 +130,11 @@ void* TrackingAllocator::do_allocate(usize size, usize alignment) noexcept {
         std::memset(payload + size, kRedZoneByte, kRedZoneBytes);
     }
 
+    // A heap reuses a freed block for the next request that fits, so this address may be in the
+    // ring of recent frees. It is live now; leaving it there made its next free read as a double
+    // free and kept the block in `live_bytes_` for good.
+    forget_free(payload);
+
     ++live_allocations_;
     live_bytes_ += size;
     peak_bytes_ = std::max(peak_bytes_, live_bytes_);
@@ -161,6 +166,14 @@ void TrackingAllocator::unlink(Header& header) noexcept {
 bool TrackingAllocator::was_recently_freed(const void* pointer) const noexcept {
     return std::ranges::any_of(recent_frees_,
                                [pointer](const void* candidate) { return candidate == pointer; });
+}
+
+void TrackingAllocator::forget_free(const void* pointer) noexcept {
+    for (const void*& candidate : recent_frees_) {
+        if (candidate == pointer) {
+            candidate = nullptr;
+        }
+    }
 }
 
 void TrackingAllocator::remember_free(const void* pointer) noexcept {
