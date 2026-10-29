@@ -22,13 +22,13 @@
 
 using namespace cy;
 using namespace cy::import;
-namespace signal = cy::test::audio_signal;
+namespace sig = cy::test::audio_signal;
 
 namespace {
 
 [[nodiscard]] std::vector<u8> fixture(const char* name) {
     const std::string path = std::string(CY_AUDIO_CONTENT_DIR) + "/" + name;
-    std::vector<u8> bytes = signal::read_file(path);
+    std::vector<u8> bytes = sig::read_file(path);
     CY_REQUIRE_MESSAGE(!bytes.empty(), "missing fixture " << path);
     return bytes;
 }
@@ -81,8 +81,8 @@ CY_TEST_CASE("audio: a stereo WAV for a 3D source cooks mono, of the expected le
     // One second at 44.1 kHz with a smpl loop over frames 4410..39689 inclusive, cooked for a 3D
     // emitter at 48 kHz: mono, ceil(44100 * 48000 / 44100) = 48000 frames, and the loop converted
     // by the same ratio — 4800 to 43200.
-    const std::vector<u8> wav = signal::wav_bytes(signal::reference_samples(44100), 2,
-                                                  signal::kFixtureRate, true, 4410, 39689);
+    const std::vector<u8> wav =
+        sig::wav_bytes(sig::reference_samples(44100), 2, sig::kFixtureRate, true, 4410, 39689);
     ImportOptions options;
     set(options, "spatial", OptionValue::of_bool(true));
     const ImportResult result = import_audio(wav, &options, "sfx/engine.wav");
@@ -103,7 +103,7 @@ CY_TEST_CASE("audio: a stereo WAV for a 3D source cooks mono, of the expected le
     for (u64 output = 1600; output < 46000; output += 1600) {
         const u64 input = (output * 147) / 160;
         const f32 expected =
-            0.5F * (signal::reference_float(input, 0) + signal::reference_float(input, 1));
+            0.5F * (sig::reference_float(input, 0) + sig::reference_float(input, 1));
         const f32 got = static_cast<f32>(sample_at(view, output)) / 32767.0F;
         CY_CHECK_NEAR(got, expected, 2e-3F);
     }
@@ -136,8 +136,8 @@ CY_TEST_CASE("audio: the mode by use — a short MP3 decodes to PCM, a FLAC kept
     const audio::CookedAudioView mp3 =
         cooked(import_audio(fixture("fixtures/tone.mp3"), &decoded, "sfx/tone.mp3"));
     CY_CHECK(mp3.header.codec == audio::AudioCodec::Pcm16);
-    CY_CHECK_EQ(mp3.header.sample_rate, signal::kFixtureRate);
-    CY_CHECK_EQ(mp3.header.frame_count, signal::kLongFrames);  // gapless: no delay, no padding
+    CY_CHECK_EQ(mp3.header.sample_rate, sig::kFixtureRate);
+    CY_CHECK_EQ(mp3.header.frame_count, sig::kLongFrames);  // gapless: no delay, no padding
 
     ImportOptions compressed;
     set(compressed, "mode", OptionValue::of_enumeration("compressed"));
@@ -145,7 +145,7 @@ CY_TEST_CASE("audio: the mode by use — a short MP3 decodes to PCM, a FLAC kept
         cooked(import_audio(fixture("fixtures/tone.flac"), &compressed, "vo/tone.flac"));
     CY_CHECK(flac.header.codec == audio::AudioCodec::Flac);
     CY_CHECK(flac.header.load_mode == audio::AudioLoadMode::Compressed);
-    CY_CHECK_EQ(flac.header.frame_count, signal::kShortFrames);
+    CY_CHECK_EQ(flac.header.frame_count, sig::kShortFrames);
     CY_CHECK(flac.header.looping);
     CY_CHECK_EQ(flac.header.loop_start, 4410U);
     CY_CHECK_EQ(flac.header.loop_end, 26460U);
@@ -167,11 +167,11 @@ CY_TEST_CASE("audio: a 3D source cannot keep a stereo bitstream, so it cooks to 
 CY_TEST_CASE("audio: loudness is measured, and normalising writes a gain capped at the peak") {
     // The reference signal at half amplitude, quiet enough that -16 LUFS needs a gain its peak
     // cannot take without passing -1 dBFS.
-    std::vector<i16> quiet = signal::reference_samples(44100);
+    std::vector<i16> quiet = sig::reference_samples(44100);
     for (i16& sample : quiet) {
         sample = static_cast<i16>(sample / 2);
     }
-    const std::vector<u8> wav = signal::wav_bytes(quiet, 2, signal::kFixtureRate);
+    const std::vector<u8> wav = sig::wav_bytes(quiet, 2, sig::kFixtureRate);
     const audio::CookedAudioView plain = cooked(import_audio(wav, nullptr, "sfx/quiet.wav"));
     CY_CHECK_EQ(plain.header.gain_db, 0.0F);
 
@@ -195,12 +195,12 @@ CY_TEST_CASE("audio: loudness is measured, and normalising writes a gain capped 
 
 CY_TEST_CASE("audio: silence is trimmed from both ends, never into the loop") {
     std::vector<i16> padded(usize{2000} * 2, 0);
-    const std::vector<i16> tone = signal::reference_samples(10000);
+    const std::vector<i16> tone = sig::reference_samples(10000);
     padded.insert(padded.end(), tone.begin(), tone.end());
     padded.insert(padded.end(), usize{3000} * 2, 0);
     AudioCookReport report;
     Array<u8> out;
-    std::vector<u8> wav = signal::wav_bytes(padded, 2, signal::kFixtureRate);
+    std::vector<u8> wav = sig::wav_bytes(padded, 2, sig::kFixtureRate);
     AudioCookOptions cook_options;
     cook_options.trim_silence = true;
     cook_options.sample_rate = 0;
@@ -215,7 +215,7 @@ CY_TEST_CASE("audio: silence is trimmed from both ends, never into the loop") {
     cook_options.loop = AudioLoop::On;
     cook_options.loop_start = 1000;
     cook_options.loop_end = 9000;
-    wav = signal::wav_bytes(padded, 2, signal::kFixtureRate);
+    wav = sig::wav_bytes(padded, 2, sig::kFixtureRate);
     CY_REQUIRE(
         cook_audio(Span<const u8>(wav.data(), wav.size()), cook_options, out, report).has_value());
     CY_CHECK_EQ(report.trimmed_head, 1000U);
@@ -224,7 +224,7 @@ CY_TEST_CASE("audio: silence is trimmed from both ends, never into the loop") {
 }
 
 CY_TEST_CASE("audio: two cooks of one source are byte-identical") {
-    const std::vector<u8> wav = signal::wav_bytes(signal::reference_samples(22050), 2, 22050);
+    const std::vector<u8> wav = sig::wav_bytes(sig::reference_samples(22050), 2, 22050);
     ImportOptions options;
     set(options, "spatial", OptionValue::of_bool(true));
     set(options, "normalise", OptionValue::of_enumeration("loudness"));
@@ -264,7 +264,7 @@ CY_TEST_CASE("audio: Opus and garbage are refused with the reason, and the regis
 
 CY_TEST_CASE("audio: without the miniaudio backend a source is refused naming the option") {
     CY_CHECK_FALSE(audio_cooking_available());
-    const std::vector<u8> wav = signal::wav_bytes(signal::reference_samples(100), 2, 44100);
+    const std::vector<u8> wav = sig::wav_bytes(sig::reference_samples(100), 2, 44100);
     const ImportResult result = import_audio(wav, nullptr, "sfx/a.wav");
     CY_CHECK(result.has_errors());
     CY_CHECK(reported(result, "audio-backend-missing"));

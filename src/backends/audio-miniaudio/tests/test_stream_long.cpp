@@ -23,7 +23,7 @@
 
 using namespace cy;
 using namespace cy::audio;
-namespace signal = cy::test::audio_signal;
+namespace sig = cy::test::audio_signal;
 
 namespace {
 
@@ -33,7 +33,7 @@ namespace {
 
 [[nodiscard]] std::vector<u8> fixture(const char* name) {
     const std::string path = std::string(CY_AUDIO_CONTENT_DIR) + "/fixtures/" + name;
-    std::vector<u8> bytes = signal::read_file(path);
+    std::vector<u8> bytes = sig::read_file(path);
     CY_REQUIRE_MESSAGE(!bytes.empty(), "missing fixture " << path);
     return bytes;
 }
@@ -47,8 +47,8 @@ CY_TEST_CASE(
     header.codec = AudioCodec::Vorbis;
     header.load_mode = AudioLoadMode::Compressed;
     header.channels = 2;
-    header.sample_rate = signal::kFixtureRate;
-    header.frame_count = signal::kLongFrames;
+    header.sample_rate = sig::kFixtureRate;
+    header.frame_count = sig::kLongFrames;
     header.looping = true;
     header.loop_start = 44100;
     header.loop_end = 220500;

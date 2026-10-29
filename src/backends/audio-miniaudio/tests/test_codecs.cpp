@@ -24,7 +24,7 @@
 
 using namespace cy;
 using namespace cy::audio;
-namespace signal = cy::test::audio_signal;
+namespace sig = cy::test::audio_signal;
 
 namespace {
 
@@ -34,7 +34,7 @@ namespace {
 
 [[nodiscard]] std::vector<u8> fixture(const char* name) {
     const std::string path = std::string(CY_AUDIO_CONTENT_DIR) + "/fixtures/" + name;
-    std::vector<u8> bytes = signal::read_file(path);
+    std::vector<u8> bytes = sig::read_file(path);
     CY_REQUIRE_MESSAGE(!bytes.empty(), "missing fixture " << path);
     return bytes;
 }
@@ -68,7 +68,7 @@ struct Decoded {
     f64 noise_power = 0.0;
     for (u64 frame = first; frame < decoded.frames(); ++frame) {
         for (u32 channel = 0; channel < 2; ++channel) {
-            const auto reference = static_cast<f64>(signal::reference_float(frame, channel));
+            const auto reference = static_cast<f64>(sig::reference_float(frame, channel));
             const f64 error = static_cast<f64>(decoded.samples[(frame * 2) + channel]) - reference;
             signal_power += reference * reference;
             noise_power += error * error;
@@ -109,7 +109,7 @@ constexpr u64 kNone = ~0ULL;
     for (u64 frame = 0; frame < decoded.frames(); ++frame) {
         for (u32 channel = 0; channel < channels; ++channel) {
             if (decoded.samples[(frame * decoded.format.channels) + channel] !=
-                signal::reference_float(frame, channel)) {
+                sig::reference_float(frame, channel)) {
                 return frame;
             }
         }
@@ -139,9 +139,9 @@ CY_TEST_CASE("flac: the fixture decodes to the reference signal exactly, with it
     const std::vector<u8> bytes = fixture("tone.flac");
     const Decoded decoded(bytes);
     CY_CHECK(decoded.container == SourceFormat::Flac);
-    CY_CHECK_EQ(decoded.format.sample_rate, signal::kFixtureRate);
-    CY_CHECK_EQ(decoded.format.frame_count, signal::kShortFrames);
-    CY_REQUIRE_EQ(decoded.frames(), signal::kShortFrames);
+    CY_CHECK_EQ(decoded.format.sample_rate, sig::kFixtureRate);
+    CY_CHECK_EQ(decoded.format.frame_count, sig::kShortFrames);
+    CY_REQUIRE_EQ(decoded.frames(), sig::kShortFrames);
     CY_CHECK_EQ(first_difference(decoded, 2), kNone);
     CY_CHECK(decoded.loop.present);
     CY_CHECK_EQ(decoded.loop.start, 4410U);
@@ -149,8 +149,8 @@ CY_TEST_CASE("flac: the fixture decodes to the reference signal exactly, with it
 }
 
 CY_TEST_CASE("wav: a 16-bit WAV decodes exactly, and its smpl loop is read as an exclusive end") {
-    const std::vector<u8> bytes = signal::wav_bytes(signal::reference_samples(11025), 2,
-                                                    signal::kFixtureRate, true, 100, 2099);
+    const std::vector<u8> bytes =
+        sig::wav_bytes(sig::reference_samples(11025), 2, sig::kFixtureRate, true, 100, 2099);
     const Decoded decoded(bytes);
     CY_CHECK(decoded.container == SourceFormat::Wav);
     CY_REQUIRE_EQ(decoded.frames(), 11025U);
@@ -164,8 +164,8 @@ CY_TEST_CASE("vorbis: the fixture decodes frame-aligned and close to the referen
     const std::vector<u8> bytes = fixture("tone.ogg");
     const Decoded decoded(bytes);
     CY_CHECK(decoded.container == SourceFormat::OggVorbis);
-    CY_CHECK_EQ(decoded.format.frame_count, signal::kLongFrames);
-    CY_CHECK_EQ(decoded.frames(), signal::kLongFrames);
+    CY_CHECK_EQ(decoded.format.frame_count, sig::kLongFrames);
+    CY_CHECK_EQ(decoded.frames(), sig::kLongFrames);
     const f64 snr = snr_db(decoded);
     CY_TEST_MESSAGE("Vorbis q5 fixture: " << snr << " dB against the reference");
     CY_CHECK_GT(snr, 25.0);
@@ -178,8 +178,8 @@ CY_TEST_CASE("mp3: the LAME delay and padding are removed, so every frame is whe
     const std::vector<u8> bytes = fixture("tone.mp3");
     const Decoded decoded(bytes);
     CY_CHECK(decoded.container == SourceFormat::Mp3);
-    CY_CHECK_EQ(decoded.format.frame_count, signal::kLongFrames);
-    CY_CHECK_EQ(decoded.frames(), signal::kLongFrames);
+    CY_CHECK_EQ(decoded.format.frame_count, sig::kLongFrames);
+    CY_CHECK_EQ(decoded.frames(), sig::kLongFrames);
     const f64 snr = snr_db(decoded);
     CY_TEST_MESSAGE("MP3 192 kbit/s fixture: " << snr << " dB against the reference");
     CY_CHECK_GT(snr, 25.0);
@@ -276,7 +276,7 @@ CY_TEST_CASE("decoders: the decode cost per stream, measured") {
         }
         const f64 seconds =
             std::chrono::duration<f64>(std::chrono::steady_clock::now() - start).count();
-        const f64 audio_seconds = static_cast<f64>(frames) / signal::kFixtureRate;
+        const f64 audio_seconds = static_cast<f64>(frames) / sig::kFixtureRate;
         const f64 core_fraction = seconds / audio_seconds;
         CY_TEST_MESSAGE(std::string(name)
                         << ": " << (core_fraction * 100.0) << " % of one core per stream ("
