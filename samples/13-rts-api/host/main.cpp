@@ -22,7 +22,9 @@
 //   just run-sample rts-api --battle           ABI 1.16: the game fights a battle on the company's
 //                                              field instead of patrolling it, for
 //                                              `battle::kTicks` frames; with `--render <dir> --map`
-//                                              it is drawn, with the topographic minimap
+//                                              it is drawn, with the topographic minimap;
+//                                              `--minimap-upload` re-makes the minimap's page
+//                                              with `upload_atlas` each time instead of staging it
 //
 // The report is one line per claim, and tests/test_rts_api_sample.cpp reads it. Every number comes
 // from the engine (the servers and the adapters) or from the game's `RtsReport`; none is computed
@@ -109,6 +111,8 @@ struct MapFlags {
             options.shadows = false;
         } else if (std::strcmp(flag, "--no-validation") == 0) {
             options.validation = false;
+        } else if (std::strcmp(flag, "--minimap-upload") == 0) {
+            options.minimap_upload = true;
         } else {
             return false;
         }

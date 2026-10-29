@@ -576,8 +576,7 @@ CY_TEST_CASE(
 CY_TEST_CASE("(j) a staged page changes in the next frame, with no submission of its own") {
     // A minimap the game redraws while it runs: `stage_atlas` replaces the page's texels inside
     // the frame's own graph. The frame after the stage shows the new texels, the frame before shows
-    // the old, and the device began exactly one frame for each — `upload_atlas` begins, submits and
-    // waits for one of its own every time it is called.
+    // the old, and the device began exactly one frame for each.
     DeviceFixture fixture;
     if (!fixture.has_gpu()) {
         fixture.report_skip();

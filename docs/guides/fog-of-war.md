@@ -90,8 +90,9 @@ it stands on. `samples/13-rts-api/host/render.cpp` (`--render <dir> --fog`) does
 
 ### The minimap
 
-`compose_minimap_fog(field.texels(), …, region, width, height, style, out)` makes the overlay; upload
-it with `UiRenderer::upload_atlas(page, Rgba8Unorm, …)` and show it on the HUD's minimap — the C++
+`compose_minimap_fog(field.texels(), …, region, width, height, style, out)` makes the overlay; make
+the page with `UiRenderer::upload_atlas(page, Rgba8Unorm, …)`, change it after with `stage_atlas`
+(both copy it in the next frame's graph), and show it on the HUD's minimap — the C++
 `Hud::set_minimap_fog(page)` or the Swift `HudModel.fogPage`. It sits between the minimap's ground
 and its dots.
 
