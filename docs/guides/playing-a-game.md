@@ -109,9 +109,7 @@ player.jump       keyboard/f
 weapon.fire       gamepad/rightTrigger
 ```
 
-A slot is the action's own: the first binding of jump is slot 0 whatever is bound before it. (It was
-counted across every action, so only the table's first action could be rebound; fixed, with
-`unit.input_actions`' "an override addresses its own action's bindings".)
+A slot is the action's own: the first binding of jump is slot 0 whatever is bound before it.
 
 ## 5. The pause and the menu
 

@@ -3,7 +3,9 @@
 # Driver: apply -> ninja (the suites' targets) -> the suite binaries -> restore.
 # Host: Linux, NVIDIA RTX 5060 (Vulkan 1.4), Development build, GCC 13, Swift 6.3.3.
 # Every mutation below turned its suite RED; the suites are green on the restored tree.
-# M5, M9 and M14 were first written in a form the compiler refused (an unused name under -Werror);
+# M5 (the per-action override slot) is not listed: main fixed the same defect with its own
+# regression test (#139) and this change took that fix on the rebase.
+# M9 and M14 were first written in a form the compiler refused (an unused name under -Werror);
 # they were rewritten and run again, and are listed in the form that ran.
 
 == M1 the pointer delta adds the input layer's +Y-up MoveY unconverted (the sign before this change)
@@ -24,12 +26,6 @@
    cy_test_integration_game_backend_input: RED
    TEST CASE:  a frame that runs no tick still turns with the mouse, and the tick after adds none
    TEST CASE:  a window resolved again at the same tick is a new window to the pointer
-== M5 an override's ordinal counts every action's bindings (the slot before this change)
-   file: src/servers/input/src/user.cpp
-   cy_test_unit_input_actions: RED
-   TEST CASE:  input: an override addresses its own action's bindings, whatever is bound before it
-   cy_test_integration_first_person_play: RED
-   TEST CASE:  first-person play: a player's rebinding moves jump from Space to F
 == M6 a paused frame runs its ticks
    file: samples/play/play_host.cpp
    cy_test_integration_first_person_play: RED

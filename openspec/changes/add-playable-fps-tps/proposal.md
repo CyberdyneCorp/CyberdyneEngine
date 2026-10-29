@@ -31,8 +31,6 @@ reason a game could not have been played before.
   pushed away read as a pull. A frame that ran no tick published no motion at all — a fast display
   judders — and now the adapter observes the events still waiting for a tick, each once
   (`InputServer::resolutions` names the window).
-- **A rebinding of any action but the table's first never applied.** An override's slot counted the
-  bindings of every action before it; it counts the action's own.
 - **A resized Vulkan swapchain kept no handle.** `resize_swapchain` destroyed the swapchain and made
   another under a handle it never returned; it now rebuilds in the record the caller's handle names,
   the old swapchain handed to the driver as the one replaced.
@@ -41,6 +39,5 @@ reason a game could not have been played before.
 
 No ABI entry is added or changed. A module that read the pointer's delta from a real mouse reads its
 y with the sign its documentation always gave; the scripted first-person host injected the input
-layer's convention wrong by the same sign, and both are corrected together. A profile with
-overrides for any action but the first now applies them. `DisplayServer` gains two non-pure virtuals
-whose defaults refuse, so the native, stub and iOS ports are unchanged.
+layer's convention wrong by the same sign, and both are corrected together. `DisplayServer` gains
+two non-pure virtuals whose defaults refuse, so the native, stub and iOS ports are unchanged.

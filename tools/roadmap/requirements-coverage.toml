@@ -9389,13 +9389,6 @@ case = "sdl3 injector: an injected key arrives as the key a person's press of it
 note = "Real `SDL_Event`s on SDL's queue, through `Sdl3InputSource`'s watch: W, Space, left Control and Escape arrive as themselves, the input source's scancode table read backwards; a key with no scancode is refused. 'injected motion is SDL's, so the source flips its Y once' and 'a virtual gamepad's stick and trigger arrive as a pad's would' (SDL's own virtual joystick) are the other two inputs. Headless in CI: SDL's event and gamepad subsystems need no display."
 
 [[coverage]]
-row = "input-and-actions"
-requirement = "An override addresses its own action's bindings"
-evidence = "test:unit.input_actions"
-case = "input: an override addresses its own action's bindings, whatever is bound before it"
-note = "Movement then jump, jump's slot zero overridden with F: F jumps, Space does not, W still moves. On the old ordinal — one counter across every action — jump's first binding was slot 4 and the override never applied (red by mutation, `openspec/changes/add-playable-fps-tps/evidence/falsification.txt`). `integration.first_person_play`'s 'a player's rebinding moves jump from Space to F' is the same through a player's file and the platform."
-
-[[coverage]]
 row = "native-abi"
 requirement = "The pointer's motion in a frame"
 evidence = "test:integration.game_backend_input"
