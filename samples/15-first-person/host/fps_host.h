@@ -60,6 +60,7 @@
 #include <cy/servers/input/server.h>
 #include <cy/servers/physics/server.h>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -80,6 +81,23 @@ struct HostOptions {
     bool behaviours = true;
     /// Run the arena's GI. A headless run that only checks the game may leave it off.
     bool illumination = true;
+    /// The scripted run's own keyboard and mouse, which `press_key` and `move_pointer` inject on.
+    /// A played run's devices are the platform's (play.h), so it makes none.
+    bool scripted_devices = true;
+    /// Services an embedder binds on the ABI host before the game starts — the play host's
+    /// interface (ABI 1.6 and 1.12), which the game builds its HUD and its menu through.
+    std::function<void(cy::abi::Host&)> bind_services;
+};
+
+/// One frame's time, as a real-time loop hands it over. The scripted run's is one step.
+struct FrameStep {
+    /// The frame's seconds: what the behaviours' `onUpdate` is told.
+    cy::f32 seconds = 1.0F / 60.0F;
+    /// How far past the last tick the frame is (`CyTime::interpolation`): what is drawn is carried
+    /// forward from the last tick by that much of a step.
+    cy::f64 interpolation = 0.0;
+    /// The simulation is paused (`CY_TIME_PAUSED`): nothing that is presentation advances.
+    bool paused = false;
 };
 
 /// One shot as the game reported it, captured the frame its count moved.
@@ -130,6 +148,12 @@ struct Observation {
         cy::f32 impulses = 0.0F;
         cy::f32 aimed = 0.0F;
         cy::f32 refused = 0.0F;
+        /// The played game's magazine: rounds left, reloads finished, pulls on an empty one, and
+        /// the targets it stood back up.
+        cy::f32 ammo = 0.0F;
+        cy::f32 reloads = 0.0F;
+        cy::f32 dry_fires = 0.0F;
+        cy::f32 respawns = 0.0F;
     };
     Game game;
     /// The player's character, from the character adapter.
@@ -160,7 +184,10 @@ struct Observation {
 
 class FpsHost {
 public:
-    FpsHost(cy::Allocator& allocator, const HostOptions& options) noexcept;
+    /// A frame's time, as `cy::play::HostedGame` hands it over.
+    using Step = FrameStep;
+
+    FpsHost(cy::Allocator& allocator, HostOptions options) noexcept;
     ~FpsHost();
 
     FpsHost(const FpsHost&) = delete;
@@ -170,8 +197,28 @@ public:
 
     /// Bring everything up. `detail` names what failed where the failure has a name.
     [[nodiscard]] cy::Status start(const char** detail) noexcept;
-    /// One frame. See the header.
+    /// One frame of the scripted run — `pump`, one `tick`, `begin_frame`, `update` — and its wall
+    /// time. See the header.
     [[nodiscard]] cy::Status frame() noexcept;
+
+    // --- A frame's parts, for a real-time loop (play.h) ----------------------------------------
+    /// The scene tree's callbacks.
+    [[nodiscard]] cy::Status pump() noexcept;
+    /// One fixed tick, its input stamped `now` on the events' clock.
+    [[nodiscard]] cy::Status tick(cy::Nanoseconds now) noexcept;
+    /// A paused frame's input: resolved again at the last tick, so nothing runs and nothing pressed
+    /// meanwhile reaches the next tick as an edge.
+    [[nodiscard]] cy::Status drain(cy::Nanoseconds now) noexcept;
+    /// The frame's pointer: the edges since the last frame, published.
+    void begin_frame() noexcept;
+    /// The rest of the frame: the behaviours' `onUpdate`, the eye, the effects, the GI, the mix.
+    [[nodiscard]] cy::Status update(const FrameStep& step) noexcept;
+    /// The input server the platform feeds, the ABI host the interface binds on, the pointer the
+    /// interface routes and a delivered interface event.
+    [[nodiscard]] cy::input::InputServer& input() noexcept { return input_; }
+    [[nodiscard]] CyInputPointer pointer() noexcept;
+    void set_pointer_over_ui(bool over) noexcept;
+    void ui_event(const CyUiEvent& event) noexcept;
     /// Tear down in the one safe order. Idempotent; the destructor calls it.
     void shutdown() noexcept;
 
@@ -206,6 +253,11 @@ public:
     [[nodiscard]] CyEntity target_entity(cy::u32 index) const noexcept;
     [[nodiscard]] CyEntity prop_entity(cy::u32 index) const noexcept;
     [[nodiscard]] cy::Transform prop(cy::u32 index) const noexcept { return bodies_->prop(index); }
+    /// What the frame DRAWS: a prop and a target at the frame's own time, carried forward from the
+    /// last tick by their motion over it (`FrameStep::interpolation`). The scripted run's frames
+    /// fall on their ticks, where these are `prop` and `target` exactly.
+    [[nodiscard]] cy::Transform drawn_prop(cy::u32 index) const noexcept;
+    [[nodiscard]] TargetState drawn_target(cy::u32 index) const noexcept;
     /// The lights the game spawned that are alive now, appended to `out`.
     [[nodiscard]] cy::Status append_lights(
         cy::Array<cy::render::LightDescription>& out) const noexcept;
@@ -231,9 +283,10 @@ private:
     [[nodiscard]] cy::Status start_presentation() noexcept;
     [[nodiscard]] cy::Status start_targets() noexcept;
     [[nodiscard]] cy::Status load_module(const char** detail) noexcept;
-    [[nodiscard]] cy::Status run_frame() noexcept;
-    [[nodiscard]] cy::Status fixed_tick() noexcept;
-    [[nodiscard]] cy::Status place_eye() noexcept;
+    [[nodiscard]] cy::Status fixed_tick(cy::Nanoseconds now) noexcept;
+    /// What a tick moves, as it was before it: what `drawn_*` carry forward from.
+    void remember_tick() noexcept;
+    [[nodiscard]] cy::Status place_eye(cy::f32 seconds) noexcept;
     void read_health(TargetHealth (&out)[kTargetCount]) const noexcept;
     void capture_shot() noexcept;
     void fold_digest() noexcept;
@@ -301,6 +354,11 @@ private:
     cy::Transform weapon_ = cy::Transform::identity();
     cy::f32 fov_ = 1.308997F;
 
+    // The last tick's props and targets, and how far past it the frame is.
+    cy::Transform props_before_[kPropCount];
+    TargetState targets_before_[kTargetCount];
+    cy::f64 interpolation_ = 0.0;
+
     // The run.
     std::vector<ShotRecord> shots_;
     cy::f32 shots_seen_ = 0.0F;
@@ -310,6 +368,8 @@ private:
     cy::u32 peak_voices_ = 0;
     cy::u64 digest_ = 0xCBF29CE484222325ULL;
     cy::u64 frame_ = 0;
+    /// Ticks run: one a frame in the scripted run, where it is `frame_ + 1` inside a frame.
+    cy::u64 tick_ = 0;
     cy::f64 frame_ms_ = 0.0;
     cy::u32 events_this_frame_ = 0;
     bool started_ = false;

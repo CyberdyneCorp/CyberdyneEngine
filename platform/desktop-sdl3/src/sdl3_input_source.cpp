@@ -449,3 +449,26 @@ void Sdl3InputSource::on_event(const void* sdl_event) noexcept {
 }
 
 }  // namespace cy
+
+// --- The translations, for the event injector ----------------------------------------------------
+//
+// `Sdl3EventInjector` runs them backwards, so an injected key reaches the input server as the same
+// `Key` a person's press of it would: one table, read both ways.
+
+#include "sdl3_controls.h"
+
+namespace cy::sdl3 {
+
+input::Key key_of_scancode(int scancode) noexcept {
+    return key_from_scancode(static_cast<SDL_Scancode>(scancode));
+}
+
+input::GamepadControl control_of_gamepad_button(int button) noexcept {
+    return button_from_sdl(static_cast<SDL_GamepadButton>(button));
+}
+
+input::GamepadControl control_of_gamepad_axis(int axis) noexcept {
+    return axis_from_sdl(static_cast<SDL_GamepadAxis>(axis));
+}
+
+}  // namespace cy::sdl3

@@ -164,6 +164,26 @@ and the sparks to where the raycasts hit, a golden still and the budget. Below t
 - **A Jolt world's temp arena.** Before this change a 128-body world crashed on its first contact; the
   arena is now sized from Jolt's own constraint size (`integration.physics_jolt`).
 
+## Playing it
+
+`just play-fps` plays the arena in a window under the desktop play host — [Making a game
+playable](playing-a-game.md) is how, step by step. The controls:
+
+| | Keyboard and mouse | Pad |
+|---|---|---|
+| move, look | W A S D, the mouse | left stick, right stick |
+| sprint, jump, crouch | left Shift, Space, C or left Ctrl | left stick pressed, south, east |
+| fire, the sights, reload | left button, right button, R | right trigger, left trigger, west |
+| pause | Esc | Start |
+
+What the game adds when played, all in `game/Player.swift` and `game/Hud.swift`: a thirty-round
+magazine that clicks on empty and reloads; a target shot down gets its health back ten seconds later
+and the engine's AI stands it up (`Targets::rise`); the crosshair, a hit marker that reddens on a
+kill, the magazine and the score; the look's sensitivity and inverted Y from the pause menu, applied
+in the first-person camera's own sensitivity. The pad's look stick is a rate — 3.2 radians a second
+at full deflection — turned into the counts the camera's one sensitivity turns back into radians.
+`integration.first_person_play` and `smoke.first_person_play` are the suites.
+
 ## 9. What is not built
 
 - The sparks collide with one plane, authored in the effect; the VFX system's own collision is not in

@@ -22,6 +22,7 @@
 // drew, and how many validation errors the layer reported. It writes the stills at `kStills`
 // (`fps-<frame>.png`) and, with `--video`, every n-th frame (`frame-<n>.png`).
 
+#include <cy/backends/rhi/device.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
 #include <cy/core/memory/allocator.h>
@@ -51,6 +52,9 @@ struct RenderOptions {
     bool flashes = true;
     /// The graphics API's validation layer, on unless a run measures what a frame costs.
     bool validation = true;
+    /// PLAYED: draw on this device — the play host's, whose swapchain presents the picture — and
+    /// leave each frame's output sampled for it, writing no stills. The renderer does not own it.
+    cy::rhi::Device* device = nullptr;
 };
 
 /// The frames the stills are written at: the walk to the beam, the first shot on T1, the crate,
@@ -71,6 +75,13 @@ public:
     /// Draw the frame `host` just ran.
     [[nodiscard]] cy::Status frame(FpsHost& host) noexcept;
     void print_report() const noexcept;
+
+    /// The picture the last frame drew, sampled-ready when played: its texture and extent.
+    [[nodiscard]] cy::rhi::TextureHandle output() const noexcept;
+    [[nodiscard]] cy::u32 width() const noexcept;
+    [[nodiscard]] cy::u32 height() const noexcept;
+    /// The last timed frame's milliseconds: its recording, submission and the wait for the device.
+    [[nodiscard]] cy::f64 last_frame_ms() const noexcept;
 
 private:
     struct State;

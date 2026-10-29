@@ -5064,7 +5064,7 @@ note = "`integration.linux_native` shows has_feature agreeing with the call ('a 
 row = "core-platform-abstraction"
 requirement = "Input"
 evidence = "exempt:m11e"
-note = "`integration.sdl3_input` covers timestamped key transitions, repeat filtering, four transitions in one window and separate mouse delta and position; `integration.linux_native` routes real X key events into the input server. Missing: no case covers composed UTF-8 text input distinct from key events, gamepad hot-plug with a stable id and a controller-database mapping, or touch and pen events. Re-enter with SDL3 cases that inject a text-input event and a gamepad connection."
+note = "`integration.sdl3_input` covers timestamped key transitions, repeat filtering, four transitions in one window and separate mouse delta and position; `integration.linux_native` routes real X key events into the input server. `integration.sdl3_injector`'s 'a virtual gamepad's stick and trigger arrive as a pad's would' connects a pad through SDL's own virtual joystick and reads its stick and trigger in the engine's convention, and `integration.first_person_play`'s 'a pad walks, turns and fires through SDL's own joystick' plays a game with it. Missing: no case covers composed UTF-8 text input distinct from key events, a pad's id staying stable across a reconnect with a controller-database mapping, or touch and pen events. Re-enter with SDL3 cases that inject a text-input event and reconnect a pad."
 
 [[coverage]]
 row = "core-platform-abstraction"
@@ -9364,3 +9364,40 @@ requirement = "Retired instance slots fit what they are reused for"
 evidence = "test:integration.vfx"
 case = "a retired slot is reused only by its own system, never one that would overrun it"
 note = "Regression for the defect samples/13-rts-api's battle found: a retired slot handed to any system with the same emitter count, its alive flags and parameter words overrun by a larger one. Proved red on the old `reusable` (the two live instances' alive flags overlapped)."
+
+# --- add-playable-fps-tps: the desktop play host, and what playing found ---------------------------
+
+[[coverage]]
+row = "gameplay-framework"
+requirement = "Games are played in a window"
+evidence = "test:integration.first_person_play"
+case = "first-person play: a mouse count turns the camera by the camera's one sensitivity"
+note = "`samples/play`'s host plays samples/15-first-person headless (SDL's dummy video driver, no device, one step a frame), its hands `play/*.input` pushed through `Sdl3EventInjector` onto SDL's queue — never into the game. 200 counts right and 50 away turn the camera 0.440 and 0.110 radians. The same suite holds the scenarios one by one: 'a shot fired with the mouse hits a target the host's ray agrees' (every shot confirmed by the host's own raycast), 'a lost focus pauses, and only the player resumes' (thirty frames with no tick, the mouse turning nothing, the keys walking only the ticks that ran), 'the pause menu's Resume resumes and fires nothing, Quit quits', and the pad, the rebinding, the magazine and the respawn; `integration.third_person_play` the third person's orbit, run, pause and pad. The scripted reports and digests were compared with main's byte for byte (`openspec/changes/add-playable-fps-tps/evidence/falsification.txt`), and `integration.first_person_sample` and `third_person_sample` still hold them. `smoke.first_person_play`'s 'a frame's work at 1080p is under 16.7 ms' is the budget, measured on an RTX 5060."
+
+[[coverage]]
+row = "core-platform-abstraction"
+requirement = "Relative mouse mode"
+evidence = "test:smoke.first_person_play"
+case = "first-person play drawn: every frame presented, valid, and the game unchanged"
+note = "Played in a window on a desktop, the host held the mouse (`relative_mouse=1`, `SDL_SetWindowRelativeMouseMode`) while the game ran; `unit.play_host`'s 'Esc pauses and resumes; a lost focus pauses and only the player resumes' holds when it is released. `integration.stub_frame` lists `Feature::RelativeMouse` among the stub's absent capabilities, and `DisplayServer`'s default refuses it, so the native and stub ports answer without restating it. Skips loudly with no display or device; Linux and Vulkan only."
+
+[[coverage]]
+row = "core-platform-abstraction"
+requirement = "Synthetic platform input"
+evidence = "test:integration.sdl3_injector"
+case = "sdl3 injector: an injected key arrives as the key a person's press of it is"
+note = "Real `SDL_Event`s on SDL's queue, through `Sdl3InputSource`'s watch: W, Space, left Control and Escape arrive as themselves, the input source's scancode table read backwards; a key with no scancode is refused. 'injected motion is SDL's, so the source flips its Y once' and 'a virtual gamepad's stick and trigger arrive as a pad's would' (SDL's own virtual joystick) are the other two inputs. Headless in CI: SDL's event and gamepad subsystems need no display."
+
+[[coverage]]
+row = "native-abi"
+requirement = "The pointer's motion in a frame"
+evidence = "test:integration.game_backend_input"
+case = "a frame that runs no tick still turns with the mouse, and the tick after adds none"
+note = "Three frames over one tick through `cy_get_interface`'s table: each frame publishes the motion made during it, and the tick that resolves the events publishes none again. 'a window resolved again at the same tick is a new window to the pointer' is a paused host's drain; 'the pointer's motion is in window pixels: a mouse pushed away moves it up' the sign (the input layer's +Y up, the ABI's +y down). Each red by mutation (`openspec/changes/add-playable-fps-tps/evidence/falsification.txt`)."
+
+[[coverage]]
+row = "rhi-and-render-graph"
+requirement = "A resized swapchain keeps its handle"
+evidence = "test:smoke.first_person_play"
+case = "first-person play drawn: a window resized twice keeps presenting every frame"
+note = "The window dragged to 1600x900 and to 1024x576 while the arena plays: every frame presented, no validation error. On the Vulkan device's old resize — destroy, create under a handle it never returned — the presenter's next frame failed on a stale handle (red by mutation). `unit.rhi`'s null-device case already held the contract the Vulkan device broke. Vulkan on Linux only; D3D12's resize keeps its handle by construction and was not run."

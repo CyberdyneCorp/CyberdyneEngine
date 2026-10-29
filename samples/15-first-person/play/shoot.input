@@ -1,0 +1,22 @@
+# Turned toward T2, whose patrol crosses the line from the spawn, and the trigger pulled every
+# twelve frames: the shots that land are the target's, by the host's own raycast.
+10 mouse move -349 16
+30 mouse left down
+32 mouse left up
+42 mouse left down
+44 mouse left up
+54 mouse left down
+56 mouse left up
+66 mouse left down
+68 mouse left up
+78 mouse left down
+80 mouse left up
+90 mouse left down
+92 mouse left up
+102 mouse left down
+104 mouse left up
+114 mouse left down
+116 mouse left up
+126 mouse left down
+128 mouse left up
+200 quit

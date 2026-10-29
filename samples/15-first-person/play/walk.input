@@ -1,0 +1,8 @@
+# W held for one second at sixty ticks, then a second with the mouse turned a quarter round to the
+# right and W held again: the character walks where the camera faces.
+10 key w down
+70 key w up
+80 mouse move 714 0
+90 key w down
+150 key w up
+160 quit

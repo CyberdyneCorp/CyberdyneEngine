@@ -291,6 +291,80 @@ CY_TEST_CASE("the pointer reports position, held buttons and the edges since the
     CY_CHECK_EQ(table().input_pointer(rig.engine(), 0, &pointer), CY_RESULT_PERMISSION_DENIED);
 }
 
+CY_TEST_CASE("a frame that runs no tick still turns with the mouse, and the tick after adds none") {
+    // A display faster than the simulation: three frames over one tick. The motion made during the
+    // frames with no tick must reach those frames — a look that waited for the next tick would
+    // judder — and the tick that finally resolves it must not publish it a second time.
+    Rig rig;
+    CY_REQUIRE(rig.build());
+    rig.step();
+    rig.adapter.begin_frame();
+    const cy::abi::game::PhaseScope frame(rig.host.game.clock, CY_PHASE_FRAME_UPDATE);
+    CyInputPointer pointer{};
+
+    rig.send(rig.mouse, mouse_control(MouseControl::MoveX), 20 * kMs, 5.0F);
+    rig.adapter.begin_frame();  // no tick this frame
+    CY_CHECK_EQ(table().input_pointer(rig.engine(), 0, &pointer), CY_RESULT_OK);
+    CY_CHECK_EQ(pointer.delta[0], 5.0F);
+
+    rig.send(rig.mouse, mouse_control(MouseControl::MoveX), 24 * kMs, 2.0F);
+    rig.adapter.begin_frame();  // still no tick: only what moved since the last frame
+    CY_CHECK_EQ(table().input_pointer(rig.engine(), 0, &pointer), CY_RESULT_OK);
+    CY_CHECK_EQ(pointer.delta[0], 2.0F);
+
+    rig.step();  // the tick resolves both events, which two frames already showed
+    rig.adapter.begin_frame();
+    CY_CHECK_EQ(table().input_pointer(rig.engine(), 0, &pointer), CY_RESULT_OK);
+    CY_CHECK_EQ(pointer.delta[0], 0.0F);
+
+    rig.send(rig.mouse, mouse_control(MouseControl::MoveX), 40 * kMs, 1.0F);
+    rig.step();  // a new window after the tick: counted from its start
+    rig.adapter.begin_frame();
+    CY_CHECK_EQ(table().input_pointer(rig.engine(), 0, &pointer), CY_RESULT_OK);
+    CY_CHECK_EQ(pointer.delta[0], 1.0F);
+}
+
+CY_TEST_CASE("a window resolved again at the same tick is a new window to the pointer") {
+    // A paused host runs no tick but drains its input at the tick it stopped on, so the cursor a
+    // pause menu follows keeps moving. The window after that drain is a new one even though the
+    // tick did not move: an observer keyed on the tick would skip what arrives next.
+    Rig rig;
+    CY_REQUIRE(rig.build());
+    rig.step();
+    const cy::abi::game::PhaseScope frame(rig.host.game.clock, CY_PHASE_FRAME_UPDATE);
+    CyInputPointer pointer{};
+    for (int moved = 0; moved < 4; ++moved) {
+        rig.send(rig.mouse, mouse_control(MouseControl::MoveX), (20 + moved) * kMs, 1.0F);
+    }
+    rig.adapter.begin_frame();
+    CY_CHECK_EQ(table().input_pointer(rig.engine(), 0, &pointer), CY_RESULT_OK);
+    CY_CHECK_EQ(pointer.delta[0], 4.0F);
+    rig.adapter.observe_pending();
+    rig.server.resolve_tick(rig.tick, static_cast<Nanoseconds>(rig.tick) * 16 * kMs, 0.0F);
+    for (int moved = 0; moved < 6; ++moved) {
+        rig.send(rig.mouse, mouse_control(MouseControl::MoveX), (30 + moved) * kMs, 2.0F);
+    }
+    rig.adapter.begin_frame();
+    CY_CHECK_EQ(table().input_pointer(rig.engine(), 0, &pointer), CY_RESULT_OK);
+    CY_CHECK_EQ(pointer.delta[0], 12.0F);
+}
+
+CY_TEST_CASE("the pointer's motion is in window pixels: a mouse pushed away moves it up") {
+    // The input layer's +Y is up — `Sdl3InputSource` turns SDL's `yrel` into `MoveY` with its
+    // sign flipped, once — and the ABI's pointer is in window pixels, +y down, beside its
+    // position. Before the adapter converted, a real mouse pushed away read as a pull, and a
+    // first-person look built on the pointer was upside down.
+    Rig rig;
+    CY_REQUIRE(rig.build());
+    rig.send(rig.mouse, mouse_control(MouseControl::MoveY), 10 * kMs, 6.0F);  // pushed away
+    rig.step();
+    rig.adapter.begin_frame();
+    const cy::abi::game::PhaseScope frame(rig.host.game.clock, CY_PHASE_FRAME_UPDATE);
+    CyInputPointer pointer{};
+    CY_CHECK_EQ(table().input_pointer(rig.engine(), 0, &pointer), CY_RESULT_OK);
+    CY_CHECK_EQ(pointer.delta[1], -6.0F);
+}
+
 CY_TEST_CASE("a user without a pointing device has a pointer that is not present") {
     Rig rig;
     CY_REQUIRE(rig.build());

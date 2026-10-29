@@ -187,6 +187,9 @@ add_subdirectory(13-rts-selection)
 # placed on the ground the physics world reports, a camera that a collision node keeps in front of
 # walls — and the engine draws it with shadows, ambient occlusion, the device GI and the temporal
 # upscaler. Declares nothing without Swift, the animation runtime or Jolt.
+# The desktop play host 14 and 15 are played under with `--play`: before them, so its target exists.
+add_subdirectory(play)
+
 add_subdirectory(14-third-person)
 
 # A first-person shooter written in Swift against ABI 1.15: a character that walks, sprints, jumps and

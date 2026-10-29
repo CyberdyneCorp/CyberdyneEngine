@@ -1,0 +1,5 @@
+# The mouse orbits the camera: 400 counts right at 0.0025 radians a count, then 80 pulled toward
+# the player, which tilts it down.
+10 mouse move 400 0
+20 mouse move 0 80
+40 quit

@@ -29,12 +29,12 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`core-math`](../../openspec/specs/core-math/spec.md) | 10 |  | W |  | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | M3 |
 | [`core-jobs-and-concurrency`](../../openspec/specs/core-jobs-and-concurrency/spec.md) | 16 |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`core-assets-and-io`](../../openspec/specs/core-assets-and-io/spec.md) | 10 |  | S | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
-| [`core-platform-abstraction`](../../openspec/specs/core-platform-abstraction/spec.md) | 7 | S |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
+| [`core-platform-abstraction`](../../openspec/specs/core-platform-abstraction/spec.md) | 9 | S |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | **2 — World model** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | [`ecs-core`](../../openspec/specs/ecs-core/spec.md) | 12 |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  | M11.d |
 | [`scene-graph-and-nodes`](../../openspec/specs/scene-graph-and-nodes/spec.md) | 10 |  |  | W |  |  | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | M5 |
 | [`serialization-and-prefabs`](../../openspec/specs/serialization-and-prefabs/spec.md) | 23 |  |  | W |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  |  |  |  |  | M8.b |
-| [`gameplay-framework`](../../openspec/specs/gameplay-framework/spec.md) | 37 |  |  |  |  | S |  |  |  |  | S | W |  |  | **C** |  |  |  |  |  |  |  |  | M10 |
+| [`gameplay-framework`](../../openspec/specs/gameplay-framework/spec.md) | 38 |  |  |  |  | S |  |  |  |  | S | W |  |  | **C** |  |  |  |  |  |  |  |  | M10 |
 | [`gameplay-abilities-and-effects`](../../openspec/specs/gameplay-abilities-and-effects/spec.md) | 20 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`visual-scripting`](../../openspec/specs/visual-scripting/spec.md) | 22 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`sequencing-and-cinematics`](../../openspec/specs/sequencing-and-cinematics/spec.md) | 31 |  |  |  |  |  |  |  |  |  |  |  | W |  |  |  | **C** |  |  |  |  |  |  | M11.b |
@@ -52,10 +52,10 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`foliage`](../../openspec/specs/foliage/spec.md) | 13 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
 | [`water`](../../openspec/specs/water/spec.md) | 17 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
 | **3 — Scripting** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| [`native-abi`](../../openspec/specs/native-abi/spec.md) | 16 |  |  |  |  | W | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | M5 |
+| [`native-abi`](../../openspec/specs/native-abi/spec.md) | 17 |  |  |  |  | W | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | M5 |
 | [`swift-scripting`](../../openspec/specs/swift-scripting/spec.md) | 13 |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | **4 — Rendering** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| [`rhi-and-render-graph`](../../openspec/specs/rhi-and-render-graph/spec.md) | 12 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  | M11.d.5 |
+| [`rhi-and-render-graph`](../../openspec/specs/rhi-and-render-graph/spec.md) | 13 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  | M11.d.5 |
 | [`rendering-architecture`](../../openspec/specs/rendering-architecture/spec.md) | 16 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`rendering-culling-and-lod`](../../openspec/specs/rendering-culling-and-lod/spec.md) | 9 |  |  |  | S |  |  |  | W |  |  |  |  |  |  |  |  | **C** |  |  |  |  |  | M11.c |
 | [`virtual-geometry`](../../openspec/specs/virtual-geometry/spec.md) | 26 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |

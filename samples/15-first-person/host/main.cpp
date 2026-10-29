@@ -30,7 +30,12 @@
 #include "fps_host.h"
 #include "script.h"
 #if defined(CY_FIRST_PERSON_RENDER)
+#    include "golden.h"
 #    include "render.h"
+#endif
+#if defined(CY_FIRST_PERSON_PLAY)
+#    include "hosted_game.h"
+#    include "play_arguments.h"
 #endif
 
 namespace {
@@ -266,9 +271,172 @@ private:
 #endif
 };
 
+#if defined(CY_FIRST_PERSON_PLAY)
+// --- Played --------------------------------------------------------------------------------------
+//
+// `--play`: the arena in a window, a person at the mouse and the keyboard (or a pad), through the
+// desktop play host (samples/play). The game is the same Swift module; nothing scripts it. With
+// `--input-script`, the person's hands are written down and pushed through the platform, which is
+// how the tests and the capture play it.
+
+#    if defined(CY_FIRST_PERSON_RENDER)
+using PlayedRenderer = sample::fps::FpsRenderer;
+#    else
+using PlayedRenderer = cy::play::NoRenderer;
+#    endif
+
+struct PlayFlags {
+    cy::play::PlayArguments play;
+#    if defined(CY_FIRST_PERSON_RENDER)
+    sample::fps::RenderOptions render;
+#    endif
+};
+
+[[nodiscard]] bool parse_play(int argc, char** argv, PlayFlags& out) noexcept {
+    out.play.options.title = "CyberEngine — first person (Esc: pause)";
+#    if defined(CY_FIRST_PERSON_RENDER)
+    out.render.validation = false;
+#    endif
+    for (int index = 1; index < argc; ++index) {
+        if (cy::play::parse_play_flag(argc, argv, index, out.play)) {
+            continue;
+        }
+#    if defined(CY_FIRST_PERSON_RENDER)
+        RenderFlags render;
+        render.options = out.render;
+        if (render.parse(argc, argv, index)) {
+            out.render = render.options;
+            continue;
+        }
+#    endif
+        std::fprintf(stderr, "first-person: --play does not take '%s'\n", argv[index]);
+        return false;
+    }
+#    if defined(CY_FIRST_PERSON_RENDER)
+    out.render.validation = out.play.options.validation;
+#    endif
+    return true;
+}
+
+/// What only a played run has: the magazine, and the targets the game stood back up. A line of
+/// its own, so the scripted run's report is the one it always was.
+void print_played(FpsHost& host) noexcept {
+    const Observation::Game game = host.observe().game;
+    std::printf("fps played   ammo=%.0f reloads=%.0f dry_fires=%.0f respawns=%.0f\n",
+                wide(game.ammo), wide(game.reloads), wide(game.dry_fires), wide(game.respawns));
+}
+
+/// Each captured frame as `<dir>/frame-<n>.png`.
+[[nodiscard]] cy::Status write_capture(const std::string& directory, cy::u64 frame,
+                                       cy::Span<const cy::u32> pixels, cy::u32 width,
+                                       cy::u32 height) noexcept {
+#    if defined(CY_FIRST_PERSON_RENDER)
+    cy::render_test::Image image(cy::system_allocator(cy::MemoryDomain::Renderer));
+    if (cy::Status adopted = cy::render_test::adopt(image, pixels, width, height); !adopted) {
+        return adopted;
+    }
+    char name[64];
+    (void)std::snprintf(name, sizeof(name), "/frame-%05llu.png",
+                        static_cast<unsigned long long>(frame));
+    return cy::render_test::write_png((directory + name).c_str(), image);
+#    else
+    (void)directory;
+    (void)frame;
+    (void)pixels;
+    (void)width;
+    (void)height;
+    return cy::ok();
+#    endif
+}
+
+/// The renderer on the play host's device, when the run draws.
+[[nodiscard]] cy::Status start_renderer(FpsHost& host, cy::play::PlayHost& play,
+                                        const PlayFlags& flags,
+                                        std::unique_ptr<PlayedRenderer>& out) noexcept {
+    if (play.device() == nullptr) {
+        return cy::ok();
+    }
+#    if defined(CY_FIRST_PERSON_RENDER)
+    out = std::make_unique<PlayedRenderer>(cy::system_allocator(cy::MemoryDomain::Renderer));
+    sample::fps::RenderOptions render = flags.render;
+    render.device = play.device();
+    return out->start(host, render);
+#    else
+    (void)host;
+    (void)flags;
+    (void)out;
+    return cy::ok();
+#    endif
+}
+
+[[nodiscard]] int run_play(int argc, char** argv) noexcept {
+    PlayFlags flags;
+    if (!parse_play(argc, argv, flags)) {
+        return 2;
+    }
+    cy::play::PlayHost play(cy::system_allocator(cy::MemoryDomain::Engine));
+    if (cy::Status opened = play.open(flags.play.options); !opened) {
+        // NO DISPLAY OR NO DEVICE is a machine that cannot play, said so and skipped, as `--render`
+        // skips; anything else is a failure.
+        const bool absent = opened.error().code == cy::ErrorCode::Unavailable;
+        std::printf("first-person: --play: %s%s\n", absent ? "skipped: " : "",
+                    opened.error().message);
+        return absent ? 0 : 1;
+    }
+    sample::fps::HostOptions options;
+    options.module_library = CY_FIRST_PERSON_MODULE_LIBRARY;
+    options.module_manifest = CY_FIRST_PERSON_MODULE_MANIFEST;
+    options.scripted_devices = false;
+#    if defined(CY_FIRST_PERSON_RENDER)
+    options.illumination = play.device() != nullptr && flags.render.gi;
+#    else
+    options.illumination = false;
+#    endif
+    cy::play::PlayUi& ui = play.ui();
+    options.bind_services = [&ui](cy::abi::Host& abi) { ui.bind(abi); };
+    int code = 0;
+    {
+        FpsHost host(cy::system_allocator(cy::MemoryDomain::World), options);
+        const char* detail = "";
+        std::unique_ptr<PlayedRenderer> renderer;
+        cy::Status ready = host.start(&detail);
+        ready = ready ? start_renderer(host, play, flags, renderer) : ready;
+        cy::play::HostedGame<FpsHost, PlayedRenderer> game(host, ui, renderer.get());
+        ready = ready ? play.attach(game) : ready;
+        if (!ready) {
+            std::fprintf(stderr, "first-person: --play: %s %s\n", detail, ready.error().message);
+            return 1;
+        }
+        const std::string directory = flags.play.capture_directory;
+        play.on_capture = [&directory](cy::u64 frame, cy::Span<const cy::u32> pixels, cy::u32 width,
+                                       cy::u32 height) {
+            return write_capture(directory, frame, pixels, width, height);
+        };
+        const cy::Expected<cy::play::PlayReport, cy::Error> report = play.run();
+        if (report) {
+            print_report(host, sample::fps::ScriptFindings{});
+            print_played(host);
+            cy::play::print_play_report(*report);
+        } else {
+            std::fprintf(stderr, "first-person: --play: %s\n", report.error().message);
+            code = 1;
+        }
+        renderer.reset();
+        host.shutdown();
+    }
+    play.close();
+    return code;
+}
+#endif
+
 }  // namespace
 
 int main(int argc, char** argv) {
+#if defined(CY_FIRST_PERSON_PLAY)
+    if (cy::play::wants_play(argc, argv)) {
+        return run_play(argc, argv);
+    }
+#endif
     sample::fps::HostOptions options;
     options.module_library = CY_FIRST_PERSON_MODULE_LIBRARY;
     options.module_manifest = CY_FIRST_PERSON_MODULE_MANIFEST;

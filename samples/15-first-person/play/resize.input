@@ -1,0 +1,7 @@
+# The window dragged larger, then smaller, while the arena plays: the swapchain and the interface
+# follow it, and every frame is still presented.
+20 key w down
+40 window 1600 900
+80 window 1024 576
+120 key w up
+150 quit

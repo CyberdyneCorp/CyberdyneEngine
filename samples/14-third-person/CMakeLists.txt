@@ -123,6 +123,8 @@ cy_add_module(
         cy::servers-physics
         cy_sample_rts_map)
 add_dependencies(cy_sample_third-person cy_sample_third-person_game cy_third_person_package)
+# The played game's pad bindings (samples/play/play_bindings.h), header-only.
+target_include_directories(cy_sample_third-person PRIVATE "${CMAKE_SOURCE_DIR}/samples/play")
 
 # `--render <dir>`: the run drawn by the engine's frame (host/render.h). Only with the Vulkan
 # renderer; without it the host is the headless one and refuses `--render` by name.
@@ -141,6 +143,14 @@ endif()
 # The tests run the host as a separate process, so each run loads the module into a fresh image.
 # Declared here rather than in tests/ for 04-character's reason: tests/ is added before samples/,
 # and this target does not exist on a machine with no Swift toolchain.
+# `--play`: the hillside in a window, played with a mouse, a keyboard or a pad, through the desktop
+# play host (samples/play) — drawn when the build has the Vulkan renderer, driven with no picture
+# (`--no-draw`) when it has not.
+if(TARGET cy::sample-play)
+    target_link_libraries(cy_sample_third-person PRIVATE cy::sample-play)
+    target_compile_definitions(cy_sample_third-person PRIVATE CY_THIRD_PERSON_PLAY=1)
+endif()
+
 if(CY_BUILD_TESTS)
     get_directory_property(third_person_budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
                            DEFINITION CY_TEST_BUDGET_integration)
@@ -156,6 +166,22 @@ if(CY_BUILD_TESTS)
     target_include_directories(cy_test_integration_third_person_sample
                                PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke")
     add_dependencies(cy_test_integration_third_person_sample cy_sample_third-person)
+
+    # integration.third_person_play: the game PLAYED under the desktop play host, headless — SDL's
+    # dummy video driver, no device — its hands scripts pushed through the platform (play/).
+    if(TARGET cy::sample-play)
+        cy_add_test(
+            NAME third_person_play
+            KIND integration
+            SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_third_person_play.cpp"
+            DEFINITIONS
+                CY_SAMPLE_THIRD_PERSON="$<TARGET_FILE:cy_sample_third-person>"
+                CY_THIRD_PERSON_PLAY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/play")
+        target_include_directories(cy_test_integration_third_person_play
+                                   PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke"
+                                           "${CMAKE_SOURCE_DIR}/samples/play/tests")
+        add_dependencies(cy_test_integration_third_person_play cy_sample_third-person)
+    endif()
 
     # smoke.third_person_render: the run drawn — gameplay held to the headless run's, a golden
     # still, and the frame's cost at 1080p. A smoke suite, because it draws 1200 frames twice;
@@ -185,5 +211,25 @@ if(CY_BUILD_TESTS)
         set_tests_properties(smoke.third_person_render PROPERTIES
                              SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine"
                              RUN_SERIAL TRUE)
+
+        # smoke.third_person_play: PLAYED and drawn — a window, the device, the running script —
+        # every frame presented without a validation error, the game the headless play run's, and
+        # a frame's work at 1080p under 16.7 ms. Skipped where there is no display or no device.
+        if(TARGET cy::sample-play)
+            cy_add_test(
+                NAME third_person_play
+                KIND smoke
+                SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_third_person_play_render.cpp"
+                DEFINITIONS
+                    CY_SAMPLE_THIRD_PERSON="$<TARGET_FILE:cy_sample_third-person>"
+                    CY_THIRD_PERSON_PLAY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/play")
+            target_include_directories(cy_test_smoke_third_person_play
+                                       PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke"
+                                               "${CMAKE_SOURCE_DIR}/samples/play/tests")
+            add_dependencies(cy_test_smoke_third_person_play cy_sample_third-person)
+            set_tests_properties(smoke.third_person_play PROPERTIES
+                                 SKIP_REGULAR_EXPRESSION "--play: skipped:"
+                                 RUN_SERIAL TRUE)
+        endif()
     endif()
 endif()

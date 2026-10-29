@@ -37,6 +37,14 @@ function(cy_sdl3_input_declare_tests)
         KIND integration
         SOURCES "${cy_sdl3_tests_dir}/test_input_source.cpp"
         DEPENDENCIES cy::platform-desktop-sdl3 cy::dep::sdl3)
+
+    # `Sdl3EventInjector`: a key, the mouse and a virtual pad pushed through SDL's queue arrive as
+    # a person's would. Headless, like the source's own suite.
+    cy_add_test(
+        NAME sdl3_injector
+        KIND integration
+        SOURCES "${cy_sdl3_tests_dir}/test_event_injector.cpp"
+        DEPENDENCIES cy::platform-desktop-sdl3 cy::dep::sdl3)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_sdl3_input_declare_tests)

@@ -78,6 +78,7 @@
 #include <cy/servers/input/server.h>
 #include <cy/servers/physics/server.h>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -100,6 +101,26 @@ struct HostOptions {
     bool illumination = false;
     /// Write every frame's mix here, interleaved stereo at 48 kHz, when not null.
     std::vector<cy::f32>* mix = nullptr;
+    /// The scripted run's own keyboard, which `press_key` injects on. A played run's devices are
+    /// the platform's (samples/play), so it makes none.
+    bool scripted_devices = true;
+    /// Walls round the terrain's edge, not drawn: a played hero may run anywhere on the hillside
+    /// and off none of it. The scripted run never reaches the edge and has none.
+    bool fenced = false;
+    /// Services an embedder binds on the ABI host before the game starts — the play host's
+    /// interface (ABI 1.6 and 1.12), which the game builds its pause menu through.
+    std::function<void(cy::abi::Host&)> bind_services;
+};
+
+/// One frame's time, as a real-time loop hands it over. The scripted run's is one step.
+struct FrameStep {
+    /// The frame's seconds: what the behaviours' `onUpdate` is told.
+    cy::f32 seconds = 1.0F / 60.0F;
+    /// How far past the last tick the frame is (`CyTime::interpolation`): the hero is drawn
+    /// carried forward from the last tick by that much of a step.
+    cy::f64 interpolation = 0.0;
+    /// The simulation is paused (`CY_TIME_PAUSED`): the camera's smoothing and the sound hold.
+    bool paused = false;
 };
 
 /// What the game and the engine say happened. `game` is the `HeroReport` Swift wrote, read and
@@ -153,7 +174,10 @@ struct Observation {
 
 class ThirdPersonHost {
 public:
-    ThirdPersonHost(cy::Allocator& allocator, const HostOptions& options) noexcept;
+    /// A frame's time, as `cy::play::HostedGame` hands it over.
+    using Step = FrameStep;
+
+    ThirdPersonHost(cy::Allocator& allocator, HostOptions options) noexcept;
     ~ThirdPersonHost();
 
     ThirdPersonHost(const ThirdPersonHost&) = delete;
@@ -163,8 +187,24 @@ public:
 
     /// Bring everything up. `detail` names what failed where the failure has a name.
     [[nodiscard]] cy::Status start(const char** detail) noexcept;
-    /// One frame. See the header.
+    /// One frame of the scripted run — `pump`, one `tick`, `begin_frame`, `update` — and its wall
+    /// time. See the header.
     [[nodiscard]] cy::Status frame() noexcept;
+
+    // --- A frame's parts, for a real-time loop (samples/play) -----------------------------------
+    [[nodiscard]] cy::Status pump() noexcept;
+    /// One fixed tick, its input stamped `now` on the events' clock.
+    [[nodiscard]] cy::Status tick(cy::Nanoseconds now) noexcept;
+    /// A paused frame's input, resolved again at the last tick.
+    [[nodiscard]] cy::Status drain(cy::Nanoseconds now) noexcept;
+    /// The frame's pointer: the edges since the last frame, published.
+    void begin_frame() noexcept;
+    /// The rest of the frame: the camera, the behaviours' `onUpdate`, the pose, the GI, the mix.
+    [[nodiscard]] cy::Status update(const FrameStep& step) noexcept;
+    [[nodiscard]] cy::input::InputServer& input() noexcept { return input_; }
+    [[nodiscard]] CyInputPointer pointer() noexcept;
+    void set_pointer_over_ui(bool over) noexcept;
+    void ui_event(const CyUiEvent& event) noexcept;
     /// Tear down in the one safe order. Idempotent; the destructor calls it.
     void shutdown() noexcept;
 
@@ -183,6 +223,9 @@ public:
     [[nodiscard]] cy::f32 camera_fov() const noexcept;
     /// The hero's node: its feet on the ground, turned the way the game faces it.
     [[nodiscard]] cy::Transform hero_placement() const noexcept;
+    /// What the frame DRAWS: the hero at the frame's own time, carried forward from the last tick
+    /// by its motion over it (`FrameStep::interpolation`). On a tick, `hero_placement` exactly.
+    [[nodiscard]] cy::Transform drawn_hero() const noexcept;
     /// The hero's skinning matrices as the animation system last published them, one a joint of
     /// the hero rig; empty without an animator (`--no-behaviours`).
     [[nodiscard]] cy::Span<const cy::Mat4> hero_pose() const noexcept;
@@ -204,11 +247,11 @@ private:
     [[nodiscard]] cy::Status static_box(cy::Vec3 centre, cy::Vec3 half, cy::Quat rotation,
                                         CyEntity owner) noexcept;
     [[nodiscard]] cy::Status run_stages(cy::ecs::Stage first, cy::ecs::Stage last) noexcept;
-    [[nodiscard]] cy::Status run_frame() noexcept;
-    [[nodiscard]] cy::Status fixed_tick() noexcept;
-    [[nodiscard]] cy::Status drive_camera() noexcept;
+    [[nodiscard]] cy::Status fixed_tick(cy::Nanoseconds now) noexcept;
+    [[nodiscard]] cy::Status drive_camera(cy::f32 seconds) noexcept;
+    [[nodiscard]] cy::Status fence() noexcept;
     void place_hero() noexcept;
-    void update_audio() noexcept;
+    void update_audio(cy::f32 seconds) noexcept;
     void track() noexcept;
     [[nodiscard]] cy::Nanoseconds event_time() noexcept;
     [[nodiscard]] const cy::physics::CharacterController* hero_controller() const noexcept;
@@ -291,6 +334,11 @@ private:
     cy::u64 digest_ = 14695981039346656037ULL;
 
     cy::u64 frame_ = 0;
+    /// Ticks run: one a frame in the scripted run, where it is `frame_ + 1` inside a frame.
+    cy::u64 tick_ = 0;
+    /// The hero's node before the last tick, and how far past it the frame is.
+    cy::Transform hero_before_ = cy::Transform::identity();
+    cy::f64 interpolation_ = 0.0;
     cy::f64 frame_ms_ = 0.0;
     cy::u32 events_this_frame_ = 0;
     bool started_ = false;

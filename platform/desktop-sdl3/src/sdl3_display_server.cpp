@@ -163,6 +163,12 @@ bool Sdl3DisplayServer::has_feature(Feature feature) const {
         case Feature::ScreenRefreshRate:
             return visual;
 
+        // SDL_SetWindowRelativeMouseMode: raw motion with no system acceleration — SDL3's default
+        // unless SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE asks for it — on every visual backend. An
+        // offscreen driver has no pointer to hold.
+        case Feature::RelativeMouse:
+            return visual;
+
         // SDL_WINDOW_TRANSPARENT is honoured by the Cocoa, Wayland and Windows backends. Under X11
         // it needs a compositing manager, whose presence SDL does not expose, so the honest answer
         // is false: a caller that is told "no" and gets an opaque window is correct, and one that
@@ -524,6 +530,35 @@ Status Sdl3DisplayServer::set_window_vsync(WindowId window, VSyncMode mode) {
     // renderer having to be told again.
     record->vsync = mode;
     return ok();
+}
+
+Status Sdl3DisplayServer::set_window_relative_mouse(WindowId window, bool enabled) {
+    Window* record = find(window);
+    if (record == nullptr) {
+        return no_such_window();
+    }
+    if (!has_feature(Feature::RelativeMouse)) {
+        return fail(ErrorCode::Unsupported,
+                    "this SDL video driver has no pointer to hold; has_feature(RelativeMouse) is "
+                    "false");
+    }
+    if (!SDL_SetWindowRelativeMouseMode(as_window(record->handle), enabled)) {
+        return sdl_failure(ErrorCode::Unavailable);
+    }
+    return ok();
+}
+
+Expected<bool, Error> Sdl3DisplayServer::window_relative_mouse(WindowId window) const {
+    const Window* record = find(window);
+    if (record == nullptr) {
+        return no_such_window();
+    }
+    return SDL_GetWindowRelativeMouseMode(as_window(record->handle));
+}
+
+u32 Sdl3DisplayServer::native_window_id(WindowId window) const {
+    const Window* record = find(window);
+    return record == nullptr ? 0U : record->sdl_id;
 }
 
 // --- Screens ------------------------------------------------------------------------------------

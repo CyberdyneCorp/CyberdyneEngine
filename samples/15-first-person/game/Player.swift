@@ -7,16 +7,26 @@
 //
 //   onCreate       (no phase)    the character controller on this node's entity, the first-person
 //                                camera and its weapon view, the effects, the mark and the cues
-//   onReady        (the pump)    the targets and the props by `@Node`; a `Health` on each target
+//   onReady        (the pump)    the targets and the props by `@Node`; a `Health` on each target;
+//                                where the host offers an interface, the HUD and the pause menu
 //   onFixedUpdate  (fixed step)  the move — walk, sprint, jump, and the crouch, which is the
 //                                CHARACTER CONTROLLER rebuilt shorter, and taller again only when a
-//                                shape test finds the headroom — and the trigger: a raycast along
-//                                the aim the last frame drew, an impulse on a prop, damage on a
-//                                target. Simulation, so it replays.
-//   onUpdate       (frame)       the mouse's counts into the camera, the recoil's kick, and what a
-//                                shot leaves behind: the muzzle flash (a light, ABI 1.11), the
-//                                muzzle burst and the sparks (effects, ABI 1.15), the scorch (a
-//                                decal, ABI 1.15) and the sounds — and where the head is.
+//                                shape test finds the headroom — the magazine and its reload, and
+//                                the trigger: a raycast along the aim the last frame drew, an
+//                                impulse on a prop, damage on a target; and a fallen target given
+//                                its health back once it has lain long enough. Simulation, so it
+//                                replays.
+//   onUpdate       (frame)       the mouse's counts and the pad's stick into the camera, the
+//                                recoil's kick, and what a shot leaves behind: the muzzle flash (a
+//                                light, ABI 1.11), the muzzle burst and the sparks (effects, ABI
+//                                1.15), the scorch (a decal, ABI 1.15) and the sounds — where the
+//                                head is, and the HUD.
+//
+// PLAYED (samples/play): the host pauses the game — `Time.now.isPaused` — and the menu shows; the
+// look the player set there is applied where the look is, once, in the first-person camera's
+// sensitivity; the head is drawn at the frame's own time between two ticks, carried forward by the
+// character's velocity over `Time.now.interpolation` of a step. A scripted run has no interface
+// and frames that fall on their ticks, so none of it changes what it does.
 //
 // THE AIM CROSSES FROM THE FRAME TO THE STEP. The camera is presentation: a fixed step may not ask
 // it where the weapon points. So `onUpdate` RECORDS the eye the last frame was drawn from and the
@@ -51,6 +61,13 @@ final class Player: Behaviour {
     /// The kick a shot gives the recoil spring, radians a second up, and to the side.
     @Export(range: 0...10) var kickPitch: Float = 3.2
     @Export(range: 0...5) var kickYaw: Float = 0.6
+    /// Rounds a magazine holds, and seconds a reload takes.
+    @Export(range: 1...100) var magazine: Float = 30
+    @Export(range: 0...5) var reloadSeconds: Float = 1.4
+    /// Seconds a fallen target lies before the game gives it its health back.
+    @Export(range: 1...120) var respawnSeconds: Float = 10
+    /// Radians a second the pad's look stick turns at full deflection.
+    @Export(range: 0...10) var stickLookRate: Float = 3.2
 
     @Node("../Targets/T0") var target0: Entity?
     @Node("../Targets/T1") var target1: Entity?
@@ -83,6 +100,15 @@ final class Player: Behaviour {
     private var pending: [Shot] = []
     private var shotIndex: Int = 0
     private var probed = false
+    /// The magazine: rounds left, and the reload's seconds left (zero when not reloading).
+    private var rounds: Float = 30
+    private var reloadLeft: Float = 0
+    /// Seconds each fallen target has lain.
+    private var lying: [Float] = []
+    /// The camera's settings as made, and the player's on top of them.
+    private var lookSettings = FirstPersonSettings()
+    private var menu: PauseMenu?
+    private var hud: FirstPersonHud?
     private var tally = PlayerReport()
     private var report = ComponentType(id: 0)
     private var health = ComponentType(id: 0)
@@ -100,12 +126,14 @@ final class Player: Behaviour {
         }
         height = standHeight
         eyeHeight = standHeight - eyeBelowTop
+        rounds = magazine
+        tally.ammo = rounds
         try makeCharacter(centre: start + Vec3(x: 0, y: standHeight * 0.5 + 0.02, z: 0))
         // THE CAMERA the host made active gets first-person behaviours and a weapon view: the arms
         // and the weapon are on `weaponLayers`, drawn with their own lens and never into a wall.
         if let active = try Camera.active() {
             camera = active
-            let behaviours = try FirstPersonCamera(camera: active, settings: FirstPersonSettings())
+            let behaviours = try FirstPersonCamera(camera: active, settings: lookSettings)
             try behaviours.setWeaponView(WeaponView(layers: weaponLayers))
             eye = behaviours
         }
@@ -121,19 +149,30 @@ final class Player: Behaviour {
         for target in targets where !world.has(health, on: target) {
             try world.add(Health(), as: health, to: target)
         }
+        lying = Array(repeating: 0, count: targets.count)
+        // PLAYED ONLY: a host with no interface — the scripted session — refuses both, and the
+        // game plays on without them.
+        hud = try? FirstPersonHud(owner: entity)
+        menu = try? PauseMenu(for: self, title: "Paused") { [unowned self] settings in
+            self.adjustLook(settings)
+        }
         try publish()
     }
 
     override func onFixedUpdate(_ delta: Double) throws {
         probeRefusals()
         try move()
+        try reload(Float(delta))
         try fire()
+        try respawn(Float(delta))
         try publish()
     }
 
     override func onUpdate(_ delta: Double) throws {
-        try look()
+        let now = try Time.now
+        try look(Float(delta), now: now)
         try present()
+        try showHud(Float(delta), paused: now.isPaused)
         try publish()
     }
 
@@ -216,6 +255,15 @@ final class Player: Behaviour {
     private func fire() throws {
         cooldown = max(0, cooldown - 1)
         guard try Input.action(Content.fire).justPressed, cooldown == 0, let aim else { return }
+        // AN EMPTY MAGAZINE CLICKS and starts the reload; a reload under way refuses the trigger.
+        guard reloadLeft == 0 else { return }
+        guard rounds >= 1 else {
+            tally.dryFires += 1
+            reloadLeft = reloadSeconds
+            return
+        }
+        rounds -= 1
+        tally.ammo = rounds
         cooldown = fireInterval
         let ray = Ray(origin: aim.origin, direction: aim.direction, maxDistance: range)
         let hit = try Physics.raycast(ray, filter: Layers.shot.ignoring(entity))
@@ -228,6 +276,41 @@ final class Player: Behaviour {
         tally.shots += 1
         record(shot)
         pending.append(shot)
+    }
+
+    /// The reload: asked for, or started by an empty magazine; the magazine full once its seconds
+    /// have run in fixed steps.
+    private func reload(_ step: Float) throws {
+        let asked = try Input.action(Content.reload).justPressed
+        if reloadLeft == 0 && rounds < magazine && asked {
+            reloadLeft = reloadSeconds
+        }
+        guard reloadLeft > 0 else { return }
+        reloadLeft = max(0, reloadLeft - step)
+        if reloadLeft == 0 {
+            rounds = magazine
+            tally.ammo = rounds
+            tally.reloads += 1
+        }
+    }
+
+    /// A target that has lain `respawnSeconds` gets its health back — the game's decision; the
+    /// engine's AI stands it up when it reads the health (host/targets.h).
+    private func respawn(_ step: Float) throws {
+        guard let world else { return }
+        for (index, target) in targets.enumerated() where index < lying.count {
+            let points = try world.float(target, health, field: healthFields.points)
+            guard points <= 0 else {
+                lying[index] = 0
+                continue
+            }
+            lying[index] += step
+            if lying[index] >= respawnSeconds {
+                lying[index] = 0
+                try world.setFloat(Health().points, target, health, field: healthFields.points)
+                tally.respawns += 1
+            }
+        }
     }
 
     /// What a hit does: damage on a target, an impulse at the point on a prop.
@@ -279,17 +362,24 @@ final class Player: Behaviour {
 
     // --- The frame -----------------------------------------------------------------------------
 
-    private func look() throws {
+    private func look(_ seconds: Float, now: GameTime) throws {
         guard let eye, let camera else { return }
         let pointer = try Input.pointer()
         let aiming = try Input.action(Content.aim).pressed
         let state = try CharacterController(entity).state
         // The mouse's counts: +x turns right, and the window's +y is down, so pushing the mouse
-        // away looks up.
+        // away looks up. Paused, the cursor is the menu's and turns nothing.
+        var counts = now.isPaused ? Vec2() : Vec2(x: pointer.delta.x, y: -pointer.delta.y)
+        // THE PAD'S STICK, a rate: radians a second at full deflection, over the frame — turned
+        // into the counts the camera's one sensitivity turns back into radians.
+        let stick = now.isPaused ? Vec2() : try Input.action(Content.look).axis2
+        if stick.x != 0 || stick.y != 0 {
+            let scale = stickLookRate * seconds / max(lookSettings.lookSensitivity, 1e-6)
+            counts = Vec2(x: counts.x + stick.x * scale, y: counts.y + stick.y * scale)
+        }
         try eye.feed(
-            look: Vec2(x: pointer.delta.x, y: -pointer.delta.y),
-            speed: state.isGrounded ? state.velocity.planarLength : 0, aiming: aiming,
-            airborne: !state.isGrounded)
+            look: counts, speed: state.isGrounded ? state.velocity.planarLength : 0,
+            aiming: aiming, airborne: !state.isGrounded)
         if aiming { tally.aimed += 1 }
         // THE AIM THE LAST FRAME DREW, for the next fixed step's shot: the eye the host placed and
         // where the weapon pointed, recoil and all.
@@ -302,8 +392,33 @@ final class Player: Behaviour {
         // than cutting it.
         let target = height - eyeBelowTop
         eyeHeight += (target - eyeHeight) * 0.25
-        let feet = state.position - Vec3(x: 0, y: height * 0.5, z: 0)
+        var feet = state.position - Vec3(x: 0, y: height * 0.5, z: 0)
+        // AT THE FRAME'S OWN TIME: a frame between two ticks carries the head forward by the
+        // character's velocity over that much of a step. A frame on its tick moves it by nothing.
+        let ahead = Float(now.interpolation * now.fixedDelta)
+        if ahead > 0 && !now.isPaused {
+            feet = feet + state.velocity * ahead
+        }
         try camera.overridePose(Pose(position: feet + Vec3(x: 0, y: eyeHeight, z: 0)))
+    }
+
+    /// The menu's look: the camera's own sensitivity scaled — the one place it is applied — and
+    /// its Y inverted or not.
+    private func adjustLook(_ settings: PlaySettings) {
+        let base = FirstPersonSettings()
+        lookSettings.lookSensitivity = base.lookSensitivity * settings.lookSensitivity
+        lookSettings.invertY = settings.invertY
+        try? eye?.configure(lookSettings)
+    }
+
+    /// The HUD and the menu, where the host offers an interface.
+    private func showHud(_ seconds: Float, paused: Bool) throws {
+        try menu?.update(paused: paused)
+        try hud?.update(
+            FirstPersonHud.Reading(
+                ammo: rounds, magazine: magazine, reloading: reloadLeft > 0,
+                targetHits: tally.targetHits, kills: tally.kills),
+            seconds: seconds, paused: paused)
     }
 
     /// Everything the fixed steps since the last frame fired, shown and sounded.
@@ -334,6 +449,9 @@ final class Player: Behaviour {
             tally.sounds += 1
             if let hit = shot.hit {
                 try mark(hit, kind: shot.kind)
+            }
+            if shot.kind == .target || shot.kind == .kill {
+                try hud?.hit(kill: shot.kind == .kill)
             }
         }
         pending.removeAll()
@@ -418,6 +536,8 @@ private struct ReportFields {
         ("misses", \.misses), ("kills", \.kills), ("impulses", \.impulses), ("kicks", \.kicks),
         ("aimed", \.aimed), ("flashes", \.flashes), ("bursts", \.bursts), ("sparks", \.sparks),
         ("marks", \.marks), ("sounds", \.sounds), ("refused", \.refused),
+        ("ammo", \.ammo), ("reloads", \.reloads), ("dryFires", \.dryFires),
+        ("respawns", \.respawns),
         ("lastDistance", \.lastDistance), ("lastKind", \.lastKind),
     ].map { (PlayerReport.field($0.0), $0.1) }
     private let vectors: [(UInt32, KeyPath<PlayerReport, Vec3>)] = [

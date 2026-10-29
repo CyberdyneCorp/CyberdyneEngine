@@ -116,7 +116,8 @@ cy_add_module(
         cy::servers-physics
         cy::vfx
         cy::vfx-compiler)
-target_include_directories(cy_sample_first-person PRIVATE "${CMAKE_SOURCE_DIR}/src/vfx/tests")
+target_include_directories(cy_sample_first-person PRIVATE "${CMAKE_SOURCE_DIR}/src/vfx/tests"
+                                                          "${CMAKE_SOURCE_DIR}/samples/play")
 add_dependencies(cy_sample_first-person cy_sample_first-person_game)
 
 # `--render <dir>`: the session drawn every frame on a device through the engine's frame — the GI,
@@ -144,6 +145,14 @@ if(CY_RENDERER_VULKAN)
     endif()
 endif()
 
+# `--play`: the arena in a window, played with a mouse, a keyboard or a pad, through the desktop
+# play host (samples/play) — drawn when the build has the Vulkan renderer, driven with no picture
+# (`--no-draw`) when it has not.
+if(TARGET cy::sample-play)
+    target_link_libraries(cy_sample_first-person PRIVATE cy::sample-play)
+    target_compile_definitions(cy_sample_first-person PRIVATE CY_FIRST_PERSON_PLAY=1)
+endif()
+
 # The tests run the host as a separate process, so each run loads the Swift module into a fresh
 # image. Declared here rather than in tests/ for 04-character's reason: tests/ is added before
 # samples/, and this target does not exist on a machine with no Swift toolchain.
@@ -162,6 +171,22 @@ if(CY_BUILD_TESTS)
     target_include_directories(cy_test_integration_first_person_sample
                                PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke")
     add_dependencies(cy_test_integration_first_person_sample cy_sample_first-person)
+
+    # integration.first_person_play: the game PLAYED under the desktop play host, headless — SDL's
+    # dummy video driver, no device — its hands scripts pushed through the platform (play/).
+    if(TARGET cy::sample-play)
+        cy_add_test(
+            NAME first_person_play
+            KIND integration
+            SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_first_person_play.cpp"
+            DEFINITIONS
+                CY_SAMPLE_FIRST_PERSON="$<TARGET_FILE:cy_sample_first-person>"
+                CY_FIRST_PERSON_PLAY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/play")
+        target_include_directories(cy_test_integration_first_person_play
+                                   PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke"
+                                           "${CMAKE_SOURCE_DIR}/samples/play/tests")
+        add_dependencies(cy_test_integration_first_person_play cy_sample_first-person)
+    endif()
 
     # smoke.first_person_render: the session drawn on a device — the game untouched by the picture,
     # its marks and sparks where its raycasts hit, a golden still, and what a frame costs at 1080p.
@@ -192,5 +217,25 @@ if(CY_BUILD_TESTS)
         set_tests_properties(smoke.first_person_render PROPERTIES
                              SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine"
                              RUN_SERIAL TRUE)
+
+        # smoke.first_person_play: PLAYED and drawn — a window, the device, the shooting script —
+        # every frame presented without a validation error, the game the headless play run's, and
+        # a frame's work at 1080p under 16.7 ms. Skipped where there is no display or no device.
+        if(TARGET cy::sample-play)
+            cy_add_test(
+                NAME first_person_play
+                KIND smoke
+                SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_first_person_play_render.cpp"
+                DEFINITIONS
+                    CY_SAMPLE_FIRST_PERSON="$<TARGET_FILE:cy_sample_first-person>"
+                    CY_FIRST_PERSON_PLAY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/play")
+            target_include_directories(cy_test_smoke_first_person_play
+                                       PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke"
+                                               "${CMAKE_SOURCE_DIR}/samples/play/tests")
+            add_dependencies(cy_test_smoke_first_person_play cy_sample_first-person)
+            set_tests_properties(smoke.first_person_play PROPERTIES
+                                 SKIP_REGULAR_EXPRESSION "--play: skipped:"
+                                 RUN_SERIAL TRUE)
+        endif()
     endif()
 endif()

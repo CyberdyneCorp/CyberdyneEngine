@@ -355,3 +355,11 @@ creation and command recording as no-ops while preserving handle semantics and v
 - **WHEN** rendering tests run in CI without a GPU
 - **THEN** the null backend SHALL allow render graph construction, culling, and scheduling to be
   tested without device access
+
+### Requirement: A resized swapchain keeps its handle
+Resizing a swapchain SHALL rebuild it under the handle the caller holds, and a rebuild that fails
+SHALL leave the previous swapchain as it was.
+
+#### Scenario: A window resized twice keeps presenting
+- **WHEN** a played game's window is resized twice while it presents
+- **THEN** every frame SHALL still be presented, with no validation error

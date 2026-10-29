@@ -54,6 +54,9 @@ public:
     /// A fallen target is shot through and walked through: its body leaves every layer a shot or
     /// a character uses.
     [[nodiscard]] cy::Status fell(cy::u32 index) noexcept;
+    /// A target back on its feet is shot and walked into again: its body back on the targets'
+    /// layer.
+    [[nodiscard]] cy::Status rose(cy::u32 index) noexcept;
     [[nodiscard]] cy::physics::BodyHandle target_body(cy::u32 index) const noexcept {
         return targets_[index].body;
     }

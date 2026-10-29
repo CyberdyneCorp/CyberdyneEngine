@@ -44,6 +44,8 @@ const char* feature_name(Feature feature) {
             return "NativeMessageDialog";
         case Feature::CustomCursor:
             return "CustomCursor";
+        case Feature::RelativeMouse:
+            return "RelativeMouse";
         case Feature::ImePositioning:
             return "ImePositioning";
         case Feature::OnScreenKeyboard:
@@ -56,6 +58,15 @@ const char* feature_name(Feature feature) {
             return "SystemTray";
     }
     return "<invalid>";
+}
+
+Status DisplayServer::set_window_relative_mouse(WindowId /*window*/, bool /*enabled*/) {
+    return fail(ErrorCode::Unsupported,
+                "this display server cannot hold the pointer; has_feature(RelativeMouse) is false");
+}
+
+Expected<bool, Error> DisplayServer::window_relative_mouse(WindowId /*window*/) const {
+    return false;
 }
 
 }  // namespace cy

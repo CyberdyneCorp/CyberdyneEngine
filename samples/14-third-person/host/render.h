@@ -23,6 +23,7 @@
 // writes the stills listed in render.cpp (`third-person-<frame>.png`), and every frame to
 // `--video <dir>` when asked.
 
+#include <cy/backends/rhi/device.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
 #include <cy/core/memory/allocator.h>
@@ -59,6 +60,9 @@ struct RenderOptions {
     cy::rendering::upscale::UpscaleMode upscale_mode = cy::rendering::upscale::UpscaleMode::Quality;
     /// The graphics API's validation layer. Off is for measuring what a frame costs.
     bool validation = true;
+    /// PLAYED: draw on this device — the play host's, whose swapchain presents the picture — and
+    /// leave each frame's output sampled for it, writing no stills. The renderer does not own it.
+    cy::rhi::Device* device = nullptr;
 };
 
 /// The frame's numbers, over the timed frames.
@@ -100,6 +104,11 @@ public:
     [[nodiscard]] cy::Status frame(ThirdPersonHost& host) noexcept;
     [[nodiscard]] const RenderReport& report() const noexcept;
     void print_report() const noexcept;
+
+    /// The picture the last frame drew, sampled-ready when played: its texture and extent.
+    [[nodiscard]] cy::rhi::TextureHandle output() const noexcept;
+    [[nodiscard]] cy::u32 width() const noexcept;
+    [[nodiscard]] cy::u32 height() const noexcept;
 
 private:
     struct State;

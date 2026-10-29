@@ -63,6 +63,12 @@ run = [["{python}", "src/ui/render/shaders/regenerate.py", "--slangc", "{slangc}
         "--clang-format", "{clang_format}"]]
 
 [[group]]
+name = "play_present"
+headers = ["samples/play/present_spirv.h", "samples/play/present_msl.h"]
+run = [["{python}", "samples/play/shaders/regenerate.py", "--slangc", "{slangc}",
+        "--clang-format", "{clang_format}"]]
+
+[[group]]
 name = "motion_blur"
 headers = ["src/rendering/motion_blur/src/motion_blur_spirv.h", "src/rendering/motion_blur/src/motion_blur_msl.h"]
 run = [["{python}", "src/rendering/motion_blur/shaders/regenerate.py", "--slangc", "{slangc}",

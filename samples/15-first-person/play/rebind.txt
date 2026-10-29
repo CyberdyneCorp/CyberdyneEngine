@@ -1,0 +1,2 @@
+# A player's rebinding: jump on F rather than Space.
+player.jump keyboard/f

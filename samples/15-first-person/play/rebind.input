@@ -1,0 +1,9 @@
+# F twice, a landing apart, then Space. Jump on F (rebind.txt): two jumps. The authored binding,
+# Space: one.
+10 key f down
+12 key f up
+100 key f down
+102 key f up
+190 key space down
+192 key space up
+280 quit

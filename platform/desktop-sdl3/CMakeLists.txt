@@ -18,6 +18,7 @@
 # have worked.
 set(cy_sdl3_sources
     src/sdl3_display_server.cpp
+    src/sdl3_event_injector.cpp
     src/sdl3_input_source.cpp
     src/sdl3_platform.cpp)
 

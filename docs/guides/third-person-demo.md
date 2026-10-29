@@ -167,6 +167,18 @@ made for this page); the budget, 16.7 ms, is held by `smoke.third_person_render`
 GI's host update — card shading and the probe gather's selection — is most of the game's own
 millisecond: with `--no-gi` the host's frame is 0.1 ms.
 
+## Playing it
+
+`just play-tps` plays the hillside in a window under the desktop play host — [Making a game
+playable](playing-a-game.md) is how. W A S D (or the left stick) move the hero in the camera's frame,
+left Shift (or the left stick pressed) runs, Space (south) jumps, the mouse (the right stick, the
+arrow keys) orbits the camera, and Esc (Start) pauses. The mouse turns the camera by
+`CameraDirector`'s `mouseRadians`, 0.0025 a count, times the menu's sensitivity; a mouse at rest
+hands the yaw back to the hero's heading as a still stick does. The camera's focus is the hero at
+the frame's own time between ticks, as the host draws it. Walls a metre in from the terrain's edge,
+not drawn, keep a played hero on the map. `integration.third_person_play` and
+`smoke.third_person_play` are the suites.
+
 ## Pitfalls
 
 * **A character on two coplanar floors** — the terrain flattened at zero and a floor box at zero —

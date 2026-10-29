@@ -1,0 +1,88 @@
+# Mutations applied to the shipped sources, each rebuilt (the Swift game module too, where the
+# mutation is in it), the targeted suites run, and the source restored and rebuilt.
+# Driver: apply -> ninja (the suites' targets) -> the suite binaries -> restore.
+# Host: Linux, NVIDIA RTX 5060 (Vulkan 1.4), Development build, GCC 13, Swift 6.3.3.
+# Every mutation below turned its suite RED; the suites are green on the restored tree.
+# M5 (the per-action override slot) is not listed: main fixed the same defect with its own
+# regression test (#139) and this change took that fix on the rebase.
+# M9 and M14 were first written in a form the compiler refused (an unused name under -Werror);
+# they were rewritten and run again, and are listed in the form that ran.
+
+== M1 the pointer delta adds the input layer's +Y-up MoveY unconverted (the sign before this change)
+   file: src/game_backend/src/input_backend.cpp
+   cy_test_integration_game_backend_input: RED
+   TEST CASE:  the pointer's motion is in window pixels: a mouse pushed away moves it up
+== M2 begin_frame does not observe the events still waiting for a tick
+   file: src/game_backend/src/input_backend.cpp
+   cy_test_integration_game_backend_input: RED
+   TEST CASE:  a frame that runs no tick still turns with the mouse, and the tick after adds none
+   TEST CASE:  a window resolved again at the same tick is a new window to the pointer
+== M3 the observed window keyed on the tick, not the resolution
+   file: src/game_backend/src/input_backend.cpp
+   cy_test_integration_game_backend_input: RED
+   TEST CASE:  a window resolved again at the same tick is a new window to the pointer
+== M4 every observation walks the whole window (an event counted each time it is seen)
+   file: src/game_backend/src/input_backend.cpp
+   cy_test_integration_game_backend_input: RED
+   TEST CASE:  a frame that runs no tick still turns with the mouse, and the tick after adds none
+   TEST CASE:  a window resolved again at the same tick is a new window to the pointer
+== M6 a paused frame runs its ticks
+   file: samples/play/play_host.cpp
+   cy_test_integration_first_person_play: RED
+   TEST CASE:  first-person play: a lost focus pauses, and only the player resumes
+   TEST CASE:  first-person play: the pause menu's Resume resumes and fires nothing, Quit quits
+   cy_test_integration_third_person_play: RED
+   TEST CASE:  third-person play: Esc pauses the hero and the camera, and Esc resumes
+== M7 a lost focus does not pause
+   file: samples/play/play_host.cpp
+   cy_test_integration_first_person_play: RED
+   TEST CASE:  first-person play: a lost focus pauses, and only the player resumes
+== M8 the menu's Quit is not acted on
+   file: samples/play/play_host.cpp
+   cy_test_integration_first_person_play: RED
+   TEST CASE:  first-person play: the pause menu's Resume resumes and fires nothing, Quit quits
+== M9 Esc does not toggle the pause
+   file: samples/play/play_host.cpp
+   cy_test_integration_first_person_play: RED
+   TEST CASE:  first-person play: a lost focus pauses, and only the player resumes
+   TEST CASE:  first-person play: the pause menu's Resume resumes and fires nothing, Quit quits
+   cy_test_integration_third_person_play: RED
+   TEST CASE:  third-person play: Esc pauses the hero and the camera, and Esc resumes
+== M10 the first-person look reads the mouse while paused
+   file: samples/15-first-person/game/Player.swift
+   cy_test_integration_first_person_play: RED
+   TEST CASE:  first-person play: a lost focus pauses, and only the player resumes
+== M11 a fallen target is never given its health back (the game's respawn)
+   file: samples/15-first-person/game/Player.swift
+   cy_test_integration_first_person_play: RED
+   TEST CASE:  first-person play: a target shot down gets back up ten seconds later
+== M12 a target given its health back stays down (the AI's rise)
+   file: samples/15-first-person/host/targets.cpp
+   cy_test_integration_first_person_play: RED
+   TEST CASE:  first-person play: a target shot down gets back up ten seconds later
+== M13 an empty magazine does not start the reload
+   file: samples/15-first-person/game/Player.swift
+   cy_test_integration_first_person_play: RED
+   TEST CASE:  first-person play: thirty rounds, a click on empty, and the reloads
+== M14 the injector writes a stick's Y unflipped
+   file: platform/desktop-sdl3/src/sdl3_event_injector.cpp
+   cy_test_integration_sdl3_injector: RED
+   TEST CASE:  sdl3 injector: a virtual gamepad's stick and trigger arrive as a pad's would
+== M15 the third-person camera turns with the mouse while paused
+   file: samples/14-third-person/game/CameraDirector.swift
+   cy_test_integration_third_person_play: RED
+   TEST CASE:  third-person play: Esc pauses the hero and the camera, and Esc resumes
+== M16 a frame on its tick is carried forward anyway
+   file: samples/play/play_motion.h
+   cy_test_unit_play_host: RED
+   TEST CASE:  a frame on its tick is drawn where the tick left things, exactly
+   TEST CASE:  a frame between ticks carries things forward by the last tick's motion
+== M17 the Vulkan swapchain resized by destroy and create (the resize before this change)
+   file: src/backends/rhi/vulkan/src/vulkan_swapchain.cpp
+   cy_test_smoke_first_person_play: RED
+   TEST CASE:  first-person play drawn: a window resized twice keeps presenting every frame
+== M18 an out-of-date present skips the frame (the presenter before the redraw; observed on that code)
+   file: samples/play/presenter.cpp
+   cy_test_smoke_first_person_play: RED
+   TEST CASE:  first-person play drawn: a window resized twice keeps presenting every frame
+   CHECK_EQ( 149, 151 ): vkQueuePresentKHR returned VK_ERROR_OUT_OF_DATE_KHR once per resize

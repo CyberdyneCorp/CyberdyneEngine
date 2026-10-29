@@ -52,11 +52,13 @@ public:
     explicit InputAdapter(cy::input::InputServer& server) noexcept : server_(&server) {}
 
     /// Fold the mouse events waiting in the server's window into the frame's pointer edges. Call
-    /// immediately before each `InputServer::resolve_tick`.
+    /// immediately before each `InputServer::resolve_tick`. Each event is folded once, however
+    /// often the window is observed before the tick that resolves it.
     void observe_pending() noexcept;
 
     /// Publish the edges accumulated since the previous call as this frame's, and start the next
-    /// window. Call once per frame, before frame-update dispatch.
+    /// window. Call once per frame, before frame-update dispatch. The events still waiting for a
+    /// tick are folded first, so a frame that ran no tick publishes the motion made during it.
     void begin_frame() noexcept;
 
     /// What the host knows and the input server does not: whether the pointer is inside the
@@ -147,6 +149,11 @@ private:
     Rebind rebinds_[kMaxPointerUsers];
     /// The last `profile_save`'s text.
     char profile_text_[8192] = {};
+    /// How much of the server's current window has been observed, and which window that is
+    /// (`InputServer::resolutions`): the window is observed again at each frame's start and an
+    /// event counts once.
+    usize observed_ = 0;
+    u64 observed_window_ = 0;
 };
 
 /// Bind `adapter` as `host`'s input backend (`host.game.input`), or unbind with null. The one place

@@ -1,0 +1,22 @@
+# shoot.input's hands, and then ten seconds and more of waiting: T2, shot down, lies the game's
+# ten seconds and is stood back up, its health given back, by the engine's AI.
+10 mouse move -349 16
+30 mouse left down
+32 mouse left up
+42 mouse left down
+44 mouse left up
+54 mouse left down
+56 mouse left up
+66 mouse left down
+68 mouse left up
+78 mouse left down
+80 mouse left up
+90 mouse left down
+92 mouse left up
+102 mouse left down
+104 mouse left up
+114 mouse left down
+116 mouse left up
+126 mouse left down
+128 mouse left up
+850 quit

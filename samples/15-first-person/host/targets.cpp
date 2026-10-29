@@ -343,14 +343,29 @@ void Targets::feel(u32 index, u32 tick, const TargetHealth& health,
                                      1.0F, tick);
 }
 
+void Targets::rise(u32 index, f32 dt) noexcept {
+    // GETTING UP takes the fall's time back, where it lies; it is solid again once it stands, and
+    // what it knew of the player went down with it.
+    TargetState& state = states_[index];
+    state.fall = cy::math::max(0.0F, state.fall - (dt / kFallSeconds));
+    if (state.fall == 0.0F) {
+        (void)bodies_->rose(index);
+        state.flinch = 0.0F;
+        ++state.rises;
+    }
+    (void)bodies_->place_target(index, target_placement(state));
+}
+
 cy::Status Targets::tick(u32 tick, f32 dt, const PlayerSighting& player,
                          const TargetHealth (&health)[kTargetCount]) noexcept {
     // WHAT THE GAME WROTE: hits felt, and who is down.
     bool down[kTargetCount] = {};
     for (u32 index = 0; index < kTargetCount; ++index) {
         feel(index, tick, health[index], player.entity);
-        down[index] = states_[index].mode == TargetMode::Down ||
-                      (health[index].present && health[index].points <= 0.0F);
+        // DOWN IS THE GAME'S HEALTH: gone, the target falls; given back — the game decides a
+        // fallen target gets up — it rises. A target the game wrote no health on stays as it was.
+        down[index] = health[index].present ? health[index].points <= 0.0F
+                                            : states_[index].mode == TargetMode::Down;
     }
 
     // WHAT EACH STANDING TARGET SEES: one batched update over all of them.
@@ -429,6 +444,10 @@ void Targets::move(u32 index, u32 tick, f32 dt) noexcept {
     TargetState& state = states_[index];
     ++state.ticks_in[static_cast<cy::usize>(state.mode)];
     const TargetSpot& spot = target_spots()[index];
+    if (state.mode != TargetMode::Down && state.fall > 0.0F) {
+        rise(index, dt);
+        return;
+    }
     switch (state.mode) {
         case TargetMode::Down: {
             if (state.fall == 0.0F) {

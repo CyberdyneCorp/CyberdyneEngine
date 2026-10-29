@@ -1,0 +1,126 @@
+# The film's hands (just capture-play-tps): the camera orbited once round the hero with the
+# mouse; a run north up the courtyard's stairs onto the platform; the camera turned east and
+# a run down the ramp and up the hillside, with a jump; the pause menu; on again. One step a
+# frame.
+20 mouse move 41.89 0
+22 mouse move 41.89 0
+24 mouse move 41.89 0
+26 mouse move 41.89 0
+28 mouse move 41.89 0
+30 mouse move 41.89 0
+32 mouse move 41.89 0
+34 mouse move 41.89 0
+36 mouse move 41.89 0
+38 mouse move 41.89 0
+40 mouse move 41.89 0
+42 mouse move 41.89 0
+44 mouse move 41.89 0
+46 mouse move 41.89 0
+48 mouse move 41.89 0
+50 mouse move 41.89 0
+52 mouse move 41.89 0
+54 mouse move 41.89 0
+56 mouse move 41.89 0
+58 mouse move 41.89 0
+60 mouse move 41.89 0
+62 mouse move 41.89 0
+64 mouse move 41.89 0
+66 mouse move 41.89 0
+68 mouse move 41.89 0
+70 mouse move 41.89 0
+72 mouse move 41.89 0
+74 mouse move 41.89 0
+76 mouse move 41.89 0
+78 mouse move 41.89 0
+80 mouse move 41.89 0
+82 mouse move 41.89 0
+84 mouse move 41.89 0
+86 mouse move 41.89 0
+88 mouse move 41.89 0
+90 mouse move 41.89 0
+92 mouse move 41.89 0
+94 mouse move 41.89 0
+96 mouse move 41.89 0
+98 mouse move 41.89 0
+100 mouse move 41.89 0
+102 mouse move 41.89 0
+104 mouse move 41.89 0
+106 mouse move 41.89 0
+108 mouse move 41.89 0
+110 mouse move 41.89 0
+112 mouse move 41.89 0
+114 mouse move 41.89 0
+116 mouse move 41.89 0
+118 mouse move 41.89 0
+120 mouse move 41.89 0
+122 mouse move 41.89 0
+124 mouse move 41.89 0
+126 mouse move 41.89 0
+128 mouse move 41.89 0
+130 mouse move 41.89 0
+132 mouse move 41.89 0
+134 mouse move 41.89 0
+136 mouse move 41.89 0
+138 mouse move 41.89 0
+150 key w down
+160 key leftShift down
+330 mouse move 31.4 0
+332 mouse move 31.4 0
+334 mouse move 31.4 0
+336 mouse move 31.4 0
+338 mouse move 31.4 0
+340 mouse move 31.4 0
+342 mouse move 31.4 0
+344 mouse move 31.4 0
+346 mouse move 31.4 0
+348 mouse move 31.4 0
+350 mouse move 31.4 0
+352 mouse move 31.4 0
+354 mouse move 31.4 0
+356 mouse move 31.4 0
+358 mouse move 31.4 0
+360 mouse move 31.4 0
+362 mouse move 31.4 0
+364 mouse move 31.4 0
+366 mouse move 31.4 0
+368 mouse move 31.4 0
+520 key space down
+522 key space up
+600 key leftShift up
+640 mouse move 0 -60
+680 key w up
+700 mouse move -40 0
+702 mouse move -40 0
+704 mouse move -40 0
+706 mouse move -40 0
+708 mouse move -40 0
+710 mouse move -40 0
+712 mouse move -40 0
+714 mouse move -40 0
+716 mouse move -40 0
+718 mouse move -40 0
+720 mouse move -40 0
+722 mouse move -40 0
+724 mouse move -40 0
+726 mouse move -40 0
+728 mouse move -40 0
+730 mouse move -40 0
+732 mouse move -40 0
+734 mouse move -40 0
+736 mouse move -40 0
+738 mouse move -40 0
+740 mouse move -40 0
+742 mouse move -40 0
+744 mouse move -40 0
+746 mouse move -40 0
+748 mouse move -40 0
+750 mouse move -40 0
+752 mouse move -40 0
+754 mouse move -40 0
+756 mouse move -40 0
+758 mouse move -40 0
+800 key escape down
+801 key escape up
+860 key escape down
+861 key escape up
+900 quit
