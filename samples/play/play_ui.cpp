@@ -102,8 +102,8 @@ Status PlayUi::frame(f32 seconds, Vec2 viewport, const UiPointer& pointer,
     if (Status laid = adapter_->frame(seconds, settings_, viewport); !laid) {
         return laid;
     }
-    if (Status routed = adapter_->route_pointer(pointer.position, pointer.pressed,
-                                                pointer.released);
+    if (Status routed =
+            adapter_->route_pointer(pointer.position, pointer.pressed, pointer.released);
         !routed) {
         return routed;
     }

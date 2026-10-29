@@ -180,6 +180,10 @@ frame's work to 16.7 ms.
   layout runs; flattened first, it is drawn at the origin for a frame (`PlayUi::settle`).
 - **Close the pads before detaching a virtual joystick.** SDL frees the device on detach; a gamepad
   still open on it is then closed through freed memory.
+- **A resize can land between a frame's events and its present.** The window manager resizes the
+  window asynchronously, so the present finds the swapchain out of date. The presenter follows the
+  window and draws the frame again into the new swapchain, once — dropping it instead lost a frame
+  per resize, which `smoke.first_person_play`'s resize case caught (149 of 151 presented).
 - **A real desktop changes focus under a film.** Captures and timed tests pass `--no-focus-pause`.
 - **The toolkit's widgets belong under the screen's root.** Started with its own root, a document's
   anchors were a zero-sized parent's and the menu sat in the corner.

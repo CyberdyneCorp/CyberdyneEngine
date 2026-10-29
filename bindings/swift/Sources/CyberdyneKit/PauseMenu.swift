@@ -41,8 +41,9 @@ public struct PlaySettings: Equatable, Sendable {
 /// The pause menu: a dimmed screen, a card with the look sensitivity, the inverted Y, Resume and
 /// Quit, shown while the game is paused.
 public final class PauseMenu {
-    /// The ids the play host listens for.
+    /// The id of the button whose click the play host answers by resuming the game.
     public static let resumeId = "play-resume"
+    /// The id of the button whose click the play host answers by ending the run.
     public static let quitId = "play-quit"
     /// The sensitivity slider's range.
     public static let sensitivityRange: ClosedRange<Float> = 0.25...4

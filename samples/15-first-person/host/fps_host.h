@@ -187,7 +187,7 @@ public:
     /// A frame's time, as `cy::play::HostedGame` hands it over.
     using Step = FrameStep;
 
-    FpsHost(cy::Allocator& allocator, const HostOptions& options) noexcept;
+    FpsHost(cy::Allocator& allocator, HostOptions options) noexcept;
     ~FpsHost();
 
     FpsHost(const FpsHost&) = delete;

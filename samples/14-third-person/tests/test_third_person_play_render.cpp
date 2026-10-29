@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // smoke.third_person_play — samples/14-third-person PLAYED and DRAWN: the hillside in a window on a
 // device, the running script's hands pushed through the platform. See samples/play/tests/
-// play_render.h for the two runs and what each is held to. Vulkan; serial, because one run is timed.
+// play_render.h for the two runs and what each is held to. Vulkan; serial, because one run is
+// timed.
 
 #include <cy/test/test.h>
 

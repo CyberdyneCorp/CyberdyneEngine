@@ -3,6 +3,8 @@
 
 #include "input_script.h"
 
+#include "read_text.h"
+
 #include <cy/core/platform/display_server.h>
 #include <cy/platform/sdl3_event_injector.h>
 
@@ -143,23 +145,17 @@ Status InputScript::parse(std::string_view text) noexcept {
         events_.push_back(event);
     }
     // Stable: lines of one frame keep their written order.
-    std::stable_sort(events_.begin(), events_.end(),
-                     [](const ScriptEvent& a, const ScriptEvent& b) { return a.frame < b.frame; });
+    std::ranges::stable_sort(
+        events_, [](const ScriptEvent& a, const ScriptEvent& b) { return a.frame < b.frame; });
     return ok();
 }
 
 Status InputScript::load(const char* path) noexcept {
-    std::FILE* file = std::fopen(path, "rb");
-    if (file == nullptr) {
-        error_ = std::string("cannot open the input script ") + path;
+    std::string text;
+    if (!read_text(path, text)) {
+        error_ = std::string("cannot read the input script ") + path;
         return fail(ErrorCode::NotFound, error_.c_str());
     }
-    std::string text;
-    char buffer[1024];
-    for (usize read = 0; (read = std::fread(buffer, 1, sizeof(buffer), file)) > 0;) {
-        text.append(buffer, read);
-    }
-    (void)std::fclose(file);
     return parse(text);
 }
 

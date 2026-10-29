@@ -45,6 +45,11 @@ does in the scripted run; when the look rests and the hero moves, the camera swi
 it. Esc, or the window losing the focus, pauses: the menu sets the sensitivity, inverts the look's Y,
 and resumes or quits.
 
+Played at 1920x1080 without v-sync on the RTX 5060 (`smoke.third_person_play`'s timed run), a
+frame's work is **7.7 to 11.6 ms on average** across runs, against 16.7 ms; its 99th percentile was
+25 to 35 ms — a few frames in two hundred, not yet traced to a cause; no validation error in
+any frame.
+
 [Video: the hillside played](../../docs/design/videos/third-person-play.mp4), its hands a script
 pushed through the platform (`play/capture.input`).
 

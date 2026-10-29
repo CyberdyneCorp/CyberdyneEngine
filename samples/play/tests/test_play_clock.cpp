@@ -8,6 +8,7 @@
 
 #include "pause.h"
 #include "play_clock.h"
+#include "play_motion.h"
 
 using cy::play::ClockSettings;
 using cy::play::FixedStepClock;
@@ -131,4 +132,37 @@ CY_TEST_CASE("Esc pauses and resumes; a lost focus pauses and only the player re
     pause.focus_lost();
     CY_CHECK_EQ(pause.pauses(), 3U);
     CY_CHECK_EQ(pause.focus_pauses(), 1U);
+}
+
+CY_TEST_CASE("a frame on its tick is drawn where the tick left things, exactly") {
+    // The scripted runs' every frame: an interpolation of zero changes no bit of what is drawn, so
+    // their pictures and digests are what they were before the play host existed.
+    const cy::Vec3 before{1.0F, 2.0F, 3.0F};
+    const cy::Vec3 now{1.25F, 2.0F, 2.5F};
+    const cy::Vec3 drawn = cy::play::carried_forward(before, now, 0.0F);
+    CY_CHECK_EQ(drawn.x, now.x);
+    CY_CHECK_EQ(drawn.y, now.y);
+    CY_CHECK_EQ(drawn.z, now.z);
+    cy::Transform from = cy::Transform::from_translation(before);
+    cy::Transform to = cy::Transform::from_translation(now);
+    to.rotation = cy::Quat::from_axis_angle(cy::Vec3{0.0F, 1.0F, 0.0F}, 0.5F);
+    const cy::Transform placed = cy::play::carried_forward(from, to, 0.0F);
+    CY_CHECK_EQ(placed.rotation.x, to.rotation.x);
+    CY_CHECK_EQ(placed.rotation.y, to.rotation.y);
+    CY_CHECK_EQ(placed.rotation.w, to.rotation.w);
+}
+
+CY_TEST_CASE("a frame between ticks carries things forward by the last tick's motion") {
+    // Halfway to the next tick: half of the last step again, the turn too.
+    const cy::Vec3 drawn =
+        cy::play::carried_forward(cy::Vec3{0.0F, 0.0F, 0.0F}, cy::Vec3{1.0F, 0.0F, -2.0F}, 0.5F);
+    CY_CHECK(near(drawn.x, 1.5));
+    CY_CHECK(near(drawn.z, -3.0));
+    cy::Transform from = cy::Transform::identity();
+    cy::Transform to = cy::Transform::identity();
+    to.rotation = cy::Quat::from_axis_angle(cy::Vec3{0.0F, 1.0F, 0.0F}, 0.2F);
+    const cy::Transform placed = cy::play::carried_forward(from, to, 0.5F);
+    const cy::Quat expected = cy::Quat::from_axis_angle(cy::Vec3{0.0F, 1.0F, 0.0F}, 0.3F);
+    CY_CHECK(std::fabs(placed.rotation.y - expected.y) < 1e-3F);
+    CY_CHECK(std::fabs(placed.rotation.w - expected.w) < 1e-3F);
 }

@@ -63,7 +63,7 @@ public:
     [[nodiscard]] Status start() noexcept;
     /// Bind the adapter as `host`'s interface (`ui_*`).
     void bind(abi::Host& host) noexcept;
-    void unbind(abi::Host& host) noexcept;
+    static void unbind(abi::Host& host) noexcept;
 
     /// One frame of the interface; see the header. `deliver` receives every event in order.
     [[nodiscard]] Status frame(f32 seconds, Vec2 viewport, const UiPointer& pointer,

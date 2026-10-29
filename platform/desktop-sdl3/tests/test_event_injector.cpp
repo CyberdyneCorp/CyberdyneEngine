@@ -64,7 +64,7 @@ CY_TEST_CASE("sdl3 injector: an injected key arrives as the key a person's press
                                      cy::input::Key::LeftControl, cy::input::Key::Escape}) {
         CY_REQUIRE(inject.key(key, true).has_value());
         const auto& pending = fixture.server.pending();
-        CY_REQUIRE_EQ(pending.size() > 0, true);
+        CY_REQUIRE_EQ(pending.empty(), false);
         CY_CHECK(pending[pending.size() - 1].control == cy::input::key_control(key));
         CY_CHECK_EQ(pending[pending.size() - 1].value, 1.0F);
     }
@@ -86,8 +86,8 @@ CY_TEST_CASE("sdl3 injector: injected motion is SDL's, so the source flips its Y
     CY_CHECK_EQ(fixture.server.pending()[0].value, 12.0F);
     // Pushed away (SDL's -y) is +Y up in the input layer.
     CY_CHECK_EQ(fixture.server.pending()[1].value, 5.0F);
-    CY_REQUIRE(inject.mouse_button(cy::input::MouseControl::Left, true, 400.0F, 300.0F)
-                   .has_value());
+    CY_REQUIRE(
+        inject.mouse_button(cy::input::MouseControl::Left, true, 400.0F, 300.0F).has_value());
     CY_CHECK(fixture.server.pending()[4].control ==
              cy::input::mouse_control(cy::input::MouseControl::Left));
     fixture.source.detach();

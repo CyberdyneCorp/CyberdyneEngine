@@ -3,6 +3,8 @@
 
 #include "bindings_file.h"
 
+#include "read_text.h"
+
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -40,8 +42,7 @@ namespace {
     }
     const std::string_view path = word(line, at);
     const std::string_view slot_text = word(line, at);
-    const input::ActionId action =
-        server.actions().find(Name::intern(action_name));
+    const input::ActionId action = server.actions().find(Name::intern(action_name));
     if (action == input::kInvalidAction) {
         error = refusal(number, "no action is declared as", action_name);
         return false;
@@ -97,17 +98,11 @@ BindingsResult apply_bindings(input::InputServer& server, u32 user,
 BindingsResult apply_bindings_file(input::InputServer& server, u32 user,
                                    const char* path) noexcept {
     BindingsResult result;
-    std::FILE* file = std::fopen(path, "rb");
-    if (file == nullptr) {
-        result.error = std::string("cannot open ") + path;
+    std::string text;
+    if (!read_text(path, text)) {
+        result.error = std::string("cannot read ") + path;
         return result;
     }
-    std::string text;
-    char buffer[1024];
-    for (usize read = 0; (read = std::fread(buffer, 1, sizeof(buffer), file)) > 0;) {
-        text.append(buffer, read);
-    }
-    (void)std::fclose(file);
     return apply_bindings(server, user, text);
 }
 

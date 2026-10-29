@@ -272,9 +272,9 @@ Status VulkanDevice::resize_swapchain(SwapchainHandle handle, Extent2D extent) {
     // REBUILT IN THE RECORD THE CALLER'S HANDLE NAMES. Until the play host resized its window this
     // destroyed the swapchain and created another under a NEW handle it never returned, so the
     // caller's handle was stale from the first resize and the second failed — the null and D3D12
-    // devices kept it, and `Device::resize_swapchain` promises the same handle. The new one is built
-    // first, the old one handed to the driver as the swapchain it replaces, and only then released:
-    // a rebuild that fails leaves the old swapchain as it was.
+    // devices kept it, and `Device::resize_swapchain` promises the same handle. The new one is
+    // built first, the old one handed to the driver as the swapchain it replaces, and only then
+    // released: a rebuild that fails leaves the old swapchain as it was.
     (void)vkDeviceWaitIdle(device_);
     SwapchainRecord rebuilt(*allocator_);
     if (Status built = build_swapchain(description, record->swapchain, rebuilt); !built) {

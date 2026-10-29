@@ -192,8 +192,7 @@ struct Streams {
 
 }  // namespace
 
-// --- The state
-// -------------------------------------------------------------------------------------
+// --- The state -----------------------------------------------------------------------------------
 
 struct Renderer::State {
     explicit State(cy::Allocator& memory) noexcept
@@ -1038,11 +1037,11 @@ struct Renderer::State {
             return cy::make_unexpected(buffer.error());
         }
         readback = *buffer;
-        if (Status made = create_texture(
-                "third-person output", kOutputFormat, options.width, options.height,
-                rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::TransferSource |
-                    rhi::TextureUsage::Sampled,
-                output);
+        if (Status made =
+                create_texture("third-person output", kOutputFormat, options.width, options.height,
+                               rhi::TextureUsage::ColorAttachment |
+                                   rhi::TextureUsage::TransferSource | rhi::TextureUsage::Sampled,
+                               output);
             !made) {
             return made;
         }
@@ -1449,8 +1448,7 @@ struct Renderer::State {
     }
 };
 
-// --- The renderer
-// ----------------------------------------------------------------------------------
+// --- The renderer --------------------------------------------------------------------------------
 
 Renderer::Renderer(cy::Allocator& allocator) noexcept : allocator_(&allocator) {}
 

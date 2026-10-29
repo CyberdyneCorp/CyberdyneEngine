@@ -177,7 +177,7 @@ public:
     /// A frame's time, as `cy::play::HostedGame` hands it over.
     using Step = FrameStep;
 
-    ThirdPersonHost(cy::Allocator& allocator, const HostOptions& options) noexcept;
+    ThirdPersonHost(cy::Allocator& allocator, HostOptions options) noexcept;
     ~ThirdPersonHost();
 
     ThirdPersonHost(const ThirdPersonHost&) = delete;

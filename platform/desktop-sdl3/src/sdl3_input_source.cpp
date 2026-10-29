@@ -450,7 +450,7 @@ void Sdl3InputSource::on_event(const void* sdl_event) noexcept {
 
 }  // namespace cy
 
-// --- The translations, for the event injector -----------------------------------------------------
+// --- The translations, for the event injector ----------------------------------------------------
 //
 // `Sdl3EventInjector` runs them backwards, so an injected key reaches the input server as the same
 // `Key` a person's press of it would: one table, read both ways.

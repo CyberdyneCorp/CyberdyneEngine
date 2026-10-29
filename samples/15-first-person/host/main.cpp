@@ -272,7 +272,7 @@ private:
 };
 
 #if defined(CY_FIRST_PERSON_PLAY)
-// --- Played ---------------------------------------------------------------------------------------
+// --- Played --------------------------------------------------------------------------------------
 //
 // `--play`: the arena in a window, a person at the mouse and the keyboard (or a pad), through the
 // desktop play host (samples/play). The game is the same Swift module; nothing scripts it. With
@@ -408,8 +408,8 @@ void print_played(FpsHost& host) noexcept {
             return 1;
         }
         const std::string directory = flags.play.capture_directory;
-        play.on_capture = [&directory](cy::u64 frame, cy::Span<const cy::u32> pixels,
-                                       cy::u32 width, cy::u32 height) {
+        play.on_capture = [&directory](cy::u64 frame, cy::Span<const cy::u32> pixels, cy::u32 width,
+                                       cy::u32 height) {
             return write_capture(directory, frame, pixels, width, height);
         };
         const cy::Expected<cy::play::PlayReport, cy::Error> report = play.run();

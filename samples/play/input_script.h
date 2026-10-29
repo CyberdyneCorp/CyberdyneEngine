@@ -34,7 +34,7 @@
 namespace cy {
 class DisplayServer;
 class Sdl3EventInjector;
-}
+}  // namespace cy
 
 namespace cy::play {
 

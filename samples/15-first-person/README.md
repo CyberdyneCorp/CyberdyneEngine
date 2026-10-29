@@ -45,6 +45,11 @@ gets back up — the game gives it its health back and the engine's AI stands it
 window losing the focus, pauses: the menu sets the look's sensitivity and inverts its Y — applied
 once, in the first-person camera's own sensitivity — and resumes or quits.
 
+Played at 1920x1080 without v-sync on the RTX 5060 (`smoke.first_person_play`'s timed run, two
+hundred frames of the shooting script), a frame's work — the ticks, the game's frame, its picture,
+the interface and the present — is **6.4 to 8.6 ms on average, 7.1 to 12.2 ms at the 99th
+percentile**, across runs, against 16.7 ms; no validation error in any frame.
+
 [Video: the arena played](../../docs/design/videos/first-person-play.mp4), its hands a script pushed
 through the platform (`play/capture.input`).
 

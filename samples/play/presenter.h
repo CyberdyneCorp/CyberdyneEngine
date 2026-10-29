@@ -59,7 +59,8 @@ struct PresentSource {
 /// What one `present` did.
 struct PresentResult {
     bool presented = false;
-    /// The swapchain was out of date (a resize) and was recreated; nothing was presented.
+    /// The swapchain was out of date (a resize) and was recreated; the frame was drawn again into
+    /// it, and `presented` says whether that second attempt reached the window.
     bool resized = false;
     /// The CPU's milliseconds from the acquire to the device being idle again — the presenter's
     /// share of a frame, v-sync wait included when FIFO blocks.
@@ -104,6 +105,16 @@ public:
     struct State;
 
 private:
+    /// The swapchain and the interface renderer to the window's size now.
+    [[nodiscard]] Status follow_window() noexcept;
+    /// The frame's graph built, executed and presented to swapchain image `image`.
+    [[nodiscard]] Status draw(u32 image, bool capture, PresentResult& result) noexcept;
+    /// One acquire, draw and present; false, with the swapchain following the window, when it was
+    /// out of date and nothing was presented.
+    [[nodiscard]] Expected<bool, Error> present_once(bool capture, PresentResult& result) noexcept;
+    /// The captured image off the device, as RGBA8.
+    void read_capture() noexcept;
+
     Allocator* allocator_;
     std::unique_ptr<State> state_;
     rhi::Device* device_ = nullptr;

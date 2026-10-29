@@ -30,9 +30,8 @@ inline constexpr double kFrameBudgetMs = 16.7;
                                                                const std::string& script,
                                                                const std::string& extra) {
     return cy::test::smoke::run(cy::test::smoke::quoted(sample) +
-                                " --play --fixed-clock --no-focus-pause " +
-                                "--input-script " + cy::test::smoke::quoted(script) + " " + extra +
-                                " 2>&1");
+                                " --play --fixed-clock --no-focus-pause " + "--input-script " +
+                                cy::test::smoke::quoted(script) + " " + extra + " 2>&1");
 }
 
 /// True, and the sample's reason printed, when the machine cannot play drawn.

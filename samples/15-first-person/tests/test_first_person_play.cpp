@@ -143,8 +143,8 @@ CY_TEST_CASE("first-person play: a pad walks, turns and fires through SDL's own 
 }
 
 CY_TEST_CASE("first-person play: a player's rebinding moves jump from Space to F") {
-    const Played rebound = play("rebind.input", "--bindings " + cy::test::smoke::quoted(
-                                                                     script("rebind.txt")));
+    const Played rebound =
+        play("rebind.input", "--bindings " + cy::test::smoke::quoted(script("rebind.txt")));
     CY_CHECK_EQ(number_after(rebound.move, "jumps"), 2.0);
     // The same hands with the authored bindings: F does nothing, Space jumps.
     const Played authored = play("rebind.input");

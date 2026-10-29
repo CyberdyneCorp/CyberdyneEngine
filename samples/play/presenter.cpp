@@ -17,6 +17,7 @@
 #include <cy/ui/render/ui_renderer.h>
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -91,8 +92,8 @@ template <usize N>
     const f64 scale_x = static_cast<f64>(target_width) / static_cast<f64>(picture_width);
     const f64 scale_y = static_cast<f64>(target_height) / static_cast<f64>(picture_height);
     const f64 scale = scale_x < scale_y ? scale_x : scale_y;
-    const auto width = static_cast<u32>(static_cast<f64>(picture_width) * scale + 0.5);
-    const auto height = static_cast<u32>(static_cast<f64>(picture_height) * scale + 0.5);
+    const auto width = static_cast<u32>(std::lround(static_cast<f64>(picture_width) * scale));
+    const auto height = static_cast<u32>(std::lround(static_cast<f64>(picture_height) * scale));
     rhi::Rect2D rect;
     rect.width = width < target_width ? width : target_width;
     rect.height = height < target_height ? height : target_height;
@@ -104,7 +105,8 @@ template <usize N>
 }  // namespace
 
 struct Presenter::State {
-    explicit State(Allocator& memory) noexcept : allocator(&memory), interface(memory), buffer(memory) {}
+    explicit State(Allocator& memory) noexcept
+        : allocator(&memory), interface(memory), buffer(memory) {}
 
     Allocator* allocator;
     PresenterOptions options;
@@ -345,8 +347,8 @@ struct Presenter::State {
             !flat) {
             return flat;
         }
-        const f32 scale = viewport.x > 0.0F ? static_cast<f32>(info.extent.width) / viewport.x
-                                            : 1.0F;
+        const f32 scale =
+            viewport.x > 0.0F ? static_cast<f32>(info.extent.width) / viewport.x : 1.0F;
         return interface.submit(buffer, scale);
     }
 
@@ -359,8 +361,8 @@ struct Presenter::State {
         attachment.store = rhi::StoreOp::Store;
         attachment.clear.color[3] = 1.0F;
         rhi::RenderingInfo rendering_info;
-        rendering_info.render_area = rhi::Rect2D{0, 0, self->info.extent.width,
-                                                 self->info.extent.height};
+        rendering_info.render_area =
+            rhi::Rect2D{0, 0, self->info.extent.width, self->info.extent.height};
         rendering_info.color_attachments = Span<const rhi::RenderAttachment>(&attachment, 1);
         Expected<rhi::DescriptorSetHandle, Error> set =
             gpu.allocate_descriptor_set(self->set_layout, true);
@@ -405,9 +407,9 @@ struct Presenter::State {
         rhi::BufferTextureCopy region;
         region.buffer_row_length = self->info.extent.width;
         region.texture_extent = rhi::Extent3D{self->info.extent.width, self->info.extent.height, 1};
-        context.commands->copy_texture_to_buffer(
-            context.executor->texture(self->target), self->readback,
-            Span<const rhi::BufferTextureCopy>(&region, 1));
+        context.commands->copy_texture_to_buffer(context.executor->texture(self->target),
+                                                 self->readback,
+                                                 Span<const rhi::BufferTextureCopy>(&region, 1));
     }
 
     /// The frame's graph: the picture, the interface, the capture, the hand-back.
@@ -488,8 +490,8 @@ Status Presenter::start(DisplayServer& display, WindowId window, PlayUi* ui,
     if (Status chain = state.create_swapchain(*size); !chain) {
         return chain;
     }
-    for (const Step step : {&State::create_pipeline, &State::create_interface,
-                            &State::create_readback}) {
+    for (const Step step :
+         {&State::create_pipeline, &State::create_interface, &State::create_readback}) {
         if (Status made = (state.*step)(); !made) {
             return made;
         }
@@ -530,6 +532,78 @@ Status Presenter::resize(Extent extent) noexcept {
     return state.create_readback();
 }
 
+Status Presenter::follow_window() noexcept {
+    const Expected<Extent, Error> size = state_->display->window_size(state_->window);
+    if (!size) {
+        return make_unexpected(size.error());
+    }
+    return resize(*size);
+}
+
+Status Presenter::draw(u32 image, bool capture, PresentResult& result) noexcept {
+    State& state = *state_;
+    Status executed = state.submit_interface();
+    rendering::RenderGraph graph(*state.allocator);
+    if (executed) {
+        executed = state.declare(graph, image, capture);
+    }
+    rendering::GraphExecutor executor(*state.allocator, *device_);
+    if (executed) {
+        rendering::ExecuteOptions options;
+        options.wait_acquire = state.acquired;
+        options.signal_present = state.presented;
+        const Expected<rendering::ExecutionResult, Error> ran =
+            executor.execute(graph, rendering::CompileOptions{}, options);
+        executed = ran ? ok() : make_unexpected(ran.error());
+    }
+    if (executed) {
+        result.presented = device_->present(state.swapchain, image, state.presented).has_value();
+        executed = device_->wait_idle();
+    }
+    executor.release();
+    return executed;
+}
+
+void Presenter::read_capture() noexcept {
+    const State& state = *state_;
+    const auto* bytes = static_cast<const u8*>(device_->buffer_mapped_pointer(state.readback));
+    captured_width_ = state.info.extent.width;
+    captured_height_ = state.info.extent.height;
+    captured_.assign(static_cast<usize>(captured_width_) * captured_height_, 0U);
+    if (bytes == nullptr) {
+        return;
+    }
+    const bool swap = is_bgra(state.info.format);
+    for (usize texel = 0; texel < captured_.size(); ++texel) {
+        const u8* from = bytes + (texel * 4U);
+        const u32 r = swap ? from[2] : from[0];
+        const u32 b = swap ? from[0] : from[2];
+        captured_[texel] = r | (u32{from[1]} << 8U) | (b << 16U) | 0xFF000000U;
+    }
+}
+
+Expected<bool, Error> Presenter::present_once(bool capture, PresentResult& result) noexcept {
+    if (Expected<u32, Error> began = device_->begin_frame(); !began) {
+        return make_unexpected(began.error());
+    }
+    const Expected<u32, Error> image =
+        device_->acquire_next_image(state_->swapchain, state_->acquired, 1'000'000'000ULL);
+    const Status drawn = image ? draw(*image, capture, result) : ok();
+    (void)device_->end_frame();
+    if (!drawn) {
+        return make_unexpected(drawn.error());
+    }
+    if (result.presented) {
+        return true;
+    }
+    // OUT OF DATE: asked what the window is now, rather than told what it was.
+    if (Status followed = follow_window(); !followed) {
+        return make_unexpected(followed.error());
+    }
+    result.resized = true;
+    return false;
+}
+
 Expected<PresentResult, Error> Presenter::present(const PresentSource& source,
                                                   bool capture) noexcept {
     State& state = *state_;
@@ -538,12 +612,8 @@ Expected<PresentResult, Error> Presenter::present(const PresentSource& source,
     if (state.info.extent.width == 0U || state.info.extent.height == 0U) {
         // A window that had no size when the swapchain was made — a fullscreen one before the
         // window manager placed it — is asked again; a minimised one presents nothing.
-        const Expected<Extent, Error> size = state.display->window_size(state.window);
-        if (!size) {
-            return make_unexpected(size.error());
-        }
-        if (Status resized = resize(*size); !resized) {
-            return make_unexpected(resized.error());
+        if (Status followed = follow_window(); !followed) {
+            return make_unexpected(followed.error());
         }
         if (state.info.extent.width == 0U || state.info.extent.height == 0U) {
             return result;
@@ -553,62 +623,19 @@ Expected<PresentResult, Error> Presenter::present(const PresentSource& source,
         return make_unexpected(atlases.error());
     }
     const auto started = std::chrono::steady_clock::now();
-    if (Expected<u32, Error> began = device_->begin_frame(); !began) {
-        return make_unexpected(began.error());
+    // A window resized between the frame's events and its present leaves the swapchain out of
+    // date at the acquire or at the present. The swapchain follows the window and the frame is
+    // drawn again into it, once: the game's picture is still there, so a resize drops no frame.
+    Expected<bool, Error> shown = present_once(capture, result);
+    const bool sized = state.info.extent.width != 0U && state.info.extent.height != 0U;
+    if (shown && !*shown && sized) {
+        shown = present_once(capture, result);
     }
-    const Expected<u32, Error> image =
-        device_->acquire_next_image(state.swapchain, state.acquired, 1'000'000'000ULL);
-    if (!image) {
-        // OUT OF DATE: the window changed size under the swapchain. Asked what it is now, rather
-        // than told what it was, and the frame is skipped rather than failed.
-        (void)device_->end_frame();
-        const Expected<Extent, Error> size = state.display->window_size(state.window);
-        if (!size) {
-            return make_unexpected(size.error());
-        }
-        if (Status resized = resize(*size); !resized) {
-            return make_unexpected(resized.error());
-        }
-        result.resized = true;
-        return result;
+    if (!shown) {
+        return make_unexpected(shown.error());
     }
-    Status executed = state.submit_interface();
-    {
-        rendering::RenderGraph graph(*state_->allocator);
-        if (executed) {
-            executed = state.declare(graph, *image, capture);
-        }
-        rendering::GraphExecutor executor(*state_->allocator, *device_);
-        if (executed) {
-            rendering::ExecuteOptions options;
-            options.wait_acquire = state.acquired;
-            options.signal_present = state.presented;
-            const Expected<rendering::ExecutionResult, Error> ran =
-                executor.execute(graph, rendering::CompileOptions{}, options);
-            executed = ran ? ok() : make_unexpected(ran.error());
-        }
-        if (executed) {
-            result.presented = device_->present(state.swapchain, *image, state.presented).has_value();
-            executed = device_->wait_idle();
-        }
-        executor.release();
-    }
-    (void)device_->end_frame();
-    if (!executed) {
-        return make_unexpected(executed.error());
-    }
-    if (capture) {
-        const auto* bytes = static_cast<const u8*>(device_->buffer_mapped_pointer(state.readback));
-        captured_width_ = state.info.extent.width;
-        captured_height_ = state.info.extent.height;
-        captured_.assign(static_cast<usize>(captured_width_) * captured_height_, 0U);
-        const bool swap = is_bgra(state.info.format);
-        for (usize texel = 0; bytes != nullptr && texel < captured_.size(); ++texel) {
-            const u8* from = bytes + (texel * 4U);
-            const u32 r = swap ? from[2] : from[0];
-            const u32 b = swap ? from[0] : from[2];
-            captured_[texel] = r | (u32{from[1]} << 8U) | (b << 16U) | 0xFF000000U;
-        }
+    if (capture && result.presented) {
+        read_capture();
     }
     result.present_ms =
         std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - started).count();

@@ -3,6 +3,8 @@
 
 #include "fps_host.h"
 
+#include "play_motion.h"
+
 #include <cy/backends/physics/jolt/server.h>
 #include <cy/core/math/quat.h>
 #include <cy/core/math/scalar.h>
@@ -13,6 +15,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <utility>
 
 namespace sample::fps {
 namespace {
@@ -117,16 +120,6 @@ template <class T>
     return digest;
 }
 
-/// `now` carried forward by `ahead` of the step that took `before` to it: where a moving thing is
-/// at a frame drawn between two ticks. Its turn is carried forward along the same arc.
-[[nodiscard]] cy::Transform carried_forward(const cy::Transform& before, const cy::Transform& now,
-                                            f32 ahead) noexcept {
-    cy::Transform out = now;
-    out.translation = now.translation + ((now.translation - before.translation) * ahead);
-    out.rotation = cy::nlerp(before.rotation, now.rotation, 1.0F + ahead);
-    return out;
-}
-
 /// A float at a fixed quantisation — a millimetre's quarter — so the digest is a statement about
 /// the simulation rather than about its last bit.
 [[nodiscard]] u64 quantised(f32 value) noexcept {
@@ -136,9 +129,9 @@ template <class T>
 
 }  // namespace
 
-FpsHost::FpsHost(cy::Allocator& allocator, const HostOptions& options) noexcept
+FpsHost::FpsHost(cy::Allocator& allocator, HostOptions options) noexcept
     : allocator_(allocator),
-      options_(options),
+      options_(std::move(options)),
       world_(allocator),
       tree_(world_),
       binding_(cy::system_allocator(cy::MemoryDomain::Scripting), world_),
@@ -209,6 +202,7 @@ cy::Status FpsHost::start(const char** detail) noexcept {
         }
     }
     eye_.translation = kPlayerStart + Vec3{0.0F, 1.65F, 0.0F};
+    remember_tick();
     *detail = "";
     return cy::ok();
 }
@@ -827,11 +821,8 @@ void FpsHost::ui_event(const CyUiEvent& event) noexcept {
 // --- The eyes ------------------------------------------------------------------------------------
 
 cy::Transform FpsHost::drawn_prop(u32 index) const noexcept {
-    const cy::Transform now = bodies_->prop(index);
-    if (interpolation_ <= 0.0) {
-        return now;
-    }
-    return carried_forward(props_before_[index], now, static_cast<f32>(interpolation_));
+    return cy::play::carried_forward(props_before_[index], bodies_->prop(index),
+                                     static_cast<f32>(interpolation_));
 }
 
 TargetState FpsHost::drawn_target(u32 index) const noexcept {
@@ -841,7 +832,7 @@ TargetState FpsHost::drawn_target(u32 index) const noexcept {
     }
     const TargetState& before = targets_before_[index];
     const auto ahead = static_cast<f32>(interpolation_);
-    drawn.feet = drawn.feet + ((drawn.feet - before.feet) * ahead);
+    drawn.feet = cy::play::carried_forward(before.feet, drawn.feet, ahead);
     drawn.yaw = drawn.yaw + (cy::math::wrap_angle(drawn.yaw - before.yaw) * ahead);
     drawn.fall = cy::math::clamp(drawn.fall + ((drawn.fall - before.fall) * ahead), 0.0F, 1.0F);
     return drawn;

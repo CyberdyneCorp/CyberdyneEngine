@@ -37,8 +37,7 @@ public:
     /// `y`). In relative mode a person's mouse produces exactly this.
     [[nodiscard]] Status mouse_motion(f32 dx, f32 dy, f32 x, f32 y) noexcept;
     /// A mouse button (`Left` to `Extra2`) going down or up at (`x`, `y`).
-    [[nodiscard]] Status mouse_button(input::MouseControl button, bool down, f32 x,
-                                      f32 y) noexcept;
+    [[nodiscard]] Status mouse_button(input::MouseControl button, bool down, f32 x, f32 y) noexcept;
     /// The window SDL numbers `native_window` gaining or losing the keyboard's focus.
     [[nodiscard]] Status window_focus(u32 native_window, bool gained) noexcept;
 

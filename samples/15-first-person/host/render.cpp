@@ -1403,8 +1403,7 @@ cy::Status FpsRenderer::frame(FpsHost& host) noexcept {
     }
     state.place_rows();
     const bool played = state.options.device != nullptr;
-    const bool still =
-        !played && std::ranges::find(kStills, state.frame) != std::end(kStills);
+    const bool still = !played && std::ranges::find(kStills, state.frame) != std::end(kStills);
     const bool video = !state.options.video_directory.empty() &&
                        state.frame % std::max<u32>(state.options.video_every, 1U) == 0U;
     rendering::assembly::AssemblyReport assembled{};

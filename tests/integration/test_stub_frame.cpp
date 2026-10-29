@@ -124,10 +124,9 @@ CY_TEST_CASE("stub platform: every capability is absent, and every absence is re
         cy::Feature::MetalSurface,        cy::Feature::D3D12Surface,
         cy::Feature::Clipboard,           cy::Feature::NativeFileDialog,
         cy::Feature::NativeMessageDialog, cy::Feature::CustomCursor,
-        cy::Feature::RelativeMouse,
-        cy::Feature::ImePositioning,      cy::Feature::OnScreenKeyboard,
-        cy::Feature::ScreenOrientation,   cy::Feature::KeepAwake,
-        cy::Feature::SystemTray,
+        cy::Feature::RelativeMouse,       cy::Feature::ImePositioning,
+        cy::Feature::OnScreenKeyboard,    cy::Feature::ScreenOrientation,
+        cy::Feature::KeepAwake,           cy::Feature::SystemTray,
     };
     for (const cy::Feature feature : features) {
         CY_CHECK_FALSE(display.has_feature(feature));

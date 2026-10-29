@@ -31,8 +31,8 @@
 //   the clock: the frame's ticks and interpolation           (play_clock.h)
 //   paused:  game.drain(now)                                 (the input resolved, no tick)
 //   running: game.tick(now) × ticks
-//   game.frame(clock)                                        (the interface, onUpdate, presentation)
-//   game.draw() → presenter.present()                        (the picture, the interface over it)
+//   game.frame(clock)              (the interface, onUpdate, presentation)
+//   game.draw() → present()        (the picture, the interface over it)
 //
 // The loop is `run_host_loop` (platform/host/): the one `while` that drives frames in the engine.
 

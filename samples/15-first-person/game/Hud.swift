@@ -36,7 +36,9 @@ final class FirstPersonHud {
 
     init(owner: Entity) throws {
         let root = try UI.root()
-        func box(_ x: Float, _ y: Float, _ w: Float, _ h: Float, _ colour: UIColour) throws
+        func box(
+            _ x: Float, _ y: Float, _ w: Float, _ h: Float, _ colour: UIColour
+        ) throws
             -> UIElement
         {
             let element = try UI.create(.panel, in: root, owner: owner)
@@ -105,8 +107,9 @@ final class FirstPersonHud {
                 try part.setShown(shown)
             }
         }
-        guard reading.ammo != last?.ammo || reading.reloading != last?.reloading
-            || reading.targetHits != last?.targetHits || reading.kills != last?.kills
+        guard
+            reading.ammo != last?.ammo || reading.reloading != last?.reloading
+                || reading.targetHits != last?.targetHits || reading.kills != last?.kills
         else { return }
         last = reading
         let low = reading.ammo <= reading.magazine * 0.2

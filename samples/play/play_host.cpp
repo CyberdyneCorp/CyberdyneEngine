@@ -34,7 +34,7 @@ namespace {
         sum += sample;
     }
     times.mean = sum / static_cast<f64>(samples.size());
-    std::sort(samples.begin(), samples.end());
+    std::ranges::sort(samples);
     const auto at = [&](f64 quantile) {
         const auto index = static_cast<usize>(quantile * static_cast<f64>(samples.size() - 1U));
         return samples[index];
@@ -77,9 +77,8 @@ PlayHost::~PlayHost() {
 }
 
 rhi::Device* PlayHost::device() noexcept {
-    return platform_ != nullptr && platform_->presenter != nullptr
-               ? platform_->presenter->device()
-               : nullptr;
+    return platform_ != nullptr && platform_->presenter != nullptr ? platform_->presenter->device()
+                                                                   : nullptr;
 }
 
 Status PlayHost::open(const PlayOptions& options) noexcept {
@@ -331,8 +330,8 @@ Status PlayHost::frame() noexcept {
     assign_gamepads();
     hold_mouse();
     const Nanoseconds now = platform.process.monotonic_nanoseconds();
-    const f64 wall = last_ == 0 ? clock_.settings().step_seconds
-                                : static_cast<f64>(now - last_) / 1.0e9;
+    const f64 wall =
+        last_ == 0 ? clock_.settings().step_seconds : static_cast<f64>(now - last_) / 1.0e9;
     last_ = now;
     const StepPlan plan = clock_.advance(wall, pause_.paused());
     if (Status simulated = simulate(plan, now); !simulated) {

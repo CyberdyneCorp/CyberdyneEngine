@@ -36,9 +36,9 @@ struct NoRenderer {
     [[nodiscard]] Status frame(Host& /*host*/) noexcept {
         return ok();
     }
-    [[nodiscard]] rhi::TextureHandle output() const noexcept { return {}; }
-    [[nodiscard]] u32 width() const noexcept { return 0; }
-    [[nodiscard]] u32 height() const noexcept { return 0; }
+    [[nodiscard]] static rhi::TextureHandle output() noexcept { return {}; }
+    [[nodiscard]] static u32 width() noexcept { return 0; }
+    [[nodiscard]] static u32 height() noexcept { return 0; }
 };
 
 template <typename Host, typename Renderer>

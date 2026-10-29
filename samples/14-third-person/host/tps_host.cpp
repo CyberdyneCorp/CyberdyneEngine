@@ -18,6 +18,7 @@
 #include <utility>
 
 #include "level.h"
+#include "play_motion.h"
 #include "sounds.h"
 
 namespace sample::tps {
@@ -172,9 +173,9 @@ struct PlacedBox {
 
 }  // namespace
 
-ThirdPersonHost::ThirdPersonHost(cy::Allocator& allocator, const HostOptions& options) noexcept
+ThirdPersonHost::ThirdPersonHost(cy::Allocator& allocator, HostOptions options) noexcept
     : allocator_(allocator),
-      options_(options),
+      options_(std::move(options)),
       world_(allocator),
       tree_(world_),
       schedule_(world_),
@@ -245,6 +246,7 @@ cy::Status ThirdPersonHost::start(const char** detail) noexcept {
     if (cy::Status attached = attach_behaviours(detail); !attached) {
         return attached;
     }
+    hero_before_ = hero_placement();
     *detail = "";
     return cy::ok();
 }
@@ -474,8 +476,8 @@ cy::Status ThirdPersonHost::fence() noexcept {
         {Vec3{0.0F, 0.0F, -reach}, Vec3{half, kTall, kThick}},
     };
     for (const auto& wall : walls) {
-        if (cy::Status built = static_box(middle + wall.offset, wall.half, cy::Quat::identity(),
-                                          CY_ENTITY_NULL);
+        if (cy::Status built =
+                static_box(middle + wall.offset, wall.half, cy::Quat::identity(), CY_ENTITY_NULL);
             !built) {
             return built;
         }
@@ -647,8 +649,7 @@ cy::Status ThirdPersonHost::attach_behaviours(const char** detail) noexcept {
     return cy::ok();
 }
 
-// --- The frame
-// -------------------------------------------------------------------------------------
+// --- The frame -----------------------------------------------------------------------------------
 
 cy::Status ThirdPersonHost::frame() noexcept {
     const auto started = std::chrono::steady_clock::now();
@@ -909,8 +910,7 @@ void ThirdPersonHost::shutdown() noexcept {
     }
 }
 
-// --- The hand and the eyes
-// ---------------------------------------------------------------------------
+// --- The hand and the eyes -----------------------------------------------------------------------
 
 cy::Nanoseconds ThirdPersonHost::event_time() noexcept {
     ++events_this_frame_;
@@ -942,15 +942,8 @@ cy::Transform ThirdPersonHost::hero_placement() const noexcept {
 }
 
 cy::Transform ThirdPersonHost::drawn_hero() const noexcept {
-    const cy::Transform now = hero_placement();
-    if (interpolation_ <= 0.0) {
-        return now;
-    }
-    const auto ahead = static_cast<f32>(interpolation_);
-    cy::Transform drawn = now;
-    drawn.translation = now.translation + ((now.translation - hero_before_.translation) * ahead);
-    drawn.rotation = cy::nlerp(hero_before_.rotation, now.rotation, 1.0F + ahead);
-    return drawn;
+    return cy::play::carried_forward(hero_before_, hero_placement(),
+                                     static_cast<f32>(interpolation_));
 }
 
 CyInputPointer ThirdPersonHost::pointer() noexcept {

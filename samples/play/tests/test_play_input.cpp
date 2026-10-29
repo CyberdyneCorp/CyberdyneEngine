@@ -43,8 +43,8 @@ struct Rig {
         MappingContext context(allocator());
         context.set_name(cy::Name::intern("play"));
         if (!context.add(simple(jump, key_control(Key::Space), SchemeKind::KeyboardMouse)) ||
-            !context.add(simple(fire, mouse_control(MouseControl::Left),
-                                SchemeKind::KeyboardMouse))) {
+            !context.add(
+                simple(fire, mouse_control(MouseControl::Left), SchemeKind::KeyboardMouse))) {
             return false;
         }
         auto handle = server.register_context(std::move(context));
@@ -116,8 +116,8 @@ CY_TEST_CASE("a rebinding file moves an action to another key, over the authored
 CY_TEST_CASE("a rebinding file with a typo is refused whole, naming the line") {
     Rig rig;
     CY_REQUIRE(rig.build());
-    const cy::play::BindingsResult unknown_action =
-        cy::play::apply_bindings(rig.server, 0, "weapon.fire mouse/right\nplayer.jmup keyboard/f\n");
+    const cy::play::BindingsResult unknown_action = cy::play::apply_bindings(
+        rig.server, 0, "weapon.fire mouse/right\nplayer.jmup keyboard/f\n");
     CY_CHECK_EQ(unknown_action.applied, 0U);
     CY_CHECK(unknown_action.error.find("line 2") != std::string::npos);
     const cy::play::BindingsResult unknown_control =

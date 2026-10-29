@@ -119,8 +119,8 @@ void print_play_report(const PlayReport& report) noexcept {
         static_cast<unsigned long long>(report.presented),
         static_cast<unsigned long long>(report.captured),
         static_cast<unsigned long long>(report.frame.frames), report.frame.mean, report.frame.p50,
-        report.frame.p99, report.frame.worst, report.work.mean, report.work.p99,
-        report.work.worst, static_cast<unsigned long long>(report.validation_errors));
+        report.frame.p99, report.frame.worst, report.work.mean, report.work.p99, report.work.worst,
+        static_cast<unsigned long long>(report.validation_errors));
 }
 
 }  // namespace cy::play

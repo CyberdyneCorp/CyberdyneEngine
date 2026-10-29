@@ -5,6 +5,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -74,7 +75,7 @@ using input::MouseControl;
         axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
     f32 sdl = stick_y ? -value : value;
     const f32 low = trigger ? 0.0F : -1.0F;
-    sdl = sdl < low ? low : (sdl > 1.0F ? 1.0F : sdl);
+    sdl = std::clamp(sdl, low, 1.0F);
     return static_cast<Sint16>(std::lround(sdl * 32767.0F));
 }
 
@@ -163,8 +164,8 @@ Status Sdl3EventInjector::attach_gamepad() noexcept {
     SDL_VirtualJoystickDesc desc;
     SDL_INIT_INTERFACE(&desc);
     desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
-    desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
-    desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+    desc.naxes = static_cast<Uint16>(SDL_GAMEPAD_AXIS_COUNT);
+    desc.nbuttons = static_cast<Uint16>(SDL_GAMEPAD_BUTTON_COUNT);
     desc.name = "CyberEngine virtual gamepad";
     const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
     if (id == 0) {
@@ -206,8 +207,7 @@ Status Sdl3EventInjector::gamepad_axis(GamepadControl axis, f32 value) noexcept 
 Status Sdl3EventInjector::gamepad_button(GamepadControl button, bool down) noexcept {
     const int sdl_button = gamepad_button_of(button);
     if (joystick_ == nullptr || sdl_button < 0) {
-        return fail(ErrorCode::InvalidArgument,
-                    "no virtual gamepad, or that control is no button");
+        return fail(ErrorCode::InvalidArgument, "no virtual gamepad, or that control is no button");
     }
     if (!SDL_SetJoystickVirtualButton(static_cast<SDL_Joystick*>(joystick_), sdl_button, down)) {
         return sdl_refused();

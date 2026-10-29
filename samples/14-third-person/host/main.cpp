@@ -199,7 +199,7 @@ void print_report(ThirdPersonHost& host) noexcept {
 }
 
 #if defined(CY_THIRD_PERSON_PLAY)
-// --- Played ---------------------------------------------------------------------------------------
+// --- Played --------------------------------------------------------------------------------------
 //
 // `--play`: the hillside in a window, a person at the mouse and the keyboard (or a pad), through
 // the desktop play host (samples/play). The game is the same Swift module; nothing scripts it.
