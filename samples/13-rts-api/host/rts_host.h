@@ -121,8 +121,12 @@
 #include "battle_host.h"
 #include "fog.h"
 #include "illumination.h"
+#include "replay.h"
 #include "units.h"
 #include "worker_rig.h"
+
+#include <cy/ui/toolkit/document_host.h>
+#include <cy/ui/toolkit/toolkit.h>
 
 #include <memory>
 
@@ -155,6 +159,27 @@ struct HostOptions {
     /// company, registers the soldier prefab, the battle's effects, lights and cues, and runs
     /// `battle::kTicks` frames. Off, the default, is the run before the battle existed.
     bool battle = false;
+    /// `--play`: a person plays the battle (game/Skirmish.swift). With `battle`. The host places
+    /// `/Level/Skirmish` beside the battlefield, declares the skirmish's keys, attaches the widget
+    /// toolkit the menus are made with, and — while the game asks for a pause through
+    /// `SkirmishControl` — runs frames with no fixed step in them.
+    bool skirmish = false;
+    /// With `skirmish`, `--replay`: every order the session runs comes from this recorded log,
+    /// recorded before the tick it was given for; the host places `/Level/SkirmishReplay`, by which
+    /// the game knows to give none. The host does not own it.
+    const ReplayLog* replay = nullptr;
+    /// The keyboard and the mouse are the platform's (`Sdl3InputSource`), connected to `input()`
+    /// by the driver and handed over with `adopt_devices`, rather than the scripted pair the hand
+    /// below injects through.
+    bool platform_input = false;
+};
+
+/// What the game asked of the host in its last frame (`SkirmishControl`, game/Skirmish.swift).
+struct SessionRequest {
+    /// Run the next frames without a fixed step: the session, the bodies and the clock stop.
+    bool paused = false;
+    /// End the session after this frame.
+    bool quit = false;
 };
 
 /// What the game and the engine say happened. Engine facts are read from the servers and the
@@ -296,6 +321,37 @@ struct Observation {
     Fog fog;
     /// ABI 1.16: the battle, when the run has one.
     BattleObservation battle;
+    /// `--play`: what the skirmish did (`RtsReport`'s `skirmish*` fields), and the fixed ticks
+    /// the host ran — fewer than its frames by the frames it held paused.
+    struct Skirmish {
+        bool on = false;
+        bool replay = false;
+        cy::u64 ticks = 0;
+        cy::f32 moves = 0.0F;
+        cy::f32 attack_moves = 0.0F;
+        cy::f32 attacks = 0.0F;
+        cy::f32 stops = 0.0F;
+        cy::f32 opponent_orders = 0.0F;
+        cy::f32 posture = 0.0F;
+        cy::f32 selected = 0.0F;
+        cy::f32 selections = 0.0F;
+        cy::f32 assigned = 0.0F;
+        cy::f32 recalled = 0.0F;
+        cy::f32 minimap_jumps = 0.0F;
+        cy::f32 menus = 0.0F;
+        cy::f32 pauses = 0.0F;
+        cy::f32 paused_frames = 0.0F;
+        cy::f32 focus_x = 0.0F;
+        cy::f32 focus_z = 0.0F;
+        cy::f32 distance = 0.0F;
+        cy::f32 heading = 0.0F;
+        cy::f32 outcome = 0.0F;
+        cy::f32 outcome_tick = 0.0F;
+        /// Soldiers the game marks selected and hovered, from the engine's selection component.
+        cy::u32 outlined = 0;
+        cy::u32 hovered = 0;
+    };
+    Skirmish skirmish;
     /// Navigation agents with a body, which is every unit the game configured.
     cy::u32 units = 0;
     /// Agents the navigation adapter drives.
@@ -356,6 +412,23 @@ public:
     [[nodiscard]] CyEntity camp(cy::u32 index) const noexcept { return camp_[index]; }
     [[nodiscard]] Observation observe() noexcept;
     [[nodiscard]] cy::u64 frames() const noexcept { return frame_; }
+    /// Fixed ticks run: the frames, less those the game held paused.
+    [[nodiscard]] cy::u64 ticks() const noexcept { return ticks_; }
+
+    // --- A person's session (`--play`) ---------------------------------------------------------
+    /// The input server the platform's devices feed.
+    [[nodiscard]] cy::input::InputServer& input() noexcept { return input_; }
+    /// Give user 0 the platform's keyboard and mouse. With `HostOptions::platform_input`.
+    [[nodiscard]] cy::Status adopt_devices(cy::input::DeviceId keyboard,
+                                           cy::input::DeviceId mouse) noexcept;
+    /// Whether the pointer is over the view, rather than off it or over a letterbox's bar.
+    void set_pointer_in_window(bool inside) noexcept { pointer_in_window_ = inside; }
+    /// What the game asked for in its last frame.
+    [[nodiscard]] SessionRequest session_request() const noexcept;
+    /// The world the game's entities live in: what a view gathers the selection outlines from.
+    [[nodiscard]] cy::ecs::World& world() noexcept { return world_; }
+    /// The following peer's digest: the session as the command log alone drives it.
+    [[nodiscard]] cy::u64 follower_digest() const noexcept;
 
     // --- What a renderer draws besides the boxes
     // ---------------------------------------------------
@@ -399,13 +472,16 @@ private:
     [[nodiscard]] cy::Status start_props() noexcept;
     [[nodiscard]] cy::Status start_ui() noexcept;
     [[nodiscard]] cy::Status ui_frame() noexcept;
-    [[nodiscard]] cy::Status ui_layout() noexcept;
+    /// Lay the interface out; with the toolkit, its frame of `seconds`.
+    [[nodiscard]] cy::Status ui_layout(cy::f32 seconds) noexcept;
     void observe_hud(Observation& seen) noexcept;
     [[nodiscard]] cy::Status start_animation() noexcept;
     [[nodiscard]] cy::Status start_lockstep() noexcept;
     [[nodiscard]] cy::Status start_illumination() noexcept;
     [[nodiscard]] cy::Status start_fog() noexcept;
     [[nodiscard]] cy::Status start_battle() noexcept;
+    /// `--play`: the selection component and the `Skirmish` (and `SkirmishReplay`) nodes.
+    [[nodiscard]] cy::Status start_skirmish(cy::scene::Node level) noexcept;
     void observe_battle(Observation& seen, const cy::abi::ComponentRecord* report,
                         const void* bytes) noexcept;
     void observe_fog(Observation& seen, const cy::abi::ComponentRecord* report,
@@ -420,7 +496,18 @@ private:
     [[nodiscard]] cy::Status start_systems() noexcept;
     [[nodiscard]] cy::Status attach_behaviours(const char** detail) noexcept;
     [[nodiscard]] cy::Status run_stages(cy::ecs::Stage first, cy::ecs::Stage last) noexcept;
-    [[nodiscard]] cy::Status run_frame() noexcept;
+    /// One frame; with `advance` false, one the game asked to hold — input, the camera, the
+    /// interface and the game's frame update, and no fixed step.
+    [[nodiscard]] cy::Status run_frame(bool advance) noexcept;
+    /// The frame's half after its fixed step: the pointer, the camera, the interface, the game's
+    /// frame update, the GI and the sound.
+    [[nodiscard]] cy::Status present_frame(bool advance) noexcept;
+    /// Its start: the pointer's edges, the animation events, the camera.
+    [[nodiscard]] cy::Status begin_presentation() noexcept;
+    /// The input of the frame being run, resolved.
+    void resolve_input() noexcept;
+    void observe_skirmish(Observation& seen, const cy::abi::ComponentRecord* report,
+                          const void* bytes) noexcept;
     [[nodiscard]] cy::Status fixed_tick() noexcept;
     void observe_scout(Observation& seen) noexcept;
     void update_audio() noexcept;
@@ -458,6 +545,9 @@ private:
     cy::ui::ElementStore ui_store_;
     cy::ui::ElementId ui_root_;
     cy::UniquePtr<cy::game_backend::UiAdapter> ui_adapter_;
+    // `--play`: the widget toolkit the menus are made with, on the same store.
+    std::unique_ptr<cy::ui::Toolkit> toolkit_;
+    std::unique_ptr<cy::ui::FileDocumentResolver> resolver_;
 
     // Navigation.
     cy::navigation::NavComponents nav_components_;
@@ -529,6 +619,10 @@ private:
     cy::scene::Node crate_;
 
     cy::u64 frame_ = 0;
+    cy::u64 ticks_ = 0;
+    cy::ecs::ComponentTypeId highlight_component_ = cy::ecs::kInvalidComponent;
+    cy::usize replay_cursor_ = 0;
+    bool pointer_in_window_ = true;
     cy::f64 frame_ms_ = 0.0;
     cy::u32 events_this_frame_ = 0;
     bool started_ = false;

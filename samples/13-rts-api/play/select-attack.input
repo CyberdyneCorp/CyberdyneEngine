@@ -1,0 +1,21 @@
+# integration.rts_api_play: a select-and-attack and a camera scroll, pushed through SDL's queue.
+#
+# Coordinates are the view's (1280 by 720); `aim` puts the pointer where the game's camera shows a
+# unit now, as a person's eyes would.
+0   move 640 360
+# A box dragged round the far three columns of blue's swordsmen (units 2, 3, 4, 7, 8 and 9): the
+# camera looks east, so the field's x runs up the screen and its z to the right.
+20  aim unit 2 -16 16
+21  press left
+24  aim unit 6 0 0
+27  aim unit 9 16 -16
+30  release left
+# A right click on red's first swordsman: every selected unit is ordered to attack it.
+40  aim unit 24
+42  press right
+44  release right
+# The keyboard pan: D held for half a second slides the camera to its right, the pointer in the
+# middle of the view so no screen edge pans it too.
+50  move 640 360
+60  key d down
+90  key d up

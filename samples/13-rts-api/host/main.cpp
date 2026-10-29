@@ -23,6 +23,11 @@
 //                                              field instead of patrolling it, for
 //                                              `battle::kTicks` frames; with `--render <dir> --map`
 //                                              it is drawn, with the topographic minimap
+//   just play-rts                              `--play`: the battle as a game a person plays, in a
+//                                              window, in real time (play.h): `--record <file>`,
+//                                              `--replay <file>`, `--input <file>`, `--frames <n>`,
+//                                              `--no-vsync`, `--validation`, and `--headless` for
+//                                              SDL's events with no window
 //
 // The report is one line per claim, and tests/test_rts_api_sample.cpp reads it. Every number comes
 // from the engine (the servers and the adapters) or from the game's `RtsReport`; none is computed
@@ -42,6 +47,8 @@
 
 #include "battle.h"
 #include "company.h"
+#include "play.h"
+#include "replay.h"
 #include "rts_host.h"
 #include "script.h"
 #if defined(CY_RTS_API_RENDER)
@@ -118,6 +125,104 @@ struct MapFlags {
 #endif
     }
 };
+
+/// `--play`'s flags. Parsed whatever the build: a build without the renderer plays headless.
+struct PlayFlags {
+    bool play = false;
+    bool headless = false;
+    bool vsync = true;
+    bool validation = false;
+    const char* input = nullptr;
+    const char* record = nullptr;
+    const char* replay = nullptr;
+    cy::u64 frames = 0;
+
+    /// Consume `argv[index]` (and its value) when it is one of the play's flags.
+    bool parse(int argc, char** argv, int& index) noexcept {
+        const char* flag = argv[index];
+        const bool valued = index + 1 < argc;
+        const struct {
+            const char* name;
+            const char** out;
+        } paths[] = {{"--input", &input}, {"--record", &record}, {"--replay", &replay}};
+        for (const auto& path : paths) {
+            if (std::strcmp(flag, path.name) == 0 && valued) {
+                *path.out = argv[++index];
+                return true;
+            }
+        }
+        if (std::strcmp(flag, "--frames") == 0 && valued) {
+            frames = std::strtoull(argv[++index], nullptr, 10);
+            return true;
+        }
+        bool* const switches[] = {&play, &headless, &validation};
+        const char* const names[] = {"--play", "--headless", "--validation"};
+        for (std::size_t which = 0; which < 3U; ++which) {
+            if (std::strcmp(flag, names[which]) == 0) {
+                *switches[which] = true;
+                return true;
+            }
+        }
+        if (std::strcmp(flag, "--no-vsync") == 0) {
+            vsync = false;
+            return true;
+        }
+        return false;
+    }
+};
+
+/// Every battle unit as the session holds it — `unit:health:stance:target kind:target` — what a
+/// test asks of an order: which unit is going for which.
+void print_units(const RtsHost& host) noexcept {
+    const cy::game_backend::LockstepSession* session = host.lockstep();
+    if (session == nullptr) {
+        return;
+    }
+    std::printf("rts units   ");
+    for (cy::u32 unit = 0; unit < session->units(); ++unit) {
+        const auto fighter = session->combatant(unit);
+        if (!fighter) {
+            continue;
+        }
+        std::printf(" %u:%u:%u:%u:%u", unit, fighter->health,
+                    static_cast<unsigned>(fighter->stance),
+                    static_cast<unsigned>(fighter->target.kind), fighter->target.index);
+    }
+    std::printf("\n");
+}
+
+/// `--play`'s report: the session, what the skirmish did, and the command log written or replayed.
+void print_skirmish(const Observation& now, const PlayFlags& flags,
+                    const sample::rts::ReplayLog* replayed) noexcept {
+    const Observation::Skirmish& play = now.skirmish;
+    std::printf(
+        "rts skirmish moves=%.0f attack_moves=%.0f attacks=%.0f stops=%.0f opponent=%.0f "
+        "posture=%.0f selected=%.0f outlined=%u hovered=%u selections=%.0f assigned=%.0f "
+        "recalled=%.0f minimap=%.0f menus=%.0f pauses=%.0f paused_frames=%.0f focus=%.3f,%.3f "
+        "distance=%.3f heading=%.4f outcome=%.0f outcome_tick=%.0f replay=%d\n",
+        wide(play.moves), wide(play.attack_moves), wide(play.attacks), wide(play.stops),
+        wide(play.opponent_orders), wide(play.posture), wide(play.selected), play.outlined,
+        play.hovered, wide(play.selections), wide(play.assigned), wide(play.recalled),
+        wide(play.minimap_jumps), wide(play.menus), wide(play.pauses), wide(play.paused_frames),
+        wide(play.focus_x), wide(play.focus_z), wide(play.distance), wide(play.heading),
+        wide(play.outcome), wide(play.outcome_tick), play.replay ? 1 : 0);
+    if (replayed != nullptr) {
+        // The digest the replay ended in against the one the recorded session did.
+        const bool match = now.battle.digest == replayed->digest &&
+                           now.battle.follower_digest == replayed->follower_digest &&
+                           now.battle.ticks == replayed->ticks;
+        std::printf(
+            "rts replay   source=%s orders=%zu ticks=%llu recorded_ticks=%llu digest=%016llx "
+            "recorded=%016llx follower=%016llx recorded_follower=%016llx match=%d\n",
+            flags.replay, replayed->orders.size(),
+            static_cast<unsigned long long>(now.battle.ticks),
+            static_cast<unsigned long long>(replayed->ticks),
+            static_cast<unsigned long long>(now.battle.digest),
+            static_cast<unsigned long long>(replayed->digest),
+            static_cast<unsigned long long>(now.battle.follower_digest),
+            static_cast<unsigned long long>(replayed->follower_digest), match ? 1 : 0);
+    }
+}
 
 /// ABI 1.16: the battle, as the session holds it, and what the game made of it.
 void print_battle(const Observation& now) noexcept {
@@ -241,6 +346,68 @@ void print_report(RtsHost& host, const Findings& seen) noexcept {
     print_battle(now);
 }
 
+/// `--play`'s host options, its recorded log read when it replays one, and the map it draws on by
+/// default. False, having said why, when the log cannot be read.
+bool configure_play(const PlayFlags& play, sample::rts::HostOptions& options, MapFlags& map,
+                    sample::rts::ReplayLog& replay_log) noexcept {
+    options.battle = true;
+    options.skirmish = true;
+    options.platform_input = true;
+#if defined(CY_RTS_API_MAP)
+    if (!play.headless && map.package == nullptr) {
+        map.package = CY_RTS_API_MAP_PACKAGE;
+    }
+#else
+    (void)map;
+#endif
+    if (play.replay == nullptr) {
+        return true;
+    }
+    if (const cy::Status read = sample::rts::read_replay(play.replay, replay_log); !read) {
+        std::fprintf(stderr, "rts-api: --replay %s: %s\n", play.replay, read.error().message);
+        return false;
+    }
+    options.replay = &replay_log;
+    return true;
+}
+
+/// `--play`: the host started, the session run until it ends, and the reports.
+int play_session(RtsHost& host, const PlayFlags& flags, const MapFlags& map,
+                 const void* map_content, const sample::rts::ReplayLog* replayed) noexcept {
+    sample::rts::PlayOptions options;
+    options.window = !flags.headless;
+    options.vsync = flags.vsync;
+    options.input = flags.input != nullptr ? flags.input : "";
+    options.record = flags.record != nullptr ? flags.record : "";
+    options.replay = replayed;
+    options.frames = flags.frames;
+#if defined(CY_RTS_API_MAP)
+    options.render = map.options;
+    // The game picks and lays out in a 16:9 view, so the frame is 16:9 too: its height follows
+    // its width, and the window letterboxes it.
+    options.render.height = (options.render.width * 9U) / 16U;
+    options.render.outlines = true;
+    options.render.stills = false;
+    // A person's session measures what the frame costs: the validation layer is asked for.
+    options.render.validation = flags.validation;
+    options.map = static_cast<const sample::rts::map::MapContent*>(map_content);
+#else
+    (void)map;
+    (void)map_content;
+#endif
+    sample::rts::PlayReport report;
+    if (const cy::Status ran = sample::rts::run_play(host, options, report); !ran) {
+        std::fprintf(stderr, "rts-api: --play: %s\n", ran.error().message);
+        return ran.error().code == cy::ErrorCode::Unavailable ? 0 : 1;
+    }
+    print_report(host, Findings{});
+    sample::rts::print_play_report(report);
+    print_skirmish(host.observe(), flags, replayed);
+    print_units(host);
+    host.shutdown();
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -251,6 +418,7 @@ int main(int argc, char** argv) {
     bool render_gi = true;
     bool render_fog = false;
     MapFlags map;
+    PlayFlags play;
     for (int index = 1; index < argc; ++index) {
         if (std::strcmp(argv[index], "--render") == 0 && index + 1 < argc) {
             render_directory = argv[++index];
@@ -258,7 +426,7 @@ int main(int argc, char** argv) {
             render_gi = std::strcmp(argv[++index], "off") != 0;
         } else if (std::strcmp(argv[index], "--fog") == 0) {
             render_fog = true;
-        } else if (map.parse(argc, argv, index)) {
+        } else if (map.parse(argc, argv, index) || play.parse(argc, argv, index)) {
             continue;
         } else if (std::strcmp(argv[index], "--no-behaviours") == 0) {
             options.behaviours = false;
@@ -268,10 +436,16 @@ int main(int argc, char** argv) {
             options.ui = false;
         } else if (std::strcmp(argv[index], "--battle") == 0) {
             options.battle = true;
-        } else if (std::strcmp(argv[index], "--headless") != 0) {
+        } else {
             std::fprintf(stderr, "rts-api: unknown argument '%s'\n", argv[index]);
             return 2;
         }
+    }
+    // `--play`: the battle, a person's hand on blue, the platform's devices, and — with
+    // `--replay` — the recorded orders in place of anyone's.
+    sample::rts::ReplayLog replay_log;
+    if (play.play && !configure_play(play, options, map, replay_log)) {
+        return 1;
     }
 
 #if defined(CY_RTS_API_MAP)
@@ -308,6 +482,15 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "rts-api: start failed at '%s': %s\n", detail,
                      started.error().message);
         return 1;
+    }
+    if (play.play) {
+#if defined(CY_RTS_API_MAP)
+        const void* content = map.package != nullptr ? &map_content : nullptr;
+#else
+        const void* content = nullptr;
+#endif
+        return play_session(host, play, map, content,
+                            options.replay != nullptr ? &replay_log : nullptr);
     }
 #if defined(CY_RTS_API_RENDER)
     std::unique_ptr<sample::rts::RtsRenderer> renderer;

@@ -90,6 +90,40 @@ thread_local char g_refusal[256];
 
 }  // namespace
 
+Status Sdl3EventSystem::start() noexcept {
+    if (started_) {
+        return ok();
+    }
+    if (!SDL_InitSubSystem(SDL_INIT_EVENTS)) {
+        return sdl_refused();
+    }
+    started_ = true;
+    return ok();
+}
+
+void Sdl3EventSystem::stop() noexcept {
+    if (started_) {
+        SDL_QuitSubSystem(SDL_INIT_EVENTS);
+        started_ = false;
+    }
+}
+
+Status Sdl3EventInjector::mouse_wheel(f32 notches, f32 x, f32 y) noexcept {
+    SDL_Event event{};
+    event.type = SDL_EVENT_MOUSE_WHEEL;
+    event.wheel.y = notches;
+    event.wheel.direction = SDL_MOUSEWHEEL_NORMAL;
+    event.wheel.mouse_x = x;
+    event.wheel.mouse_y = y;
+    return push(&event);
+}
+
+void Sdl3EventInjector::drain() noexcept {
+    if (SDL_WasInit(SDL_INIT_EVENTS) != 0U) {
+        SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
+    }
+}
+
 Sdl3EventInjector::~Sdl3EventInjector() {
     detach_gamepad();
 }

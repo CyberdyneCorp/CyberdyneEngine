@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 #include "level.h"
 
+#include <iterator>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace sample::rts {
 namespace {
@@ -47,6 +50,33 @@ using cy::Vec3;
     declaration.stable_id = cy::input::ActionStableId{stable};
     declaration.type = type;
     return input.actions().declare(declaration);
+}
+
+/// The skirmish's digital actions, each on one key, appended to `out` with its key.
+[[nodiscard]] cy::Status declare_skirmish(
+    cy::input::InputServer& input,
+    std::vector<std::pair<cy::input::ActionId, cy::input::Key>>& out) {
+    using cy::input::Key;
+    const std::pair<std::string, Key> named[] = {
+        {kSkirmishMenuAction, Key::Escape}, {kSkirmishPauseAction, Key::P},
+        {kSkirmishAttackAction, Key::F},    {kSkirmishStopAction, Key::H},
+        {kSkirmishArmyAction, Key::E},
+    };
+    std::vector<std::pair<std::string, Key>> all(std::begin(named), std::end(named));
+    for (u32 group = 0; group < kSkirmishGroups; ++group) {
+        all.emplace_back("skirmish.group" + std::to_string(group + 1U),
+                         static_cast<Key>(static_cast<cy::u16>(Key::Num1) + group));
+    }
+    u32 stable = 3;
+    for (const auto& [name, key] : all) {
+        const auto action =
+            declare(input, name.c_str(), stable++, cy::input::ActionValueType::Digital);
+        if (!action) {
+            return cy::make_unexpected(action.error());
+        }
+        out.emplace_back(*action, key);
+    }
+    return cy::ok();
 }
 
 const cy::scene::NodeDesc kWorkerNodes[] = {
@@ -109,7 +139,8 @@ cy::Status make_click(cy::Array<f32>& out, u32 sample_rate) noexcept {
     return cy::ok();
 }
 
-cy::Status declare_input(cy::input::InputServer& input, cy::Allocator& allocator) noexcept {
+cy::Status declare_input(cy::input::InputServer& input, cy::Allocator& allocator,
+                         bool skirmish) noexcept {
     const auto pan = declare(input, kPanAction, 1, cy::input::ActionValueType::Axis2);
     if (!pan) {
         return cy::make_unexpected(pan.error());
@@ -117,6 +148,14 @@ cy::Status declare_input(cy::input::InputServer& input, cy::Allocator& allocator
     const auto spawn = declare(input, kSpawnAction, 2, cy::input::ActionValueType::Digital);
     if (!spawn) {
         return cy::make_unexpected(spawn.error());
+    }
+    // `--play`'s keys, declared only when a person plays, so the scripted run's input is the one it
+    // always had. Stable identities after the two above, in this order.
+    std::vector<std::pair<cy::input::ActionId, cy::input::Key>> keys;
+    if (skirmish) {
+        if (cy::Status declared = declare_skirmish(input, keys); !declared) {
+            return declared;
+        }
     }
     if (cy::Status finalized = input.finalize_declarations(); !finalized) {
         return finalized;
@@ -132,6 +171,11 @@ cy::Status declare_input(cy::input::InputServer& input, cy::Allocator& allocator
     };
     for (const cy::input::Binding& binding : bindings) {
         if (cy::Status added = context.add(binding); !added) {
+            return added;
+        }
+    }
+    for (const auto& [action, key] : keys) {
+        if (cy::Status added = context.add(key_binding(action, key)); !added) {
             return added;
         }
     }

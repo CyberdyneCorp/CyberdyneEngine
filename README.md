@@ -78,7 +78,19 @@ recording to readback on an RTX 5060 (Vulkan), within the 16.7 ms budget `smoke.
 | ![The battle at frames 180, 330, 960 and 1150: the armies closing, the melee with arrows and catapult shot, the watchtower's fall, the barracks burning](docs/design/images/rts-battle.png) | ![The topographic minimap at frame 1150: hillshading, contours, the lake, roads, the fog and the battle's icons](docs/design/images/rts-battle-minimap.png) |
 | **Battle** — forty units fought in fixed point in the lockstep path, the same digest on all four CI legs; [watch it](docs/design/videos/rts-battle.mp4) | **Topographic minimap** — hillshading, contours, water and roads under blue's fog, the units it sees as icons |
 
-→ [**RTS map guide**](docs/guides/rts-map.md) · [RTS combat guide](docs/guides/rts-combat.md) · [fog of war guide](docs/guides/fog-of-war.md)
+**Play it.** `just play-rts` opens a window on the battle with your mouse and keyboard on blue's
+army — box and click selection with outlines, control groups, right-click attack, move and
+attack-move as lockstep commands, an RTS camera, a minimap, pause, an Esc menu, an opponent on red
+and a result screen — every decision the Swift game's. A played session's command log replays to
+the same digest.
+
+![A skirmish played through SDL's input: a box round the swordsmen, the army on red's line, the melee before the barracks, the watchtower falling](docs/design/images/rts-play.png)
+
+*A whole skirmish played to victory by a written hand pushed through SDL's event queue —
+[watch it](docs/design/videos/rts-play.mp4). The frame 10.7 ms on average at 1920x1080 on an RTX
+5060 (Vulkan), presenting it 3.6 ms more, within the 16.7 ms `smoke.rts_api_play` asserts.*
+
+→ [**Playing the RTS**](docs/guides/playing-the-rts.md) · [**RTS map guide**](docs/guides/rts-map.md) · [RTS combat guide](docs/guides/rts-combat.md) · [fog of war guide](docs/guides/fog-of-war.md)
 
 ---
 

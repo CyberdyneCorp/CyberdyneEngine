@@ -38,6 +38,10 @@ enum Content {
     /// ABI 1.16: the node the host places in the level when there is a battle to fight, and the
     /// prefab a soldier is spawned from.
     static let battlefield = "/Level/Battlefield"
+    /// `--play`: the node the host places beside the battlefield when a person plays the battle
+    /// (Skirmish.swift), and the one it adds when it replays a recorded game's orders instead.
+    static let skirmish = "/Level/Skirmish"
+    static let skirmishReplay = "/Level/SkirmishReplay"
     static let soldier = "units/soldier"
     /// The battle's effects (ABI 1.15) and cues, as host/battle_effects.h and host/battle_host.h
     /// register them.
@@ -171,6 +175,31 @@ struct RtsReport {
     var battleLights: Float = 0
     var battleSounds: Float = 0
     var battleTrails: Float = 0
+    /// `--play` (Skirmish.swift). The player's commands by kind — moves, attack-moves, attacks
+    /// and stops, one a unit — and the opponent's; the units selected now and the times the
+    /// selection changed; control groups kept and called; minimap jumps; menus opened, pauses
+    /// toggled and frames paused; the camera's focus, distance and heading (in turns); and the
+    /// outcome (1 victory, 2 defeat) and the tick it was decided on.
+    var skirmishMoves: Float = 0
+    var skirmishAttackMoves: Float = 0
+    var skirmishAttacks: Float = 0
+    var skirmishStops: Float = 0
+    var skirmishOpponentOrders: Float = 0
+    var skirmishPosture: Float = 0
+    var skirmishSelected: Float = 0
+    var skirmishSelections: Float = 0
+    var skirmishAssigned: Float = 0
+    var skirmishRecalled: Float = 0
+    var skirmishMinimapJumps: Float = 0
+    var skirmishMenus: Float = 0
+    var skirmishPauses: Float = 0
+    var skirmishPausedFrames: Float = 0
+    var skirmishFocusX: Float = 0
+    var skirmishFocusZ: Float = 0
+    var skirmishDistance: Float = 0
+    var skirmishHeading: Float = 0
+    var skirmishOutcome: Float = 0
+    var skirmishOutcomeTick: Float = 0
 }
 
 extension Component {
