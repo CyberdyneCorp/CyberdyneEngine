@@ -144,14 +144,17 @@ public enum InputProfile {
 
 /// The display settings a settings screen changes.
 public struct VideoSettings: Equatable, Sendable {
-    /// The output resolution: one of `Video.modes`.
+    /// The output resolution's width: one of `Video.modes`.
     public var width: UInt32
+    /// The output resolution's height.
     public var height: UInt32
     /// The quality preset.
     public var quality: VideoQuality
     /// The temporal upscaler's mode.
     public var upscale: VideoUpscale
+    /// Whether the window covers the display.
     public var fullscreen: Bool
+    /// Whether presentation waits for the display's refresh.
     public var vsync: Bool
 
     /// Every field.

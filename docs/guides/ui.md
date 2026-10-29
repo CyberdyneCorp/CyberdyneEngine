@@ -26,8 +26,10 @@ top, the minimap with the camera's rectangle bottom-right, and the developer con
 10. [Input, focus and navigation](#10-input-focus-and-navigation)
 11. [Opacity groups and the HDR composite](#11-opacity-groups-and-the-hdr-composite)
 12. [The toolkit from Swift](#12-the-toolkit-from-swift)
-13. [Testing](#13-testing)
-14. [Not built yet](#14-not-built-yet)
+13. [The UI layout editor](#13-the-ui-layout-editor)
+14. [Menus: settings, rebinding and player files](#14-menus-settings-rebinding-and-player-files)
+15. [Testing](#15-testing)
+16. [Not built yet](#16-not-built-yet)
 
 ---
 
@@ -482,7 +484,108 @@ A binding writes the player's change back before the node's own `onChange` runs.
 `layout`; a widget the embedder made answers `NOT_FOUND` to a module, as the console does. The
 Swift API is in [the Swift guide](swift.md#the-widget-toolkit-abi-112).
 
-## 13. Testing
+## 13. The UI layout editor
+
+The editor's UI Layout panel (`editor-ui-layout`, issue #29) edits `.cyui` documents on a canvas the
+ENGINE draws. The editor does not lay out or draw an interface itself: it sends the document, the
+files it reaches (`use` components, style sheets) and the preview settings to the hosted runtime's
+`ui.preview.render`, and shows the picture and the node rectangles that come back.
+
+![The UI layout editor: palette, hierarchy, the engine-drawn canvas with the Play button selected, and the inspector](../design/images/editor-ui-layout.png)
+
+| Part | What it does |
+|---|---|
+| Toolbar | the document; the resolution (720p to 4K, 4:3, 16:10, 21:9, portrait); DPI 1x to 2x; the scale mode (fixed pixel, or following the width, the height, the smaller or the larger ratio); the theme (built-in, or any `.cyss` in the project); and a state to preview on the selected widget: hover, pressed, focused, disabled, open |
+| Palette | the toolkit's widget kinds, from the engine's `ui.catalogue.get`. Click to add into the selection, or drag onto the canvas or a hierarchy row |
+| Hierarchy | the document's widgets; drag a row onto another to reparent it |
+| Canvas | the engine's picture. Click selects. Dragging the body moves the widget by its offset, the corner resizes it, the two anchor handles move its anchors; one command is committed when the gesture ends. Below it, the engine's counts and its layout and draw times |
+| Inspector | id and classes (the classes the theme and the sheets define are offered), the kind's properties from the catalogue, layout (anchor, offset, size, margins, gap, fill parent), a binding and its mode, inline styles, and the document's style sheets |
+
+Every edit is a command, an undoable transaction in the open world's history, and an MCP tool of
+the same name:
+
+| Command | Does |
+|---|---|
+| `ui.document.create`, `ui.document.read`, `ui.document.stylesheet` | make a document with a full-screen root panel; read it back as widgets; add or remove a sheet |
+| `ui.widget.add`, `.remove`, `.move` | add a widget of a catalogue kind under a parent at an index; remove one and its children; reparent or reorder |
+| `ui.widget.set`, `.identity`, `.layout`, `.bind` | a property or inline style; the id and classes; anchors, offsets, size and margins; a binding |
+| `ui.theme.save` | write a theme sheet |
+| `ui.preview`, `ui.status` | change the canvas's settings and draw; what the engine last answered |
+
+A widget is named `#id` or by its index. A save writes the document through the same writer the
+engine uses, so the text round-trips byte for byte, and the canvas follows: an edit, an undo or a
+redo of the document, a sheet it names or the theme redraws it. A game that loaded the document by
+path (`loadUI(path:)`, `DocumentHost`) reloads the save while it runs, keeping its widgets' handles
+and state — `samples/16-menus`' `navigate.script` saves over its main menu mid-run and its test
+reads the new subtitle back.
+
+The engine side is `cy::editor::UiLayoutService` (`src/editor_backend/include/cy/editor/ui_layout_service.h`):
+a toolkit of its own, unloaded and reloaded per request, settled through its transitions, flattened
+and drawn by `ui::render::draw_reference` — the renderer's own shader path on the host. Drawing the
+gallery document at 320x180 lays out in 0.08 ms and draws in 0.60 ms on this machine. The panel
+refuses to open until the engine answered `ui.catalogue.get`, because a palette the editor made up
+could offer widgets the engine's toolkit cannot make.
+
+## 14. Menus: settings, rebinding and player files
+
+ABI 1.15 adds what a game's menus need beyond widgets (`cy_abi.h`, "1.15: menus"):
+
+| Entries | What |
+|---|---|
+| `input_rebind_begin`, `input_rebind_poll`, `input_rebind_cancel` | rebinding through the input system's `RebindOperation`: the next control the player presses on that scheme is offered to it, under a conflict policy (`REJECT`, `SWAP`, `ALLOW`, `UNBIND_PREVIOUS`); Escape or a gamepad's Back cancels. A conflict is only another action of a context that binds this one: the interface's `UI.*` actions share a gamepad with the game by design |
+| `input_binding` | the control an action's slot has on a scheme, the player's override or the authored binding |
+| `input_profile_save`, `input_profile_load`, `input_profile_reset` | the player's overrides as text (`cyinputprofile 1`), keyed by the actions' stable ids |
+| `video_get_settings`, `video_set_settings`, `video_modes` | resolution, quality preset, upscaler mode, fullscreen and v-sync, and the display's modes. The host's `game_backend::VideoSettingsAdapter` holds them and moves a revision the renderer rebuilds on |
+| `user_data_write`, `user_data_read` | the player's files, one plain name each, written atomically in the game's user-data directory (`game_backend::UserDataDirectory`) |
+| `ui_widget_set_tooltip` | the text a widget shows when the pointer rests on it |
+
+In Swift (CyberdyneKit's `Menus.swift`):
+
+```swift
+let jump = try Input.find(action: "Game.Jump")
+try jump.rebind(scheme: .gamepad, conflict: .swap)       // listen; the engine takes the next button
+let state = try Rebinding.poll()                         // .listening, .applied, .conflict, .cancelled
+if state.status == .applied {
+    try UserData.write("bindings.cyinputprofile", text: try InputProfile.save())
+}
+if let saved = try UserData.readText("bindings.cyinputprofile") { try InputProfile.load(saved) }
+
+var video = try Video.settings
+video.width = 1920; video.height = 1080
+video.quality = .medium; video.upscale = .quality
+try Video.apply(video)                                    // the renderer rebuilds at the new output
+try settings["resolution"].setItems(try Video.modes.map { "\($0.width)x\($0.height)" })
+try slot.setTooltip("Health potion: restores 25 health")
+```
+
+In C++, a host binds the two new backends beside the others:
+
+```cpp
+cy::game_backend::VideoSettingsAdapter video(allocator);
+(void)video.start(modes, initial);              // the display's modes and the settings in effect
+cy::game_backend::UserDataDirectory files(allocator);
+(void)files.start("menus-user-data");
+cy::game_backend::bind(host, &video, &files);
+// each frame: if (video.revision() != seen) rebuild the frame at video.current()
+```
+
+A document's bindings can reach the host's own values: `UiAdapter::set_document_bindings` hands the
+toolkit a `ui::DocumentBindings`, so a module's `slider bind=volume.music bind-mode=two-way` is the
+host's music bus, with no module code between.
+
+`samples/16-menus` is the worked example: a main menu, settings (graphics, audio, controls), a pause
+menu and an inventory with drag and drop and tooltips, in Swift over documents the editor made, and
+navigable with a keyboard or a gamepad.
+
+| ![](../design/images/menus-settings-graphics.png) | ![](../design/images/menus-settings-controls.png) |
+|---|---|
+| ![](../design/images/menus-inventory-tooltip.png) | ![](../design/images/menus-pause.png) |
+
+*Settings at 1280x720; the controls after Jump was rebound to E and the gamepad's Y; the inventory's
+tooltip and the pause menu at 1920x1080, rendered at 1286x724 by the Quality upscaler. A
+[video](../design/videos/menus-gamepad.mp4) of the whole script.*
+
+## 15. Testing
 
 | Suite | What it holds |
 |---|---|
@@ -500,6 +603,9 @@ Swift API is in [the Swift guide](swift.md#the-widget-toolkit-abi-112).
 | `integration.ui_toolkit` | every container's layout and the gallery's against goldens at one DPI and two; the 10 000-item list at the cost of a hundred and inside a frame budget; a document reloaded from disk keeping its state |
 | `render.ui_toolkit` | (a) a started, empty toolkit is byte-identical; (b) an opacity group matches its host reference; (c) the HDR composite blooms; (d) the gallery, closed and with its dialog, against golden images; (e) the HDR stage's place in the frame |
 | `integration.game_backend_ui` | also ABI 1.12: widgets, documents by text and by path with reload, events to their owners, navigation, the embedder's widgets out of reach |
+| `integration.editor_backend_ui_layout` | the editor's preview service: the catalogue, every widget drawn, a state previewed (hover, pressed, focused, disabled, an open drop-down), a theme switched, a `use` and a sheet the editor sends, scale modes and DPI, a broken document keeping the last good picture, the wire both sides hold byte for byte |
+| `integration.menus_sample` | `samples/16-menus` played twice by a scripted gamepad and keyboard: navigation, settings applied to the engine, rebinding and its persistence, the inventory, a hot reload |
+| `smoke.menus_frames` | the same session on a device: four frames against goldens, the extents the upscaler drew at, the frame cost |
 | `integration.build_content` | the `ui` producer: discovered sheets and used documents, a re-cook on a saved sheet, a missing file and a broken document named |
 
 ```sh
@@ -510,9 +616,9 @@ python3 src/ui/render/shaders/regenerate.py --slangc build/dev/Development/bin/s
 just build-shaders --strict src samples
 ```
 
-## 14. Not built yet
+## 16. Not built yet
 
 Issue #91's remaining stages: custom UI materials and blur-behind, world-space and surface-space
-documents, the immediate-mode API, the inspector and the conformance suite. An editor panel that
-previews a `.cyui` document beside its text is not built: a document saved while a game runs is
-reloaded by the game's `DocumentHost` (or `UiAdapter`, for a module's document loaded by path).
+documents, the immediate-mode API, the inspector and the conformance suite. The UI layout editor
+edits a document's text and previews it; it does not yet edit a theme's rules visually (a theme is
+saved as text with `ui.theme.save`), and the canvas's state preview applies to one widget at a time.

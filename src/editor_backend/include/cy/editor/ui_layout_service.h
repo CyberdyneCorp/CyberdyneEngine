@@ -61,8 +61,9 @@ inline constexpr u32 kUiLayoutFormat = 1;
 /// The `capabilities.get` feature bit the UI layout service sets.
 inline constexpr u64 kUiLayoutFeature = 0x400U;
 
-/// A widget kind's catalogue flags.
+/// A widget kind's catalogue flag: it holds children, so the palette can drop into it.
 inline constexpr u8 kUiKindContainer = 1U;
+/// A widget kind's catalogue flag: it takes focus, so it can be previewed focused.
 inline constexpr u8 kUiKindFocusable = 2U;
 
 /// What a property's value is, so an inspector offers the right control.
@@ -121,6 +122,7 @@ struct UiPreviewNode {
     ui::Rect rect;
 };
 
+/// A problem the document's reader or style sheets reported, at its line and column.
 struct UiPreviewDiagnostic {
     u32 line = 0;
     u32 column = 0;
@@ -158,7 +160,9 @@ struct UiPreviewResult {
 /// Encode a `ui.preview.render` request — for the suites, and for a host that previews itself.
 [[nodiscard]] Status encode_ui_preview_request(const UiPreviewRequest& request,
                                                Array<u8>& out) noexcept;
+/// Encode a `ui.preview.render` reply: the picture, the nodes, the diagnostics and the counts.
 [[nodiscard]] Status encode_ui_preview(const UiPreviewResult& result, Array<u8>& out) noexcept;
+/// Encode the `ui.catalogue.get` reply: the toolkit's kinds, style properties, states and modes.
 [[nodiscard]] Status encode_ui_catalogue(Array<u8>& out) noexcept;
 
 /// A document made into widgets and drawn, on the host, as the device draws it.
