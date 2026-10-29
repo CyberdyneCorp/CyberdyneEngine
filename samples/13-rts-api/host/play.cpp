@@ -634,8 +634,7 @@ void print_play_report(const PlayReport& report) noexcept {
         static_cast<unsigned long long>(report.frames),
         static_cast<unsigned long long>(report.ticks), report.window ? 1 : 0, report.width,
         report.height, report.resizes, static_cast<unsigned long long>(report.presented),
-        static_cast<unsigned long long>(report.injected),
-        report.missed_aims, report.ended,
+        static_cast<unsigned long long>(report.injected), report.missed_aims, report.ended,
         report.frame_ms, report.worst_ms, report.present_ms, report.outlined,
         report.validation_errors);
 }
