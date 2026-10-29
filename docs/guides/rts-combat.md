@@ -135,9 +135,10 @@ with the battle's units — blue's always, red's only where blue sees them — a
 blue has explored, and **stages** it into the HUD's page with `UiRenderer::stage_atlas`, inside the
 frame.
 
-> **Pitfall: `upload_atlas` while the game runs.** It makes a texture, submits a graph and waits for
-> the device every call — a 4 ms stall every update on this host. Use it to make a page, and
-> `stage_atlas` to change it.
+> **Pitfall: `upload_atlas` to change a page.** It makes a new texture and view each call and retires
+> the old ones. Use it to make a page, and `stage_atlas` to change it: both copy the texels in the
+> next frame's own graph, and only `stage_atlas` keeps the texture. (Until
+> `fix-ui-atlas-upload-frame`, `upload_atlas` ran a device frame of its own — see below.)
 
 ## 7. Measured
 
@@ -176,8 +177,18 @@ Headless, the 1 200 ticks of the battle run in about three seconds.
 * A projectile is a point on the plane: its arc is the presentation's, and terrain does not stop it.
 * Structures are circles; a rectangular footprint is not modelled.
 * The minimap's fog and icons are composed on the host; there is no device path.
-* With the minimap updated through `upload_atlas` every sixth frame, the battle on the RTS test map
-  lost the device on this host at a fixed frame (NVRM Xid 109, a context-switch timeout), with the
-  GI, ambient occlusion and the sun's shadows all on. No validation, synchronisation-validation or
-  AddressSanitizer finding preceded it; it did not occur under AddressSanitizer or without any one
-  of the three. The battle uses `stage_atlas`; the finding is open.
+
+## 10. Resolved: the device lost after `upload_atlas`
+
+With the minimap re-made through `upload_atlas` every sixth frame (`--minimap-upload`), the battle
+lost the device on this host in the frame after the eighteenth upload (NVRM Xid 109, a context-switch
+timeout), with the GI, ambient occlusion and the sun's shadows on and no validation finding before
+it. `upload_atlas` copied each page in a device frame of its own — `begin_frame`, submit, wait,
+`end_frame` — between two of the game's frames, so the game's next frame ran in the same frame slot
+as its previous one and retired two frames' resources at once. An odd period, or the same upload
+without its `begin_frame`/`end_frame`, never lost the device; device-side breadcrumbs put the loss in
+the forward pass of the frame after the upload. `upload_atlas` now begins no device frame: the page's
+texels are copied in the next frame's graph, as `stage_atlas`'s are, and the battle runs all 1 200
+frames with `--minimap-upload`, its stills byte-identical to `stage_atlas`'s. The battle keeps
+`stage_atlas`, which changes the page it has. `fix-ui-atlas-upload-frame`'s design has the bisection;
+`integration.ui_atlas_upload` holds the frame ring to the game.
