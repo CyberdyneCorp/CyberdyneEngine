@@ -231,7 +231,6 @@ private:
                                            const rendering::ScreenSpaceStageInputs& inputs,
                                            void* user) noexcept;
 
-    Allocator* allocator_ = nullptr;
     rhi::Device* device_ = nullptr;
     UiRendererDescription desc_{};
     UiRenderReport report_{};
