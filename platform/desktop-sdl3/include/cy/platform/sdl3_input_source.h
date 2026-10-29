@@ -43,6 +43,27 @@
 
 namespace cy {
 
+/// How a window's pointer coordinates become the coordinates of the view the game reads.
+///
+/// SDL reports the pointer in the window's own units. A host that draws a view of a fixed design
+/// size scaled into a window of another size — letterboxed where the aspects differ — has the game
+/// pick, hit-test and lay out in the VIEW's pixels, so the conversion belongs where the coordinate
+/// is first read, once, rather than in every reader. `view = (window - offset) * scale`; relative
+/// motion is scaled and never offset. The identity by default, which is every existing caller.
+struct PointerMapping {
+    f32 scale_x = 1.0F;
+    f32 scale_y = 1.0F;
+    f32 offset_x = 0.0F;
+    f32 offset_y = 0.0F;
+
+    [[nodiscard]] constexpr f32 x(f32 window_x) const noexcept {
+        return (window_x - offset_x) * scale_x;
+    }
+    [[nodiscard]] constexpr f32 y(f32 window_y) const noexcept {
+        return (window_y - offset_y) * scale_y;
+    }
+};
+
 /// Feeds an `input::InputServer` from SDL3's event stream.
 ///
 /// Owns nothing but its registration and the device identities it created. Constructing one does
@@ -74,6 +95,11 @@ public:
 
     [[nodiscard]] input::DeviceId keyboard() const noexcept { return keyboard_; }
     [[nodiscard]] input::DeviceId mouse() const noexcept { return mouse_; }
+
+    /// The window-to-view conversion applied to every pointer position and motion forwarded from
+    /// now on. Not applied to the wheel, whose unit is the notch.
+    void set_pointer_mapping(const PointerMapping& mapping) noexcept { mapping_ = mapping; }
+    [[nodiscard]] const PointerMapping& pointer_mapping() const noexcept { return mapping_; }
 
     /// The device this source created for SDL's joystick instance id, or a null id.
     [[nodiscard]] input::DeviceId gamepad(u32 instance_id) const noexcept;
@@ -111,6 +137,7 @@ private:
     input::DeviceId keyboard_;
     input::DeviceId mouse_;
     GamepadSlot gamepads_[kMaxGamepads];
+    PointerMapping mapping_;
     u32 gamepad_count_ = 0;
     u64 forwarded_ = 0;
     u64 ignored_ = 0;

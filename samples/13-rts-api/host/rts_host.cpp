@@ -3,6 +3,7 @@
 
 #include <cy/core/math/scalar.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/rendering/selection/selection_component.h>
 #include <cy/servers/physics/reference/server.h>
 #include <cy/ui/layout.h>
 #include <cy/ui/text/builtin_font.h>
@@ -337,21 +338,39 @@ cy::Status RtsHost::start_ui() noexcept {
         return cy::make_unexpected(adapter.error());
     }
     ui_adapter_ = std::move(*adapter);
-    return ui_adapter_->start();
+    if (cy::Status started = ui_adapter_->start(); !started) {
+        return started;
+    }
+    if (!options_.skirmish) {
+        return cy::ok();
+    }
+    // `--play`'s menus are the engine's widget toolkit (ABI 1.12), on the same store and text as
+    // the HUD; a run without a player never starts it, so its interface is the one it always had.
+    toolkit_ = std::make_unique<cy::ui::Toolkit>(allocator_, ui_store_, text_);
+    resolver_ = std::make_unique<cy::ui::FileDocumentResolver>(allocator_, ".");
+    if (cy::Status started = toolkit_->start(); !started) {
+        return started;
+    }
+    ui_adapter_->attach_toolkit(toolkit_.get(), resolver_.get());
+    return cy::ok();
 }
 
-cy::Status RtsHost::ui_layout() noexcept {
+cy::Status RtsHost::ui_layout(f32 seconds) noexcept {
     cy::ui::ScaleSettings settings;
     settings.mode = cy::ui::ScaleMode::FixedPixel;
-    return ui_adapter_->layout(
-        settings, cy::Vec2{static_cast<f32>(kViewportWidth), static_cast<f32>(kViewportHeight)});
+    const cy::Vec2 viewport{static_cast<f32>(kViewportWidth), static_cast<f32>(kViewportHeight)};
+    // With the toolkit, its frame lays the whole store out and runs its animations and styles.
+    if (toolkit_ != nullptr) {
+        return ui_adapter_->frame(seconds, settings, viewport);
+    }
+    return ui_adapter_->layout(settings, viewport);
 }
 
 cy::Status RtsHost::ui_frame() noexcept {
     // Laid out first, so the pointer is tested against what the last frame's writes produced; then
     // routed, and the game's pointer told whether it is over the interface before `onUpdate` reads
     // it; then the clicks delivered to their owners, in the frame's phase.
-    if (cy::Status laid = ui_layout(); !laid) {
+    if (cy::Status laid = ui_layout(kStep); !laid) {
         return laid;
     }
     CyInputPointer pointer{};
@@ -365,7 +384,7 @@ cy::Status RtsHost::ui_frame() noexcept {
         !routed) {
         return routed;
     }
-    input_adapter_.set_pointer_focus(0, true, ui_adapter_->pointer_over());
+    input_adapter_.set_pointer_focus(0, pointer_in_window_, ui_adapter_->pointer_over());
     ui_adapter_->drain_events(
         [this](const CyUiEvent& event) noexcept { (void)runtime_.ui_event(event); });
     return cy::ok();
@@ -464,7 +483,36 @@ cy::Status RtsHost::start_scene() noexcept {
             return added;
         }
     }
+    if (cy::Status placed = start_skirmish(*level); !placed) {
+        return placed;
+    }
     return spawn_adapter_.add_prefab(kWorkerPrefab, worker_prefab());
+}
+
+cy::Status RtsHost::start_skirmish(cy::scene::Node level) noexcept {
+    if (!options_.battle || !options_.skirmish) {
+        return cy::ok();
+    }
+    // The engine's selection component, by name, so the game can mark what the player picked
+    // whether or not anything draws the outlines (a run with no window counts them).
+    auto registered = cy::rendering::selection::register_selection_highlight(world_);
+    if (!registered) {
+        return cy::make_unexpected(registered.error());
+    }
+    highlight_component_ = *registered;
+    // `--play`: the nodes that tell the game a person plays the battle, and that a replay gives
+    // its orders. After the battlefield, so a battle run has every entity it always had.
+    const char* const names[] = {"Skirmish",
+                                 options_.replay != nullptr ? "SkirmishReplay" : nullptr};
+    for (const char* name : names) {
+        if (name == nullptr) {
+            continue;
+        }
+        if (const auto made = tree_.create_node(cy::Name::intern(name), level); !made) {
+            return cy::make_unexpected(made.error());
+        }
+    }
+    return cy::ok();
 }
 
 cy::Status RtsHost::start_animation() noexcept {
@@ -592,14 +640,31 @@ cy::Status RtsHost::start_input() noexcept {
     if (cy::Status ready = input_.initialize(); !ready) {
         return ready;
     }
-    const auto keyboard = connect(input_, cy::input::DeviceKind::Keyboard, "rts-keyboard");
-    const auto mouse = connect(input_, cy::input::DeviceKind::Mouse, "rts-mouse");
-    if (!keyboard || !mouse) {
-        return cy::fail(cy::ErrorCode::Unavailable, "the scripted keyboard or mouse was refused");
+    // With the platform's devices (`--play`), the driver connects them and hands them over; the
+    // scripted pair would otherwise be the user's first keyboard and mouse.
+    if (!options_.platform_input) {
+        const auto keyboard = connect(input_, cy::input::DeviceKind::Keyboard, "rts-keyboard");
+        const auto mouse = connect(input_, cy::input::DeviceKind::Mouse, "rts-mouse");
+        if (!keyboard || !mouse) {
+            return cy::fail(cy::ErrorCode::Unavailable,
+                            "the scripted keyboard or mouse was refused");
+        }
+        keyboard_ = *keyboard;
+        mouse_ = *mouse;
     }
-    keyboard_ = *keyboard;
-    mouse_ = *mouse;
-    return declare_input(input_, allocator_);
+    return declare_input(input_, allocator_, options_.skirmish);
+}
+
+cy::Status RtsHost::adopt_devices(cy::input::DeviceId keyboard,
+                                  cy::input::DeviceId mouse) noexcept {
+    for (const cy::input::DeviceId device : {keyboard, mouse}) {
+        if (cy::Status assigned = input_.assign(device, 0, 0); !assigned) {
+            return assigned;
+        }
+    }
+    keyboard_ = keyboard;
+    mouse_ = mouse;
+    return cy::ok();
 }
 
 cy::Status RtsHost::start_camera() noexcept {
@@ -780,22 +845,40 @@ cy::Status RtsHost::load_module(const char** detail) noexcept {
 
 cy::Status RtsHost::frame() noexcept {
     const auto started = std::chrono::steady_clock::now();
-    const cy::Status ran = run_frame();
+    // A frame the game asked to hold (`--play`'s pause, menu and result screen) runs everything
+    // but the fixed step: the session, the bodies, the animation clock and the effects stand.
+    const bool advance = !(options_.skirmish && session_request().paused);
+    const cy::Status ran = run_frame(advance);
     frame_ms_ =
         std::chrono::duration<cy::f64, std::milli>(std::chrono::steady_clock::now() - started)
             .count();
     return ran;
 }
 
-cy::Status RtsHost::run_frame() noexcept {
+cy::Status RtsHost::run_frame(bool advance) noexcept {
     // The frame boundary: tree-shape callbacks queued since the last frame are delivered here, in
     // no phase — `onEnterTree` and `onReady` for the behaviours attached at start, on frame 0.
     if (cy::Status pumped = tree_.pump(); !pumped) {
         return pumped;
     }
-    if (cy::Status ticked = fixed_tick(); !ticked) {
-        return ticked;
+    if (advance) {
+        if (cy::Status ticked = fixed_tick(); !ticked) {
+            return ticked;
+        }
+    } else {
+        // Held: the clock says so, and the keys are still read, so the game can be told to go on.
+        host_.game.clock.flags |= CY_TIME_PAUSED;
+        resolve_input();
     }
+    if (cy::Status shown = present_frame(advance); !shown) {
+        return shown;
+    }
+    ++frame_;
+    events_this_frame_ = 0;
+    return track_animation();
+}
+
+cy::Status RtsHost::begin_presentation() noexcept {
     input_adapter_.begin_frame();
     // This frame's animation events: those of the tick that just ran, read by the game below.
     if (cy::Status snapshot = animation_adapter_->begin_frame(); !snapshot) {
@@ -807,6 +890,13 @@ cy::Status RtsHost::run_frame() noexcept {
         return cy::make_unexpected(evaluated.error());
     }
     host_.game.clock.interpolation = 0.0;
+    return cy::ok();
+}
+
+cy::Status RtsHost::present_frame(bool advance) noexcept {
+    if (cy::Status begun = begin_presentation(); !begun) {
+        return begun;
+    }
     if (ui_adapter_) {
         if (cy::Status routed = ui_frame(); !routed) {
             return routed;
@@ -815,7 +905,8 @@ cy::Status RtsHost::run_frame() noexcept {
     // ABI 1.9's changes this frame are stamped with it; the GI runs after the game's frame, from
     // where the frame's camera looks — presentation, which a fixed step never reads.
     gi_->begin_frame(frame_ + 1U);
-    if (battle_ != nullptr) {
+    const bool effects = battle_ != nullptr && advance;
+    if (effects) {
         battle_->begin_frame(kStep);
     }
     runtime_.frame_update(kStep);
@@ -829,26 +920,34 @@ cy::Status RtsHost::run_frame() noexcept {
     }
     // What a renderer would flatten: this frame's writes, laid out.
     if (ui_adapter_) {
-        if (cy::Status laid = ui_layout(); !laid) {
+        if (cy::Status laid = ui_layout(0.0F); !laid) {
             return laid;
         }
     }
-    if (battle_ != nullptr) {
+    if (effects) {
         if (cy::Status played = battle_->end_frame(kStep); !played) {
             return played;
         }
     }
-    update_audio();
-    ++frame_;
-    events_this_frame_ = 0;
-    return track_animation();
+    if (advance) {
+        update_audio();
+    }
+    return cy::ok();
+}
+
+void RtsHost::resolve_input() noexcept {
+    // The input's tick is the FRAME's, so a held frame still resolves the keys a player presses to
+    // let the game go on; in a run nothing holds, it is the simulation's tick as it always was.
+    const u64 tick = frame_ + 1U;
+    input_adapter_.observe_pending();
+    input_.resolve_tick(tick, static_cast<cy::Nanoseconds>(tick) * kStepNs, kStep);
 }
 
 cy::Status RtsHost::fixed_tick() noexcept {
-    const u64 tick = frame_ + 1U;
+    const u64 tick = ticks_ + 1U;
     host_.game.clock.tick = tick;
-    input_adapter_.observe_pending();
-    input_.resolve_tick(tick, static_cast<cy::Nanoseconds>(tick) * kStepNs, kStep);
+    host_.game.clock.flags &= ~CY_TIME_PAUSED;
+    resolve_input();
     runtime_.fixed_update(kStep);
     if (cy::Status staged =
             run_stages(cy::ecs::Stage::PreSimulation, cy::ecs::Stage::PostSimulation);
@@ -857,6 +956,12 @@ cy::Status RtsHost::fixed_tick() noexcept {
     }
     if (cy::Status navigated = nav_adapter_->update(kStep); !navigated) {
         return navigated;
+    }
+    // `--replay`: the recorded orders for this tick, where the game's would have been recorded.
+    if (options_.replay != nullptr) {
+        if (cy::Status fed = feed_replay(*options_.replay, replay_cursor_, *company_); !fed) {
+            return fed;
+        }
     }
     // The company's tick, with the orders the commander recorded in its fixed update.
     if (cy::Status ticked = lockstep_adapter_->tick(); !ticked) {
@@ -878,7 +983,11 @@ cy::Status RtsHost::fixed_tick() noexcept {
         return stepped;
     }
     // The fog last: where every unit stands after this tick decides what each side sees in it.
-    return fog_->update(tick);
+    if (cy::Status fogged = fog_->update(tick); !fogged) {
+        return fogged;
+    }
+    ++ticks_;
+    return cy::ok();
 }
 
 cy::Status RtsHost::run_stages(cy::ecs::Stage first, cy::ecs::Stage last) noexcept {
@@ -999,6 +1108,13 @@ bool RtsHost::ui_centre(const char* name, f32& out_x, f32& out_y) const noexcept
     }
     cy::Array<cy::ui::ElementId> found(allocator_);
     collect(ui_store_, ui_root_, name, found);
+    // `--play`'s menus are toolkit widgets, found by their id rather than their element's type.
+    if (found.empty() && toolkit_ != nullptr) {
+        if (const cy::ui::ElementId widget = toolkit_->find(cy::ui::kNoElement, name);
+            widget.is_valid()) {
+            (void)found.push_back(widget);
+        }
+    }
     if (found.empty()) {
         return false;
     }
@@ -1147,6 +1263,7 @@ Observation RtsHost::observe() noexcept {
     observe_illumination(seen, record, bytes);
     observe_fog(seen, record, bytes);
     observe_battle(seen, record, bytes);
+    observe_skirmish(seen, record, bytes);
     return seen;
 }
 
@@ -1177,6 +1294,80 @@ void RtsHost::observe_battle(Observation& seen, const cy::abi::ComponentRecord* 
     game.lights = field("battleLights");
     game.sounds = field("battleSounds");
     game.trails = field("battleTrails");
+}
+
+void RtsHost::observe_skirmish(Observation& seen, const cy::abi::ComponentRecord* report,
+                               const void* bytes) noexcept {
+    if (!options_.skirmish || report == nullptr || bytes == nullptr) {
+        return;
+    }
+    Observation::Skirmish& play = seen.skirmish;
+    play.on = true;
+    play.replay = options_.replay != nullptr;
+    play.ticks = ticks_;
+    cy::rendering::selection::HighlightSet marks(allocator_);
+    if (const auto gathered =
+            cy::rendering::selection::gather_highlights(world_, highlight_component_, marks);
+        gathered) {
+        for (const cy::rendering::selection::HighlightMark& mark : marks.marks()) {
+            const bool selected = mark.kind == cy::rendering::selection::HighlightKind::Selected;
+            play.outlined += selected ? 1U : 0U;
+            play.hovered += selected ? 0U : 1U;
+        }
+    }
+    const auto field = [&](const char* name) {
+        return read_field<f32>(bytes, report_field(binding_, *report, name));
+    };
+    const struct {
+        const char* name;
+        f32* out;
+    } fields[] = {
+        {"skirmishMoves", &play.moves},
+        {"skirmishAttackMoves", &play.attack_moves},
+        {"skirmishAttacks", &play.attacks},
+        {"skirmishStops", &play.stops},
+        {"skirmishOpponentOrders", &play.opponent_orders},
+        {"skirmishPosture", &play.posture},
+        {"skirmishSelected", &play.selected},
+        {"skirmishSelections", &play.selections},
+        {"skirmishAssigned", &play.assigned},
+        {"skirmishRecalled", &play.recalled},
+        {"skirmishMinimapJumps", &play.minimap_jumps},
+        {"skirmishMenus", &play.menus},
+        {"skirmishPauses", &play.pauses},
+        {"skirmishPausedFrames", &play.paused_frames},
+        {"skirmishFocusX", &play.focus_x},
+        {"skirmishFocusZ", &play.focus_z},
+        {"skirmishDistance", &play.distance},
+        {"skirmishHeading", &play.heading},
+        {"skirmishOutcome", &play.outcome},
+        {"skirmishOutcomeTick", &play.outcome_tick},
+    };
+    for (const auto& entry : fields) {
+        *entry.out = field(entry.name);
+    }
+}
+
+SessionRequest RtsHost::session_request() const noexcept {
+    // THE ONE COMPONENT THE HOST ACTS ON. Everything else the game writes is read for the report
+    // and never acted on; `SkirmishControl` is how a game asks the host that runs it to stop the
+    // clock or to end — which only the host can do, and only the game may decide.
+    SessionRequest request;
+    const cy::abi::ComponentRecord* record = binding_.find("SkirmishControl");
+    if (record == nullptr) {
+        return request;
+    }
+    const void* bytes = world_.get(commander_.entity(), record->id);
+    if (bytes == nullptr) {
+        return request;
+    }
+    request.paused = read_field<f32>(bytes, report_field(binding_, *record, "paused")) != 0.0F;
+    request.quit = read_field<f32>(bytes, report_field(binding_, *record, "quit")) != 0.0F;
+    return request;
+}
+
+cy::u64 RtsHost::follower_digest() const noexcept {
+    return company_follower_ == nullptr ? 0U : company_follower_->digest();
 }
 
 void RtsHost::observe_fog(Observation& seen, const cy::abi::ComponentRecord* report,

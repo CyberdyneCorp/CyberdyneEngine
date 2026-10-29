@@ -359,14 +359,16 @@ void Sdl3InputSource::on_event(const void* sdl_event) noexcept {
             // Deltas and the absolute position are separate controls, because they are separate
             // interpretations: `xrel` is a displacement that must never be scaled by frame time,
             // and `x` is a position. See `Interpretation` in types.h.
-            forward(mouse_, input::mouse_control(MouseControl::MoveX), event.motion.xrel,
-                    timestamp);
-            forward(mouse_, input::mouse_control(MouseControl::MoveY), -event.motion.yrel,
-                    timestamp);
-            forward(mouse_, input::mouse_control(MouseControl::PositionX), event.motion.x,
-                    timestamp);
-            forward(mouse_, input::mouse_control(MouseControl::PositionY), event.motion.y,
-                    timestamp);
+            // Both are in the view's units: `mapping_` is the window-to-view conversion, the
+            // identity unless a host scales its view into the window.
+            forward(mouse_, input::mouse_control(MouseControl::MoveX),
+                    event.motion.xrel * mapping_.scale_x, timestamp);
+            forward(mouse_, input::mouse_control(MouseControl::MoveY),
+                    -event.motion.yrel * mapping_.scale_y, timestamp);
+            forward(mouse_, input::mouse_control(MouseControl::PositionX),
+                    mapping_.x(event.motion.x), timestamp);
+            forward(mouse_, input::mouse_control(MouseControl::PositionY),
+                    mapping_.y(event.motion.y), timestamp);
             return;
 
         case SDL_EVENT_MOUSE_BUTTON_DOWN:

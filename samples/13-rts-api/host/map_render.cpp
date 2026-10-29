@@ -24,6 +24,8 @@
 #include <cy/rendering/particles/particle_renderer.h>
 #include <cy/rendering/pipeline/frame_recorder.h>
 #include <cy/rendering/pipeline/material_textures.h>
+#include <cy/rendering/selection/outline_pass.h>
+#include <cy/rendering/selection/selection_component.h>
 #include <cy/rendering/skinning/frame_skinning.h>
 #include <cy/rendering/skinning/skinned_scene.h>
 #include <cy/servers/render/geometry/skin_dispatch.h>
@@ -44,6 +46,7 @@
 #include "illumination.h"
 #include "map_format.h"
 #include "map_minimap.h"
+#include "present_pass.h"
 #include "rts_host.h"
 
 namespace sample::rts {
@@ -111,6 +114,9 @@ constexpr u32 kBattleFigures = kMaxWorkers + kBattleSlots + kRaiders;
 /// The battle's topographic minimap's extent: half a metre a texel over the map.
 constexpr u32 kTopoTexels = 256;
 constexpr u32 kJoints = 8;
+/// An instance's stable identity is this plus its index: what its draws carry, and what a
+/// selection outline's mark names.
+constexpr u64 kStableIdBase = 5000;
 /// Where an unused figure or a hidden camp member waits: far under the map.
 constexpr Vec3 kParked{16.0F, -200.0F, 16.0F};
 /// Team colours, linear: neutral, blue, red, and the company's second group.
@@ -439,7 +445,10 @@ struct MapRenderer::State {
           ui(memory),
           ui_buffer(memory),
           lights(memory),
-          particles(memory) {}
+          particles(memory),
+          marks(memory),
+          highlights(memory),
+          present_graph(memory) {}
 
     /// One placed instance: a mesh, its world placement, its tint and how it draws.
     struct Instance {
@@ -537,6 +546,17 @@ struct MapRenderer::State {
     std::unique_ptr<cy::rendering::minimap::TopographicMinimap> topo;
     std::vector<cy::rendering::minimap::MinimapIcon> icons;
 
+    // `--play`: the marks the game made, as the world holds them (by entity) and as the frame
+    // draws them (by the figure's stable identity); the outline pass; the window's present pass.
+    rendering::selection::HighlightSet marks;
+    rendering::selection::HighlightSet highlights;
+    rendering::selection::OutlinePass outline;
+    cy::ecs::ComponentTypeId highlight_component = cy::ecs::kInvalidComponent;
+    PresentPass presenter;
+    const PresentTarget* present = nullptr;
+    rendering::RenderGraph present_graph;
+    f64 last_present_ms = 0.0;
+
     // The view.
     Mat4 view = Mat4::identity();
     Mat4 relative_view = Mat4::identity();
@@ -601,6 +621,7 @@ struct MapRenderer::State {
         description.post.ambient_occlusion = options.ambient_occlusion;
         description.global_illumination = options.gi;
         description.fog_of_war = options.fog;
+        description.selection_outlines = options.outlines;
         if (Status made = assembly.initialize(description); !made) {
             return made;
         }
@@ -842,7 +863,7 @@ struct MapRenderer::State {
         fill_surfaces(instance, meshes[mesh].parts);
         rendering::SpatialEntry entry;
         entry.bounds = transform_box(world, meshes[mesh].low, meshes[mesh].high);
-        entry.stable_id = 5000U + instances.size();
+        entry.stable_id = kStableIdBase + instances.size();
         entry.gpu_slot = static_cast<u32>(instances.size());
         entry.radius = cy::length(entry.bounds.max - entry.bounds.min) * 0.5F;
         cy::Expected<u32, cy::Error> slot = index.insert(entry);
@@ -1066,7 +1087,9 @@ struct MapRenderer::State {
         out.name = "map output";
         out.format = kOutputFormat;
         out.extent = rhi::Extent3D{options.width, options.height, 1};
-        out.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::TransferSource;
+        // Sampled too, for the window's present pass, which draws it onto the swapchain image.
+        out.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::TransferSource |
+                    rhi::TextureUsage::Sampled;
         cy::Expected<rhi::TextureHandle, cy::Error> made = device->create_texture(out);
         if (!made) {
             return cy::make_unexpected(made.error());
@@ -1104,6 +1127,24 @@ struct MapRenderer::State {
         }
         shadow_view = *made_view;
         return cy::ok();
+    }
+
+    /// `--play`'s selection outlines: the engine's component registered in the host's world, so
+    /// the game finds it by name, and the pass over the frame's pipelines.
+    [[nodiscard]] Status create_outlines(RtsHost& from) noexcept {
+        auto registered = rendering::selection::register_selection_highlight(from.world());
+        if (!registered) {
+            return cy::make_unexpected(registered.error());
+        }
+        highlight_component = *registered;
+        if (!rendering::selection::OutlinePass::supported(*device)) {
+            return cy::fail(cy::ErrorCode::Unsupported,
+                            "the device cannot draw selection outlines");
+        }
+        rendering::selection::OutlinePassDescription description;
+        description.width = options.width;
+        description.height = options.height;
+        return outline.create(*device, pipelines, description);
     }
 
     // --- The frame's lookups ---------------------------------------------------------------------
@@ -1606,6 +1647,14 @@ struct MapRenderer::State {
             return declared;
         }
         const cy::Span<const rendering::ResourceId> reads = skins.vertex_reads();
+        if (options.outlines) {
+            // The outlined figures are skinned: the mask draws them from the skinning pass's
+            // output, so it is ordered after it.
+            if (Status set = outline.set_vertex_reads(reads); !set) {
+                return set;
+            }
+            sinks.selection_outlines = outline.stage(recorder);
+        }
         for (const rendering::FramePassKind kind :
              {rendering::FramePassKind::DepthPrepass, rendering::FramePassKind::Shadow,
               rendering::FramePassKind::Opaque, rendering::FramePassKind::Transparent}) {
@@ -1835,6 +1884,14 @@ struct MapRenderer::State {
                 .read(destination, rhi::Access::HostRead)
                 .side_effect();
         }
+        const bool presenting = present != nullptr && capture.output != rendering::kInvalidResource;
+        if (presenting) {
+            // The frame ends with its output ready to be sampled, which is the state the present
+            // graph imports it in.
+            graph.add_pass("map output for the window", rhi::QueueKind::Graphics)
+                .read(capture.output, rhi::Access::FragmentSampledRead)
+                .side_effect();
+        }
         rendering::GraphExecutor executor(*allocator, *device);
         const auto submitted = std::chrono::steady_clock::now();
         Status executed = assembly.execute(executor, graph, out);
@@ -1854,10 +1911,101 @@ struct MapRenderer::State {
             }
         }
         executor.release();
+        last_present_ms = 0.0;
+        if (executed && presenting) {
+            executed = present_onto_window();
+        }
         if (Status ended = device->end_frame(); !ended && executed) {
             return ended;
         }
         return executed;
+    }
+
+    /// THE FRAME, THEN THE WINDOW, in two submissions. The frame's own graph knows nothing of the
+    /// swapchain, so its cost — what `smoke.rts_api_play` holds to 16.7 ms — is the frame's alone;
+    /// waiting for the presentation engine to hand an image back (which a compositor under load can
+    /// hold for seconds) is this graph's, timed apart as `last_present_ms`. Its one pass draws the
+    /// output onto the acquired image, letterboxed, waiting for the acquire and signalling the
+    /// present (`ExecuteOptions`).
+    [[nodiscard]] Status present_onto_window() noexcept {
+        const auto started = std::chrono::steady_clock::now();
+        present_graph.reset();
+        rendering::TextureRequest frame_request;
+        frame_request.name = "map output";
+        frame_request.format = kOutputFormat;
+        frame_request.width = options.width;
+        frame_request.height = options.height;
+        frame_request.extra_usage = rhi::TextureUsage::Sampled;
+        const rendering::ResourceId frame_output =
+            present_graph.import_texture(frame_request, output, rhi::ImageUse::SampledRead);
+        rendering::TextureRequest window;
+        window.name = "window";
+        window.format = present->format;
+        window.width = present->width;
+        window.height = present->height;
+        window.extra_usage = rhi::TextureUsage::ColorAttachment;
+        const rendering::ResourceId target =
+            present_graph.import_swapchain_texture(window, present->image);
+        presenter.declare(present_graph, frame_output, options.width, options.height, target,
+                          present->width, present->height);
+        rendering::ExecuteOptions execute_options;
+        execute_options.wait_acquire = present->acquired;
+        execute_options.signal_present = present->presented;
+        rendering::GraphExecutor executor(*allocator, *device);
+        const auto executed =
+            executor.execute(present_graph, rendering::CompileOptions{}, execute_options);
+        Status done = executed ? device->wait_idle() : cy::make_unexpected(executed.error());
+        executor.release();
+        last_present_ms = since_ms(started);
+        report.presented += done ? 1U : 0U;
+        return done;
+    }
+
+    /// `--play`'s part of a frame: the window's present pass for its swapchain's format, and the
+    /// outlines of what the game marked.
+    [[nodiscard]] Status prepare_play(RtsHost& from, const PresentTarget* target) noexcept {
+        present = target;
+        if (target != nullptr && presenter.format() != target->format) {
+            if (Status made = presenter.create(*device, target->format); !made) {
+                return made;
+            }
+        }
+        return options.outlines ? gather_outlines(from) : cy::ok();
+    }
+
+    /// The marks the game made on its soldiers' entities, as the figures that draw those soldiers:
+    /// a battle unit's soldier is figure `kMaxWorkers + unit`, whose draws carry its instance's
+    /// stable identity.
+    [[nodiscard]] Status gather_outlines(RtsHost& from) noexcept {
+        highlights.clear();
+        report.outlined = 0;
+        const cy::game_backend::LockstepSession* session = from.lockstep();
+        if (!options.outlines || !battle || session == nullptr) {
+            return outline.set_highlights(&highlights, rendering::selection::OutlineSettings{});
+        }
+        auto gathered =
+            rendering::selection::gather_highlights(from.world(), highlight_component, marks);
+        if (!gathered) {
+            return cy::make_unexpected(gathered.error());
+        }
+        for (u32 unit = 0; unit < session->units() && unit < lockstep_slots; ++unit) {
+            const auto state = session->unit(unit);
+            const rendering::selection::HighlightMark* mark =
+                state ? marks.find(state->entity) : nullptr;
+            if (mark == nullptr) {
+                continue;
+            }
+            const u32 instance = first_figure + kMaxWorkers + unit;
+            if (Status marked = highlights.mark(kStableIdBase + instance, mark->kind, mark->colour);
+                !marked) {
+                return marked;
+            }
+            report.outlined += 1;
+        }
+        rendering::selection::OutlineSettings settings;
+        settings.selected_width = 2;
+        settings.hovered_width = 4;
+        return outline.set_highlights(&highlights, settings);
     }
 
     [[nodiscard]] Status write_png(const std::string& path) noexcept {
@@ -1945,6 +2093,8 @@ MapRenderer::~MapRenderer() {
     if (device != nullptr) {
         (void)device->wait_idle();
         State& state = *state_;
+        state.presenter.destroy();
+        state.outline.destroy();
         state.ui.destroy();
         state.effect.shutdown();
         state.gi.destroy();
@@ -2021,6 +2171,11 @@ cy::Status MapRenderer::start(RtsHost& host, const MapContent& content,
     }
     if (Status made = state.create_targets(); !made) {
         return made;
+    }
+    if (options.outlines) {
+        if (Status made = state.create_outlines(host); !made) {
+            return made;
+        }
     }
     if (Status sized = state.lights.resize(1); !sized) {
         return sized;
@@ -2100,9 +2255,16 @@ cy::Status MapRenderer::start(RtsHost& host, const MapContent& content,
     return state.gi.create(*allocator_, *state.device, host.illumination().system(), gi);
 }
 
-cy::Status MapRenderer::frame(RtsHost& host) noexcept {
+cy::rhi::Device* MapRenderer::device() const noexcept {
+    return state_ == nullptr ? nullptr : state_->device;
+}
+
+cy::Status MapRenderer::frame(RtsHost& host, const PresentTarget* present) noexcept {
     State& state = *state_;
     state.frame = host.frames();
+    if (Status prepared = state.prepare_play(host, present); !prepared) {
+        return prepared;
+    }
     const auto started = std::chrono::steady_clock::now();
     state.set_camera(host);
     if (Status placed = state.place_figures(host); !placed) {
@@ -2131,15 +2293,17 @@ cy::Status MapRenderer::frame(RtsHost& host) noexcept {
     }
     state.place_rows();
     const bool still =
-        state.battle ? std::ranges::find(kBattleStills, state.frame) != std::end(kBattleStills)
-                     : std::ranges::find(kStills, state.frame) != std::end(kStills);
+        state.options.stills &&
+        (state.battle ? std::ranges::find(kBattleStills, state.frame) != std::end(kBattleStills)
+                      : std::ranges::find(kStills, state.frame) != std::end(kStills));
     const bool video = !state.options.video_directory.empty() &&
                        state.frame % std::max<u32>(state.options.video_every, 1U) == 0U;
     rendering::assembly::AssemblyReport assembled{};
     if (Status rendered = state.render(still || video, assembled); !rendered) {
         return rendered;
     }
-    const f64 elapsed = since_ms(started);
+    // The frame's own cost: presenting it to a window is timed apart (`present_onto_window`).
+    const f64 elapsed = since_ms(started) - state.last_present_ms;
     MapRenderReport& report = state.report;
     report.frames = state.frame;
     report.draws = state.recorder.report().draws();
@@ -2150,6 +2314,7 @@ cy::Status MapRenderer::frame(RtsHost& host) noexcept {
     if (state.frame > kWarmFrames && !still && !video) {
         report.timed += 1;
         report.frame_ms += elapsed;
+        report.present_ms += state.last_present_ms;
         report.worst_ms = std::max(report.worst_ms, elapsed);
         report.game_ms += host.last_frame_ms();
         report.record_ms += state.last_record_ms;

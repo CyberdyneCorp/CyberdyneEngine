@@ -52,9 +52,14 @@
 
 #include "illumination.h"
 
+namespace cy::rhi {
+class Device;
+}
+
 namespace sample::rts {
 
 class RtsHost;
+struct PresentTarget;
 
 namespace map {
 struct MapContent;
@@ -87,6 +92,11 @@ struct MapRenderOptions {
     /// The graphics API's validation layer, which every other run of this sample keeps on. Off is
     /// for measuring what the frame costs, which the layer's own checks would be part of.
     bool validation = true;
+    /// `--play`: the units the game marks (`World.highlight`) outlined by the engine's selection
+    /// outlines (`cy::rendering-selection`), and no stills — a person's session has no frame
+    /// numbers worth a picture.
+    bool outlines = false;
+    bool stills = true;
 };
 
 /// The frame's numbers, over the timed frames.
@@ -121,6 +131,12 @@ struct MapRenderReport {
     cy::f64 minimap_bake_ms = 0.0;
     cy::f64 minimap_ms = 0.0;
     cy::u64 minimap_composed = 0;
+    /// `--play`: units outlined on the last frame, and frames presented to a window.
+    cy::u32 outlined = 0;
+    cy::u64 presented = 0;
+    /// Waiting for the window's image, drawing the frame onto it and presenting it, over the
+    /// timed frames: not part of `frame_ms`.
+    cy::f64 present_ms = 0.0;
 };
 
 /// The map's buildings and resources as the level's GI holds them (`HostOptions::extra_gi_boxes`):
@@ -141,8 +157,11 @@ public:
     /// the map as the loader read it; it is copied to the device and not kept.
     [[nodiscard]] cy::Status start(RtsHost& host, const map::MapContent& content,
                                    const MapRenderOptions& options) noexcept;
-    /// Draw the frame `host` just ran.
-    [[nodiscard]] cy::Status frame(RtsHost& host) noexcept;
+    /// Draw the frame `host` just ran; with `present`, onto that swapchain image too, letterboxed
+    /// (present_pass.h), waiting for its acquire and signalling its presentation.
+    [[nodiscard]] cy::Status frame(RtsHost& host, const PresentTarget* present = nullptr) noexcept;
+    /// The device the frame is drawn on: what a window's swapchain is made with.
+    [[nodiscard]] cy::rhi::Device* device() const noexcept;
     [[nodiscard]] const MapRenderReport& report() const noexcept;
     /// The report line.
     void print_report() const noexcept;
