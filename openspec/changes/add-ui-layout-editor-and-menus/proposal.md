@@ -25,7 +25,7 @@ file, so no game's settings screen could be written against the engine.
   and states. Thirteen commands (`ui.document.*`, `ui.widget.*`, `ui.theme.save`, `ui.preview`,
   `ui.status`), each an undoable transaction and an MCP tool. A save is the engine writer's text,
   byte for byte, and a running game that loaded the document by path reloads it.
-- **ABI 1.15**, thirteen entries: `input_rebind_begin`, `_poll`, `_cancel`, `input_binding`,
+- **ABI 1.17**, thirteen entries: `input_rebind_begin`, `_poll`, `_cancel`, `input_binding`,
   `input_profile_save`, `_load`, `_reset`; `video_get_settings`, `video_set_settings`,
   `video_modes`; `user_data_write`, `user_data_read`; `ui_widget_set_tooltip`. Backends:
   `InputAdapter` (the input server's `RebindOperation`, settled against the bindings in effect, the

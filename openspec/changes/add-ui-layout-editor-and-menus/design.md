@@ -32,7 +32,7 @@ blank the canvas. A previewed state is applied the way a player causes it (the p
 pressed on the widget, focus by navigation, `set_enabled`, `open`), then the toolkit is updated
 until its transitions settle, so the picture is the state's end, not its first frame.
 
-## ABI 1.15: what a settings screen needs
+## ABI 1.17: what a settings screen needs
 
 Rebinding is the input server's `RebindOperation`, not a key the game reads. `input_rebind_begin`
 records the action, scheme, slot and policy for a user; `InputAdapter::observe_pending` offers each

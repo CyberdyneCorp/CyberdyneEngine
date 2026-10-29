@@ -528,7 +528,7 @@ could offer widgets the engine's toolkit cannot make.
 
 ## 14. Menus: settings, rebinding and player files
 
-ABI 1.15 adds what a game's menus need beyond widgets (`cy_abi.h`, "1.15: menus"):
+ABI 1.17 adds what a game's menus need beyond widgets (`cy_abi.h`, "1.17: menus"):
 
 | Entries | What |
 |---|---|

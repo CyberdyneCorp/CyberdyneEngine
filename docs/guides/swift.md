@@ -1100,7 +1100,7 @@ frame costs 6.3 ms at 480x270 with the GI 1.0 ms on the device. Two rules carry 
 every call is refused from `onFixedUpdate`, and a lamp you want seen in the frame should light
 through the cache rather than be promoted — the GI guide's section 6g says why.
 
-### Menus: rebinding, display settings and player files (ABI 1.15)
+### Menus: rebinding, display settings and player files (ABI 1.17)
 
 A game's settings screen goes to the engine through four Kit types (`Menus.swift`):
 

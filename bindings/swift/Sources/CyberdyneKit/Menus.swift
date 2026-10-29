@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Menus.swift — ABI 1.15: what a game's menus need beyond the toolkit, as a game writes it.
+// Menus.swift — ABI 1.17: what a game's menus need beyond the toolkit, as a game writes it.
 //
 //     // Controls: rebind Jump on the keyboard, through the input system's own flow.
 //     let jump = try Input.find(action: "Game.Jump")
@@ -193,7 +193,7 @@ public struct VideoSettings: Equatable, Sendable {
     }
 }
 
-/// The display, as ABI 1.15's `video_*` reach it.
+/// The display, as ABI 1.17's `video_*` reach it.
 public enum Video {
     /// The settings in effect.
     public static var settings: VideoSettings {

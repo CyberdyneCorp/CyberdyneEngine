@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // MenusTests.swift — rebinding, the profile, the display settings, the player's files and tooltips
-// through `FakeEngine`. ABI 1.15.
+// through `FakeEngine`. ABI 1.17.
 //
 // Each case checks that a facade call reaches its entry with the right arguments, converts the
 // answer — a fixed C string, a two-call sized read — and turns a refusal into the Swift answer the

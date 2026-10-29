@@ -6,10 +6,10 @@ a gamepad or the pointer. Every setting goes to the engine, not to a value the g
 
 | Setting | Where it goes |
 |---|---|
-| Resolution, quality preset, upscaler, fullscreen | `Video.apply` (ABI 1.15), the host's `VideoSettingsAdapter`; the renderer rebuilds its frame at the new output and renders at the upscaler's internal extent |
+| Resolution, quality preset, upscaler, fullscreen | `Video.apply` (ABI 1.17), the host's `VideoSettingsAdapter`; the renderer rebuilds its frame at the new output and renders at the upscaler's internal extent |
 | Global illumination quality | `Illumination.apply` (ABI 1.9), the CyberGI system the host runs |
 | Master, Music, Effects, Voice | the settings document's sliders, bound `bind=volume.master` two-way to the host's audio buses: a slider moved is the bus moved, with no Apply and no game code |
-| Controls | `InputAction.rebind` (ABI 1.15): the input system's `RebindOperation` listens for the next control on that scheme, swaps a conflict onto the other action, and the profile is saved with `UserData` |
+| Controls | `InputAction.rebind` (ABI 1.17): the input system's `RebindOperation` listens for the next control on that scheme, swaps a conflict onto the other action, and the profile is saved with `UserData` |
 
 ![Settings: the graphics tab](../../docs/design/images/menus-settings-graphics.png)
 

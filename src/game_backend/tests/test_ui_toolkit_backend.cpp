@@ -425,7 +425,7 @@ CY_TEST_CASE("ui toolkit: a document loaded by path reloads on a save, keeping i
 
 CY_TEST_CASE(
     "ui toolkit: a module's document binds to the embedder's values, and takes a tooltip") {
-    // ABI 1.15's `set_document_bindings`: the host owns the game value a slider drives — a bus's
+    // ABI 1.17's `set_document_bindings`: the host owns the game value a slider drives — a bus's
     // gain, say — and a module's document reaches it by name with no module code between.
     Fixture fixture;
     CY_REQUIRE(fixture.started);

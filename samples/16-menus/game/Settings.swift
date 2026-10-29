@@ -3,7 +3,7 @@
 // the player's file it is kept in.
 //
 // Every value goes to the ENGINE through its own entry: the resolution, the quality preset, the
-// upscaler and fullscreen through ABI 1.15's `Video.apply`, which the host's renderer acts on; the
+// upscaler and fullscreen through ABI 1.17's `Video.apply`, which the host's renderer acts on; the
 // global illumination quality through ABI 1.9's `Illumination.apply`; and each audio bus's volume
 // through the document itself — the sliders are bound (`bind=volume.music`, two-way) to the
 // host's buses, so a slider moved is the bus moved, with no game code between. What the game keeps
