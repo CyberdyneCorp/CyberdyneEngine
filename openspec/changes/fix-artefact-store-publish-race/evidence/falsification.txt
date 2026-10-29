@@ -1,0 +1,31 @@
+Mutations of fix-artefact-store-publish-race, each applied to the tree, the suites rebuilt and run
+(Linux x86_64, g++ 13.3, dev preset), and the file restored and checked against its md5 before the
+next mutation.
+
+The original failure is Windows-only: on POSIX, renaming over an existing file always succeeds. The
+race case does not need Windows to go red. It asserts that the losing writer never replaces the
+published file (`AlreadyPresent`, no write, the same inode), so the replacing publish fails on
+every platform. On Windows the replace also fails outright, because the probe holds the entry open.
+
+M1  tools/build/src/artefact_store.cpp
+    publish with fs::write_atomic (replacing rename) instead of fs::write_atomic_no_replace
+    The store before this change; the probe seam kept so the case compiles.
+    integration.build_service
+      two writers of one artefact ...   FAILED
+        CHECK_EQ( outcome, StoreOutcome::AlreadyPresent )      values: ( 0, 1 )
+        CHECK_EQ( store.statistics().writes, 0U )              values: ( 1, 0 )
+        CHECK_EQ( store.statistics().already_present, 1U )     values: ( 0, 1 )
+        CHECK_EQ( file_identity(path), rival.identity )        values: ( 93462184, 93462183 )
+      many workers putting one artefact ...   FAILED
+        CHECK_EQ( statistics.writes, u64{kRounds} )            values: ( 128, 8 )
+        (all 16 writers in every round passed the existence check and replaced the entry)
+
+M2  src/core/assets/src/file.cpp, move_file_no_replace (POSIX)
+    ::link(from, to)  ->  move_file(from, to)        a replacing rename under the no-replace name
+    integration.assets_io
+      A no-replace atomic write publishes once ...  FAILED
+        REQUIRE_FALSE( again.has_value() )                     values: ( true )
+    integration.build_service: the same five failures as M1.
+
+Restored: integration.assets_io 43/43, integration.build_service 13/13 and
+integration.material_cook 14/14 passed. The two race cases passed 5 of 5 consecutive runs.

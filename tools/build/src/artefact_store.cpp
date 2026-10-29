@@ -66,10 +66,25 @@ Expected<assets::ContentHash, Error> ArtefactStore::put(const void* data, usize 
     if (Status made = assets::fs::create_directories(directory.c_str()); !made) {
         return make_unexpected(made.error());
     }
-    // Atomic: a temporary in the same directory, then a rename. A reader never sees a partial
-    // artefact, and two writers of the same content write the same bytes to the same name.
-    if (Status written = assets::fs::write_atomic(path.c_str(), data, size); !written) {
-        return make_unexpected(written.error());
+    if (publish_probe_ != nullptr) {
+        publish_probe_(publish_probe_user_, path);
+    }
+    // Atomic: a temporary in the same directory, then published under the name ONLY IF the name is
+    // free. Two writers of one artefact both pass the existence check above when they race; the
+    // second must not replace the first's file, because on Windows a replace fails while anyone
+    // has that file open, and the loser then reported a perfectly good artefact as unstorable.
+    if (Status written = assets::fs::write_atomic_no_replace(path.c_str(), data, size); !written) {
+        // A failure with the entry now present is the race lost by some other route than
+        // `AlreadyExists` (a platform reporting the collision differently): the entry was itself
+        // published atomically under this digest, so it is complete and it is these bytes.
+        if (written.error().code != ErrorCode::AlreadyExists && !assets::fs::exists(path.c_str())) {
+            return make_unexpected(written.error());
+        }
+        already_present_.fetch_add(1, std::memory_order_relaxed);
+        if (outcome != nullptr) {
+            *outcome = StoreOutcome::AlreadyPresent;
+        }
+        return digest;
     }
     // Read-only, so an accidental in-place write is refused by the operating system. A failure here
     // is not fatal — some filesystems refuse the mode change — and the digest check in `verify` is

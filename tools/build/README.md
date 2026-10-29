@@ -47,7 +47,10 @@ header. In short:
    output digests. The cost is that the service must evaluate in dependency order, which it does
    anyway.
 3. **Artefacts are immutable**, by name (the name is the digest), by mode (0444) and by audit
-   (`verify_all`). A mutable artefact makes every downstream key a lie.
+   (`verify_all`). A mutable artefact makes every downstream key a lie. A store entry is published
+   only if its name is free (`fs::write_atomic_no_replace`): of two workers producing one artefact,
+   the second finds it present and never replaces the first's file. Windows refuses to replace an
+   open file, so that replacing rename used to fail parallel builds.
 4. **An undeclared read is a defect**, and no key can catch one. A producer is handed a
    `NodeContext` and no filesystem, so a name that was not declared cannot be resolved at all.
 

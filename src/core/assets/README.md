@@ -44,7 +44,7 @@ dependents so they can rebuild what they derived. Both halves are exercised by
 | `derivation.h` | `DerivationKey` and its builder — what makes two pieces of derived data the same piece |
 | `derived_cache.h` | The **one** derived-data cache: local, shared and remote tiers, recorded dependencies, disposable by construction |
 | `compression.h` | `CompressionMethod`, block and **seekable framed** compression, the recompression policy |
-| `file.h` | `File`, `MappedFile`, `fs::` directory operations, `fs::write_atomic` |
+| `file.h` | `File`, `MappedFile`, `fs::` directory operations, `fs::write_atomic`, `fs::write_atomic_no_replace` |
 | `vfs.h` | `Mount`, `DirectoryMount`, `MemoryMount`, `RemoteMount`, `VirtualFileSystem` |
 | `package.h` | The `.cypak` format: `PackageReader`, `PackageWriter`, `PackageSet`, `PackageMount` |
 | `serialization.h` | The binary envelope and the text form over reflected data |
