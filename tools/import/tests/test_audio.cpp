@@ -45,6 +45,7 @@ namespace {
     return result;
 }
 
+/// A view into `result`'s payload: `result` must outlive it.
 [[nodiscard]] audio::CookedAudioView cooked(const ImportResult& result) {
     CY_REQUIRE_FALSE(result.has_errors());
     const SubAsset* primary = result.primary();
@@ -133,16 +134,18 @@ CY_TEST_CASE("audio: the mode by use — a short MP3 decodes to PCM, a FLAC kept
     ImportOptions decoded;
     set(decoded, "mode", OptionValue::of_enumeration("decoded"));
     set(decoded, "sample-rate", OptionValue::of_int(0));
-    const audio::CookedAudioView mp3 =
-        cooked(import_audio(fixture("fixtures/tone.mp3"), &decoded, "sfx/tone.mp3"));
+    const ImportResult mp3_result =
+        import_audio(fixture("fixtures/tone.mp3"), &decoded, "sfx/tone.mp3");
+    const audio::CookedAudioView mp3 = cooked(mp3_result);
     CY_CHECK(mp3.header.codec == audio::AudioCodec::Pcm16);
     CY_CHECK_EQ(mp3.header.sample_rate, sig::kFixtureRate);
     CY_CHECK_EQ(mp3.header.frame_count, sig::kLongFrames);  // gapless: no delay, no padding
 
     ImportOptions compressed;
     set(compressed, "mode", OptionValue::of_enumeration("compressed"));
-    const audio::CookedAudioView flac =
-        cooked(import_audio(fixture("fixtures/tone.flac"), &compressed, "vo/tone.flac"));
+    const ImportResult flac_result =
+        import_audio(fixture("fixtures/tone.flac"), &compressed, "vo/tone.flac");
+    const audio::CookedAudioView flac = cooked(flac_result);
     CY_CHECK(flac.header.codec == audio::AudioCodec::Flac);
     CY_CHECK(flac.header.load_mode == audio::AudioLoadMode::Compressed);
     CY_CHECK_EQ(flac.header.frame_count, sig::kShortFrames);
@@ -172,7 +175,9 @@ CY_TEST_CASE("audio: loudness is measured, and normalising writes a gain capped 
         sample = static_cast<i16>(sample / 2);
     }
     const std::vector<u8> wav = sig::wav_bytes(quiet, 2, sig::kFixtureRate);
-    const audio::CookedAudioView plain = cooked(import_audio(wav, nullptr, "sfx/quiet.wav"));
+    // Each view points into its result's payload, so every result outlives its view.
+    const ImportResult plain_result = import_audio(wav, nullptr, "sfx/quiet.wav");
+    const audio::CookedAudioView plain = cooked(plain_result);
     CY_CHECK_EQ(plain.header.gain_db, 0.0F);
 
     ImportOptions loudness;
@@ -187,9 +192,11 @@ CY_TEST_CASE("audio: loudness is measured, and normalising writes a gain capped 
     ImportOptions gentle;
     set(gentle, "normalise", OptionValue::of_enumeration("loudness"));
     set(gentle, "target-lufs", OptionValue::of_float(-30.0));
-    const audio::CookedAudioView quieter = cooked(import_audio(wav, &gentle, "sfx/quiet.wav"));
+    const ImportResult quieter_result = import_audio(wav, &gentle, "sfx/quiet.wav");
+    const audio::CookedAudioView quieter = cooked(quieter_result);
     CY_CHECK_NEAR(quieter.header.integrated_lufs + quieter.header.gain_db, -30.0F, 1e-4F);
     // The samples themselves were not touched: the gain is applied at playback.
+    CY_CHECK_EQ(quieter.payload.size(), plain.payload.size());
     CY_CHECK(std::equal(quieter.payload.begin(), quieter.payload.end(), plain.payload.begin()));
 }
 
