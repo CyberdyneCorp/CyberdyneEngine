@@ -69,6 +69,8 @@ cy_add_module(
         # ABI 1.13: the first-person camera and the weapon view, over a backend
         # cy::game-backend-first-person binds.
         src/game/first_person_thunks.cpp
+        # ABI 1.17: rebinding, display settings, player files and tooltips, for a game's menus.
+        src/game/menu_thunks.cpp
         # ABI 1.12: the widget toolkit, over the 1.6 interface's backend.
         src/game/toolkit_thunks.cpp
         # ABI 1.15: effects and decals, over backends cy::game-backend-effects and

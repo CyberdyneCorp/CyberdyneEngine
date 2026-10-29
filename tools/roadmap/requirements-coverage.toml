@@ -6289,7 +6289,15 @@ row = "input-and-actions"
 requirement = "Rebinding and profiles"
 evidence = "test:unit.input_actions"
 case = "input: a rebind stores an override and leaves the authored binding alone"
-note = "The begin/listen/apply flow binds Fire to F, the new key works, and the installed MappingContext still holds Space, so the override lives in the profile and the shipped asset is unmodified. 'a rebind conflict is resolved by the declared policy, not silently' drives Reject, Ask and UnbindPrevious, and 'overrides are per scheme, so gamepad and keyboard are rebound apart' covers per-scheme overrides. Swap and Allow are declared but no case drives them."
+note = "The begin/listen/apply flow binds Fire to F, the new key works, and the installed MappingContext still holds Space, so the override lives in the profile and the shipped asset is unmodified. 'a rebind conflict is resolved by the declared policy, not silently' drives Reject, Ask and UnbindPrevious, and 'overrides are per scheme, so gamepad and keyboard are rebound apart' covers per-scheme overrides. ABI 1.17 reaches the flow from a game: integration.game_backend_menu drives SWAP and the profile's save and load, and integration.menus_sample rebinds a gamepad button and a key by swap, persists the profile and fires the rebound action on the next start. 'input: a control held in another context is no conflict for a rebind' keeps the interface's own bindings out of a game action's conflicts. Allow is declared but no case drives it."
+
+
+[[coverage]]
+row = "input-and-actions"
+requirement = "Rebinding from game code"
+evidence = "test:integration.menus_sample"
+case = "menus sample: a gamepad plays every screen, and a second start keeps what it set"
+note = "The whole flow from a Swift game over ABI 1.17: Jump rebound on the gamepad to the north button (the Inventory's, swapped) and on the keyboard to E (Interact's, swapped), the bindings read back from the input user, a rebind cancelled by Escape changing nothing, and a second run loading the saved profile and firing Jump on the rebound controls. integration.game_backend_menu (declared in a foreach in src/game_backend/CMakeLists.txt) drives each policy against a real input server: 'menu: a control another action holds is swapped, refused or cancelled by policy' and 'menu: the player's profile is saved as text and loaded into a fresh game'. unit.input_actions' 'input: a control held in another context is no conflict for a rebind' is the context rule."
 
 [[coverage]]
 row = "input-and-actions"
@@ -6303,7 +6311,7 @@ row = "input-and-actions"
 requirement = "Interface routing and focus"
 evidence = "test:unit.input_actions"
 case = "input: typing suppresses gameplay actions bound to the same keys"
-note = "With text entry active, WASD produces nothing and the outcome is SuppressedByFocus. Deactivating text entry restores the action without another key event. FocusLayer declares the OS, editor, interface and gameplay layers. The ui-system side of the boundary is unit.ui's 'ui_input: an action reaches focus and bubbles past a disabled element'. No case navigates a menu from two device kinds."
+note = "With text entry active, WASD produces nothing and the outcome is SuppressedByFocus. Deactivating text entry restores the action without another key event. FocusLayer declares the OS, editor, interface and gameplay layers. The ui-system side of the boundary is unit.ui's 'ui_input: an action reaches focus and bubbles past a disabled element'. integration.menus_sample navigates samples/16-menus with a gamepad and then a keyboard, and reads the game's own action firing once the menu lets the focus go."
 
 [[coverage]]
 row = "input-and-actions"
@@ -8056,6 +8064,13 @@ requirement = "Other languages are not precluded"
 evidence = "exempt:m11e"
 note = "C modules already load through the same flat ABI (`integration.abi_reload`'s 'a module loads, registers its type, and its behaviours run'), and the Swift overlay is generated from the ABI description. Missing: no second-language binding is generated from the ABI description to show it is sufficient. Re-enter with a generated Rust (or C) binding produced from the ABI description alone that loads a module without engine changes."
 
+[[coverage]]
+row = "swift-scripting"
+requirement = "Game settings through the native ABI"
+evidence = "test:integration.menus_sample"
+case = "menus sample: a gamepad plays every screen, and a second start keeps what it set"
+note = "A Swift game applies 1920x1080, Medium, Quality upscaling and Medium GI through ABI 1.17 and 1.9, and the engine's video adapter and GI system hold them; the settings file it wrote with user_data_write is read back by the second run, which applies it before the first frame. integration.game_backend_menu (declared in a foreach in src/game_backend/CMakeLists.txt) holds the refusals: 'menu: display settings move only to an offered mode, and a change is counted' and 'menu: a player's file is written whole into the directory and read back', with a name that leaves the directory refused. The renderer acting on them is smoke.menus_frames: after the Swift game's Apply the frame is drawn at 1920x1080 output and rendered at the Quality upscaler's 1286x724, read from the renderer's own report. CyberdyneKit's MenusTests hold the Swift wrappers against FakeEngine, and unit.abi's menus cases the 1.17 table and layouts."
+
 # --- terrain --------------------------------------------------------------------------------------
 #
 # Swept for M11.e: every requirement this row had not yet answered. An exemption names what is
@@ -8375,7 +8390,7 @@ row = "ui-system"
 requirement = "UI document asset"
 evidence = "test:unit.ui_toolkit"
 case = "ui_document: a document becomes widgets, its components instantiated with parameters"
-note = "A .cyui document is the toolkit's asset: its text form, `use` of another document with parameters (two instances, one overriding a parameter), its sheets and its bindings by name. This case instantiates a component twice with an override. 'ui_document: the text form parses, and writes back byte for byte' is the round trip, and 'ui_document: one property changed is one line of the text changed' is the 'Diffable text form' scenario. 'ui_document: a reload keeps every matched widget, its focus and the player's value' and integration.ui_toolkit's 'ui_toolkit_document: a document on disk reloads when it is saved, keeping its state' are the source document's changes reaching its instances. The build graph cooks it: integration.build_content's 'an interface document's sheets and used documents are discovered by its cook'. Swift loads the same documents (ABI 1.12 ui_load_document). NOT BUILT: the visual designer, so 'Designer opens what code wrote' has no subject; and the Swift DSL (WidgetNode) makes widgets through the ABI rather than writing a document."
+note = "A .cyui document is the toolkit's asset: its text form, `use` of another document with parameters (two instances, one overriding a parameter), its sheets and its bindings by name. This case instantiates a component twice with an override. 'ui_document: the text form parses, and writes back byte for byte' is the round trip, and 'ui_document: one property changed is one line of the text changed' is the 'Diffable text form' scenario. 'ui_document: a reload keeps every matched widget, its focus and the player's value' and integration.ui_toolkit's 'ui_toolkit_document: a document on disk reloads when it is saved, keeping its state' are the source document's changes reaching its instances. The build graph cooks it: integration.build_content's 'an interface document's sheets and used documents are discovered by its cook'. Swift loads the same documents (ABI 1.12 ui_load_document). The visual designer is the editor's UI Layout panel (#29): it reads and writes the same text through cy-editor-services' ui_document.rs, which writes byte for byte what the engine's writer does, and its canvas is the engine's own preview (integration.editor_backend_ui_layout). cy-editor-mcp's 'the_menus_sample_is_authored_by_the_ui_layout_tools' authors samples/16-menus' five documents through the designer's commands and holds them to the committed files the Swift game loads. NOT BUILT: the Swift DSL (WidgetNode) makes widgets through the ABI rather than writing a document, so a tree authored in the DSL has no document for the designer to open."
 
 [[coverage]]
 row = "ui-system"
@@ -8510,7 +8525,7 @@ note = "THE INGREDIENTS EXIST, AND THE INSPECTOR DOES NOT. The store counts meas
 row = "ui-system"
 requirement = "Forcing functions for the UI system"
 evidence = "exempt:m11e"
-note = "HALF-BUILT, and the requirement says to record the gap rather than assume it covered. The developer console ships on CyberUI (src/ui/console, cy::ui-console), held by unit.ui_console's 'ui_console: the scrollback is virtualised — rows stay fixed however much is printed' and drawn by render.ui. The toolkit's text field has caret movement, selection, undo and IME composition (unit.ui_toolkit's ui_text_edit cases), and the widget gallery is a settings-style interface drawn against golden images (render.ui_toolkit (d)). NOT BUILT: the console's input line still appends and deletes only (it is not a toolkit text field), autocompletion, the gameplay and network debuggers, the profiler overlays, a shipped settings interface, and the conformance suite (no docking layouts, property grids, graph canvas or timing thresholds run by a gate). REPLACING CASE: the shipped developer console on the toolkit's text field, and a conformance suite (virtualised tree of tens of thousands of rows, docking, property grid, text editing) with timing thresholds run by a gate."
+note = "HALF-BUILT, and the requirement says to record the gap rather than assume it covered. The developer console ships on CyberUI (src/ui/console, cy::ui-console), held by unit.ui_console's 'ui_console: the scrollback is virtualised — rows stay fixed however much is printed' and drawn by render.ui. The toolkit's text field has caret movement, selection, undo and IME composition (unit.ui_toolkit's ui_text_edit cases), and the widget gallery is a settings-style interface drawn against golden images (render.ui_toolkit (d)). samples/16-menus is a settings and input rebinding interface on the toolkit — graphics, audio and controls tabs, rebinding through the input system with its profile saved and loaded, keyboard and gamepad navigation, modal flows — held by integration.menus_sample and smoke.menus_frames; it is a sample a game copies, not an engine feature it switches on. NOT BUILT: the console's input line still appends and deletes only (it is not a toolkit text field), autocompletion, the gameplay and network debuggers, the profiler overlays, a settings interface shipped as an engine feature, and the conformance suite (no docking layouts, property grids, graph canvas or timing thresholds run by a gate). REPLACING CASE: the shipped developer console on the toolkit's text field, and a conformance suite (virtualised tree of tens of thousands of rows, docking, property grid, text editing) with timing thresholds run by a gate."
 
 [[coverage]]
 row = "ui-system"
@@ -8522,6 +8537,13 @@ note = "A DESIGN CONSTRAINT THAT NO TOOL CHECKS. It holds today: the editor is t
 #
 # Swept for M11.e: every requirement this row had not yet answered. An exemption names what is
 # not built and the case that would replace it.
+
+
+[[coverage]]
+row = "ui-system"
+requirement = "The visual designer previews through the engine"
+evidence = "rust:cy-editor-mcp::a_session_over_the_wire::a_ui_document_is_laid_out_previewed_and_undone_over_mcp"
+note = "Over MCP against the engine's own replies (src/editor_backend/tests/data/ui_*.wire): a document is created, widgets added, laid out, bound and styled, the canvas previewed in a state and a theme, and every edit undone back to the document's text before it, each edit asking the runtime for a new picture. The engine side is integration.editor_backend_ui_layout: 'ui layout: every line's rectangle is the toolkit's own layout of the document', 'ui layout: a state previewed is the state the toolkit draws for it', 'ui layout: the canvas is drawn in the theme's colours, and a theme replaces them', 'ui layout: resolution, aspect and DPI scale the document as a game's scale does' and 'ui layout: the service answers over a session, and the editor's bytes decode' (the wire both sides hold byte for byte). 'the_menus_sample_is_authored_by_the_ui_layout_tools' writes samples/16-menus' documents through the same commands and holds them to the committed files, which is 'Designer opens what code wrote' in the other direction; cy-editor-services' ui_document tests round-trip the engine writer's text. integration.menus_sample's navigate.script saves over a document the running game loaded and reads the new text on screen ('A save reaches a running game')."
 
 [[coverage]]
 row = "virtual-texturing"

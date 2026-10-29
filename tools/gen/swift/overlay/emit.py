@@ -108,6 +108,12 @@ ENUM_SPECS = {
     "CyLockstepTargetKind": ("LockstepTargetKind", "CY_LOCKSTEP_TARGET_", "UInt32"),
     "CyLockstepStance": ("LockstepStance", "CY_LOCKSTEP_STANCE_", "UInt32"),
     "CyLockstepEventKind": ("LockstepEventKind", "CY_LOCKSTEP_EVENT_", "UInt32"),
+    # ADDED AT ABI 1.17 with what a game's menus need.
+    "CyInputScheme": ("InputScheme", "CY_INPUT_SCHEME_", "UInt32"),
+    "CyInputConflict": ("InputConflict", "CY_INPUT_CONFLICT_", "UInt32"),
+    "CyInputRebindStatus": ("RebindStatus", "CY_INPUT_REBIND_", "UInt32"),
+    "CyVideoQuality": ("VideoQuality", "CY_VIDEO_QUALITY_", "UInt32"),
+    "CyVideoUpscale": ("VideoUpscale", "CY_VIDEO_UPSCALE_", "UInt32"),
 }
 
 
@@ -241,6 +247,12 @@ def enums(description: dict) -> str:
         ("CyLockstepTargetKind", "/// `CyLockstepTargetKind`: what a lockstep unit attacks."),
         ("CyLockstepStance", "/// `CyLockstepStance`: what an armed lockstep unit is doing."),
         ("CyLockstepEventKind", "/// `CyLockstepEventKind`: what a lockstep tick's combat did."),
+        # ABI 1.17.
+        ("CyInputScheme", "/// `CyInputScheme`: the devices a binding belongs to."),
+        ("CyInputConflict", "/// `CyInputConflict`: what a rebind to a control in use does."),
+        ("CyInputRebindStatus", "/// `CyInputRebindStatus`: where a rebind is."),
+        ("CyVideoQuality", "/// `CyVideoQuality`: a quality preset for every post stage."),
+        ("CyVideoUpscale", "/// `CyVideoUpscale`: the temporal upscaler's mode."),
     ))
     return f"""{BANNER}
 {status}

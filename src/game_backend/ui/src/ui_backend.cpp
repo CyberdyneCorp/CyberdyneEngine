@@ -510,6 +510,12 @@ CyResult UiAdapter::set_focus(CyUiElement element) noexcept {
         pump_widget_events();
         return CY_RESULT_OK;
     }
+    if (element == CY_UI_ELEMENT_NULL && toolkit_ != nullptr) {
+        // No element: no widget either. The toolkit keeps its own focus, which is the one the
+        // input bridge reads to decide the interface still has the controls.
+        toolkit_->clear_focus();
+        pump_widget_events();
+    }
     ElementId target = ui::kNoElement;
     if (element != CY_UI_ELEMENT_NULL) {
         Record* entry = record(element);

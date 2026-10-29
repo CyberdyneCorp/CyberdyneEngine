@@ -558,6 +558,35 @@ with a source's rings, and the [whole window](../docs/design/images/editor-audio
 with the source's `cy::audio::AudioSource` in the Inspector. On this machine it reported the
 `miniaudio` backend.
 
+## The UI layout editor
+
+The UI Layout panel (`editor-ui-layout`, `panels/ui_layout.rs`, issue #29) edits `.cyui` documents on
+a canvas the engine draws: a palette of the engine toolkit's widget kinds, a hierarchy you drag rows
+in to reparent, the canvas with move, resize and anchor handles, and an inspector for properties,
+classes, layout, a binding and inline styles. The toolbar previews resolutions and aspect ratios,
+DPI scales, scale modes, themes and a widget's state (hover, pressed, focused, disabled, open).
+
+![The UI layout editor](../docs/design/images/editor-ui-layout.png)
+
+Every edit is one of thirteen commands (`ui.document.*`, `ui.widget.*`, `ui.theme.save`,
+`ui.preview`, `ui.status`; `cy-editor-services/src/ui_layout_commands.rs`), one undoable transaction
+in the open world's history, and an MCP tool of the same name. `cy-editor-services/src/ui_document.rs`
+reads and writes the text exactly as the engine's writer does, so a saved document round-trips byte
+for byte. The project's documents and themes are listed wherever the project keeps them
+(`ProjectService::paths_with_extension`), not only under `game/`.
+
+The editor does not lay out or draw an interface: `ui.preview.render` does, in the hosted runtime,
+and the panel refuses to open until the engine answered `ui.catalogue.get`. After any edit, undo or
+redo of the document shown, a sheet it names or its theme, the editor asks for the picture again;
+the newest request wins. A running game that loaded the document by path reloads the save.
+
+The contract is `src/editor_backend/tests/data/ui_*.wire`: the request this workspace encodes, which
+the engine's `integration.editor_backend_ui_layout` decodes and draws, and the engine's catalogue and
+a 320x180 reply, which `cy-editor-mcp`'s tests and `tests/panel_snapshots.rs` replay as the
+runtime's answers. `the_menus_sample_is_authored_by_the_ui_layout_tools` replays
+`samples/16-menus/project/ui/session.jsonl` — 253 tool calls — over MCP into a fresh project, holds
+every file it writes to the committed menus, and undoes it all.
+
 ## Gameplay graphs (visual scripting)
 
 The Gameplay Graph editor (`editor-gameplay-and-utility-graphs`, `panels/script_graph.rs`) authors

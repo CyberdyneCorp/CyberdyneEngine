@@ -117,6 +117,10 @@ public:
     void attach_toolkit(ui::Toolkit* toolkit, ui::DocumentResolver* resolver,
                         assets::VirtualFileSystem* files = nullptr) noexcept;
     [[nodiscard]] ui::Toolkit* toolkit() const noexcept { return toolkit_; }
+    /// The game values a module's documents' `bind=` names reach: the embedder's, so a slider a
+    /// document binds to `volume.music` drives the engine's music bus with no game code between.
+    /// Borrowed; null leaves `bind=` unbound. Applies to documents loaded after it is set.
+    void set_document_bindings(ui::DocumentBindings* bindings) noexcept { bindings_ = bindings; }
     /// One frame of the interface: with a toolkit, its update — which lays out the whole store —
     /// and the reload of any document whose file settled into a change at `now_ns`; without one,
     /// `layout`.
@@ -195,6 +199,9 @@ public:
     [[nodiscard]] CyResult widget_set_enabled(CyUiElement widget, bool enabled) noexcept override;
     [[nodiscard]] CyResult widget_set_classes(CyUiElement widget,
                                               const char* classes) noexcept override;
+    /// ABI 1.17: a widget's tooltip, shown when the pointer rests on it.
+    [[nodiscard]] CyResult widget_set_tooltip(CyUiElement widget,
+                                              const char* utf8) noexcept override;
     [[nodiscard]] CyResult widget_open(CyUiElement widget, bool open) noexcept override;
     [[nodiscard]] CyResult widget_animate(CyUiElement widget,
                                           const CyUiAnimation& animation) noexcept override;
@@ -275,6 +282,7 @@ private:
 
     ui::Toolkit* toolkit_ = nullptr;
     ui::DocumentResolver* resolver_ = nullptr;
+    ui::DocumentBindings* bindings_ = nullptr;
     assets::VirtualFileSystem* files_ = nullptr;
     Array<WidgetRecord> widget_records_;
     Array<LoadedDocument> documents_;

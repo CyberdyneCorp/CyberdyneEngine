@@ -1,0 +1,17 @@
+# The second start, over the first's player files: the settings and the bindings come back, and
+# Continue is a place the keyboard can go.
+#
+# frame  verb  arguments                                   report: what it shows
+5    report                                                # 0  loaded
+8    shot  main-menu-continue
+10   tap   keyboard/down
+14   report                                                # 1  Continue focused
+20   tap   keyboard/enter
+24   report                                                # 2  playing
+# Jump is on the gamepad's north button and on E now. South is the Inventory's, which took Jump's
+# old button in the swap, and Space is Interact's.
+30   tap   gamepad/north
+40   tap   keyboard/e
+50   tap   gamepad/south
+60   tap   keyboard/space
+64   report                                                # 3  two jumps, and the inventory open

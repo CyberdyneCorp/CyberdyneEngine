@@ -1,0 +1,6 @@
+cyui 1
+stylesheet "ui/menus.cyss"
+panel #playing-screen anchor=[0, 0, 1, 1] offset=[0, 0, 0, 0]
+  column #hud .menu-panel anchor=[0, 0, 0, 0] offset=[24, 24, 344, 104]
+    label #hud-title .item-name text="Playing"
+    label #hud-hint .hint text="Escape or Start pauses"

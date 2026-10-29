@@ -1610,3 +1610,97 @@ fn lighting_gi_snapshots() {
         "editor-lighting-gi.png",
     );
 }
+
+/// The UI layout editor over the engine's own replies (#29): the toolkit's vocabulary in the
+/// palette, and on the canvas the picture `ui.preview.render` drew of the gallery document — the
+/// same document the engine's suite drew it from, so every node the reply names is a line here.
+/// The Play button is selected: its handles, its place in the hierarchy and its inspector.
+#[test]
+#[ignore = "needs a GPU adapter; writes PNGs when CY_PANEL_SNAPSHOTS names a directory"]
+fn ui_layout_snapshots() {
+    use cy_editor_protocol::{Message, ServiceEventKind, Session};
+
+    const GALLERY: &str = "cyui 1
+panel #menu .panel anchor=[0.5, 0.5, 0.5, 0.5] offset=[-150, -120, 150, 120]
+  column #body gap=8 anchor=[0, 0, 1, 1] offset=[10, 10, -10, -10]
+    label #title text=\"Options\"
+    slider #volume min=0 max=10 step=1 value=4
+    dropdown #quality items=[\"Low\", \"Medium\", \"High\"] selected=1
+    row #buttons gap=6
+      button #back text=\"Back\"
+      button #play .primary text=\"Play\"
+";
+    let fixture = |name: &str| {
+        std::fs::read(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../src/editor_backend/tests/data")
+                .join(name),
+        )
+        .expect("the engine's UI layout fixture")
+    };
+    let project = std::env::temp_dir().join(format!("cy-ui-snapshot-{}", std::process::id()));
+    std::fs::create_dir_all(project.join("ui")).unwrap();
+    std::fs::write(project.join("ui/gallery.cyui"), GALLERY).unwrap();
+
+    let mut desk = Desk::new();
+    desk.size = [1280, 640];
+    desk.editor = Editor::new(Actor::human("interface-designer"))
+        .with_project(cy_editor_services::ProjectService::new(&project));
+    desk.editor.open_document("worlds/menus.cyworld").unwrap();
+    let (editor_reader, runtime_writer) = std::io::pipe().unwrap();
+    let (runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    desk.editor.runtime =
+        cy_editor_services::RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let catalogue = fixture("ui_catalogue_v1.wire");
+    let preview = fixture("ui_preview_reply_v1.wire");
+    std::thread::spawn(move || {
+        let (mut reader, mut writer) = (runtime_reader, runtime_writer);
+        let _ = cy_editor_protocol::server::serve(&mut reader, &mut writer, |message| {
+            let Message::ServiceRequest {
+                request, operation, ..
+            } = message
+            else {
+                return Some(Vec::new());
+            };
+            let payload = if operation == "ui.catalogue.get" {
+                catalogue.clone()
+            } else {
+                preview.clone()
+            };
+            Some(vec![Message::ServiceEvent {
+                request,
+                kind: ServiceEventKind::Completed,
+                schema_version: 1,
+                payload,
+            }])
+        });
+    });
+    desk.registry
+        .invoke(
+            "ui.preview",
+            &desk.scope,
+            &mut desk.editor,
+            &Arguments::new().with(
+                "reference",
+                cy_editor_core::value::Value::Text("ui/gallery.cyui".into()),
+            ),
+        )
+        .expect("ui.preview");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while desk.editor.backend.ui_layout.pending()
+        || desk.editor.backend.ui_layout.last_preview().is_none()
+    {
+        desk.editor.pump();
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the UI double never answered"
+        );
+        std::thread::yield_now();
+    }
+    desk.specialised.install_ui_catalogue();
+    desk.inputs.ui_layout.reference = Some("ui/gallery.cyui".into());
+    // `#play`: the eighth widget, the document's last line.
+    desk.inputs.ui_layout.selected = Some(7);
+    snapshot(&mut desk, "editor-ui-layout", "editor-ui-layout.png");
+    let _ = std::fs::remove_dir_all(&project);
+}

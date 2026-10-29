@@ -233,6 +233,25 @@ CyResult effect_play(CyEngine engine, CyEffect effect, const CyEffectPlay* play)
 CyResult decal_find_material(CyEngine engine, const char* name, CyDecalMaterial* out_material);
 CyResult decal_spawn(CyEngine engine, const CyDecalDesc* desc, CyDecal* out_decal);
 CyResult decal_status(CyEngine engine, CyDecalStatus* out_status);
+// --- 1.17: what a game's menus need
+CyResult input_rebind_begin(CyEngine engine, uint32_t user, CyInputAction action, uint32_t scheme,
+                            uint32_t slot, uint32_t conflict);
+CyResult input_rebind_poll(CyEngine engine, uint32_t user, CyInputRebind* out_rebind);
+CyResult input_rebind_cancel(CyEngine engine, uint32_t user);
+CyResult input_binding(CyEngine engine, uint32_t user, CyInputAction action, uint32_t scheme,
+                       uint32_t slot, char* buffer, uint32_t capacity, uint32_t* out_size);
+CyResult input_profile_save(CyEngine engine, uint32_t user, char* buffer, uint32_t capacity,
+                            uint32_t* out_size);
+CyResult input_profile_load(CyEngine engine, uint32_t user, const char* text, uint64_t size);
+CyResult input_profile_reset(CyEngine engine, uint32_t user);
+CyResult video_get_settings(CyEngine engine, CyVideoSettings* out_settings);
+CyResult video_set_settings(CyEngine engine, const CyVideoSettings* settings);
+CyResult video_modes(CyEngine engine, CyVideoMode* out_modes, uint32_t capacity,
+                     uint32_t* out_count);
+CyResult user_data_write(CyEngine engine, const char* name, const void* bytes, uint64_t size);
+CyResult user_data_read(CyEngine engine, const char* name, void* buffer, uint64_t capacity,
+                        uint64_t* out_size);
+CyResult ui_widget_set_tooltip(CyEngine engine, CyUiElement widget, const char* utf8);
 
 // --- 1.16: combat in the lockstep path
 CyResult lockstep_arm(CyEngine engine, uint32_t unit, const CyLockstepCombatDesc* desc);

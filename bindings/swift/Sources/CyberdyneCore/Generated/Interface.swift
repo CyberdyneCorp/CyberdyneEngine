@@ -1058,4 +1058,69 @@ public struct Interface: @unchecked Sendable {
     public func lockstepProjectiles(engine: CyEngine, into: UnsafeMutablePointer<CyLockstepProjectile>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
         try check(table.pointee.lockstep_projectiles(engine, into, capacity, count))
     }
+
+    @inlinable
+    public func inputRebindBegin(engine: CyEngine, user: UInt32, action: CyInputAction, scheme: UInt32, slot: UInt32, conflict: UInt32) throws {
+        try check(table.pointee.input_rebind_begin(engine, user, action, scheme, slot, conflict))
+    }
+
+    @inlinable
+    public func inputRebindPoll(engine: CyEngine, user: UInt32, into: UnsafeMutablePointer<CyInputRebind>?) throws {
+        try check(table.pointee.input_rebind_poll(engine, user, into))
+    }
+
+    @inlinable
+    public func inputRebindCancel(engine: CyEngine, user: UInt32) throws {
+        try check(table.pointee.input_rebind_cancel(engine, user))
+    }
+
+    @inlinable
+    public func inputBinding(engine: CyEngine, user: UInt32, action: CyInputAction, scheme: UInt32, slot: UInt32, buffer: UnsafeMutablePointer<CChar>?, capacity: UInt32, size: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.input_binding(engine, user, action, scheme, slot, buffer, capacity, size))
+    }
+
+    @inlinable
+    public func inputProfileSave(engine: CyEngine, user: UInt32, buffer: UnsafeMutablePointer<CChar>?, capacity: UInt32, size: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.input_profile_save(engine, user, buffer, capacity, size))
+    }
+
+    @inlinable
+    public func inputProfileLoad(engine: CyEngine, user: UInt32, text: UnsafePointer<CChar>?, size: UInt64) throws {
+        try check(table.pointee.input_profile_load(engine, user, text, size))
+    }
+
+    @inlinable
+    public func inputProfileReset(engine: CyEngine, user: UInt32) throws {
+        try check(table.pointee.input_profile_reset(engine, user))
+    }
+
+    @inlinable
+    public func videoGetSettings(engine: CyEngine, into: UnsafeMutablePointer<CyVideoSettings>?) throws {
+        try check(table.pointee.video_get_settings(engine, into))
+    }
+
+    @inlinable
+    public func videoSetSettings(engine: CyEngine, settings: UnsafePointer<CyVideoSettings>?) throws {
+        try check(table.pointee.video_set_settings(engine, settings))
+    }
+
+    @inlinable
+    public func videoModes(engine: CyEngine, modes: UnsafeMutablePointer<CyVideoMode>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.video_modes(engine, modes, capacity, count))
+    }
+
+    @inlinable
+    public func userDataWrite(engine: CyEngine, name: UnsafePointer<CChar>?, bytes: UnsafeRawPointer?, size: UInt64) throws {
+        try check(table.pointee.user_data_write(engine, name, bytes, size))
+    }
+
+    @inlinable
+    public func userDataRead(engine: CyEngine, name: UnsafePointer<CChar>?, buffer: UnsafeMutableRawPointer?, capacity: UInt64, size: UnsafeMutablePointer<UInt64>?) throws {
+        try check(table.pointee.user_data_read(engine, name, buffer, capacity, size))
+    }
+
+    @inlinable
+    public func uiWidgetSetTooltip(engine: CyEngine, widget: CyUiElement, text: UnsafePointer<CChar>?) throws {
+        try check(table.pointee.ui_widget_set_tooltip(engine, widget, text))
+    }
 }

@@ -288,6 +288,23 @@ ENTRIES: dict[str, Entry] = {
     "lockstep_structure": Entry(("engine", "structure", "into"), result="throwing"),
     "lockstep_events": Entry(("engine", "first", "into", "capacity", "count"), result="throwing"),
     "lockstep_projectiles": Entry(("engine", "into", "capacity", "count"), result="throwing"),
+    # 1.17: what a game's menus need
+    "input_rebind_begin": Entry(("engine", "user", "action", "scheme", "slot", "conflict"),
+                                result="throwing"),
+    "input_rebind_poll": Entry(("engine", "user", "into"), result="throwing"),
+    "input_rebind_cancel": Entry(("engine", "user"), result="throwing"),
+    "input_binding": Entry(("engine", "user", "action", "scheme", "slot", "buffer", "capacity",
+                            "size"), result="throwing"),
+    "input_profile_save": Entry(("engine", "user", "buffer", "capacity", "size"),
+                                result="throwing"),
+    "input_profile_load": Entry(("engine", "user", "text", "size"), result="throwing"),
+    "input_profile_reset": Entry(("engine", "user"), result="throwing"),
+    "video_get_settings": Entry(("engine", "into"), result="throwing"),
+    "video_set_settings": Entry(("engine", "settings"), result="throwing"),
+    "video_modes": Entry(("engine", "modes", "capacity", "count"), result="throwing"),
+    "user_data_write": Entry(("engine", "name", "bytes", "size"), result="throwing"),
+    "user_data_read": Entry(("engine", "name", "buffer", "capacity", "size"), result="throwing"),
+    "ui_widget_set_tooltip": Entry(("engine", "widget", "text"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

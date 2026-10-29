@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 16,
+    "minor": 17,
     "patch": 0
   },
   "functions": [
@@ -1027,10 +1027,75 @@
         "index": 200,
         "name": "lockstep_projectiles",
         "type": "CyResult(*)(CyEngine, CyLockstepProjectile*, uint32_t, uint32_t*)"
+      },
+      {
+        "index": 201,
+        "name": "input_rebind_begin",
+        "type": "CyResult(*)(CyEngine, uint32_t, CyInputAction, uint32_t, uint32_t, uint32_t)"
+      },
+      {
+        "index": 202,
+        "name": "input_rebind_poll",
+        "type": "CyResult(*)(CyEngine, uint32_t, CyInputRebind*)"
+      },
+      {
+        "index": 203,
+        "name": "input_rebind_cancel",
+        "type": "CyResult(*)(CyEngine, uint32_t)"
+      },
+      {
+        "index": 204,
+        "name": "input_binding",
+        "type": "CyResult(*)(CyEngine, uint32_t, CyInputAction, uint32_t, uint32_t, char*, uint32_t, uint32_t*)"
+      },
+      {
+        "index": 205,
+        "name": "input_profile_save",
+        "type": "CyResult(*)(CyEngine, uint32_t, char*, uint32_t, uint32_t*)"
+      },
+      {
+        "index": 206,
+        "name": "input_profile_load",
+        "type": "CyResult(*)(CyEngine, uint32_t, const char*, uint64_t)"
+      },
+      {
+        "index": 207,
+        "name": "input_profile_reset",
+        "type": "CyResult(*)(CyEngine, uint32_t)"
+      },
+      {
+        "index": 208,
+        "name": "video_get_settings",
+        "type": "CyResult(*)(CyEngine, CyVideoSettings*)"
+      },
+      {
+        "index": 209,
+        "name": "video_set_settings",
+        "type": "CyResult(*)(CyEngine, const CyVideoSettings*)"
+      },
+      {
+        "index": 210,
+        "name": "video_modes",
+        "type": "CyResult(*)(CyEngine, CyVideoMode*, uint32_t, uint32_t*)"
+      },
+      {
+        "index": 211,
+        "name": "user_data_write",
+        "type": "CyResult(*)(CyEngine, const char*, const void*, uint64_t)"
+      },
+      {
+        "index": 212,
+        "name": "user_data_read",
+        "type": "CyResult(*)(CyEngine, const char*, void*, uint64_t, uint64_t*)"
+      },
+      {
+        "index": 213,
+        "name": "ui_widget_set_tooltip",
+        "type": "CyResult(*)(CyEngine, CyUiElement, const char*)"
       }
     ],
     "name": "CyInterface",
-    "size": 1616
+    "size": 1720
   },
   "types": [
     {
@@ -6758,6 +6823,241 @@
       "size": 80
     },
     {
+      "kind": "enum",
+      "name": "CyInputScheme",
+      "values": [
+        {
+          "name": "CY_INPUT_SCHEME_KEYBOARD_MOUSE",
+          "value": 0
+        },
+        {
+          "name": "CY_INPUT_SCHEME_GAMEPAD",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyInputConflict",
+      "values": [
+        {
+          "name": "CY_INPUT_CONFLICT_REJECT",
+          "value": 0
+        },
+        {
+          "name": "CY_INPUT_CONFLICT_SWAP",
+          "value": 1
+        },
+        {
+          "name": "CY_INPUT_CONFLICT_ALLOW",
+          "value": 2
+        },
+        {
+          "name": "CY_INPUT_CONFLICT_UNBIND_PREVIOUS",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyInputRebindStatus",
+      "values": [
+        {
+          "name": "CY_INPUT_REBIND_IDLE",
+          "value": 0
+        },
+        {
+          "name": "CY_INPUT_REBIND_LISTENING",
+          "value": 1
+        },
+        {
+          "name": "CY_INPUT_REBIND_APPLIED",
+          "value": 2
+        },
+        {
+          "name": "CY_INPUT_REBIND_CONFLICT",
+          "value": 3
+        },
+        {
+          "name": "CY_INPUT_REBIND_CANCELLED",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "status",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "action",
+          "offset": 8,
+          "size": 4,
+          "type": "CyInputAction"
+        },
+        {
+          "alignment": 4,
+          "name": "scheme",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "slot",
+          "offset": 16,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 1,
+          "name": "control",
+          "offset": 20,
+          "size": 32,
+          "type": "char[32]"
+        },
+        {
+          "alignment": 1,
+          "name": "conflict",
+          "offset": 52,
+          "size": 64,
+          "type": "char[64]"
+        }
+      ],
+      "name": "CyInputRebind",
+      "size": 116
+    },
+    {
+      "kind": "enum",
+      "name": "CyVideoQuality",
+      "values": [
+        {
+          "name": "CY_VIDEO_QUALITY_LOW",
+          "value": 0
+        },
+        {
+          "name": "CY_VIDEO_QUALITY_MEDIUM",
+          "value": 1
+        },
+        {
+          "name": "CY_VIDEO_QUALITY_HIGH",
+          "value": 2
+        },
+        {
+          "name": "CY_VIDEO_QUALITY_ULTRA",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyVideoUpscale",
+      "values": [
+        {
+          "name": "CY_VIDEO_UPSCALE_NATIVE",
+          "value": 0
+        },
+        {
+          "name": "CY_VIDEO_UPSCALE_QUALITY",
+          "value": 1
+        },
+        {
+          "name": "CY_VIDEO_UPSCALE_BALANCED",
+          "value": 2
+        },
+        {
+          "name": "CY_VIDEO_UPSCALE_PERFORMANCE",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "width",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "height",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "quality",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "upscale",
+          "offset": 16,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 20,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyVideoSettings",
+      "size": 24
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "width",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "height",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyVideoMode",
+      "size": 8
+    },
+    {
       "alignment": 4,
       "kind": "struct",
       "members": [
@@ -8203,10 +8503,101 @@
           "offset": 1608,
           "size": 8,
           "type": "CyResult(*)(CyEngine, CyLockstepProjectile*, uint32_t, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "input_rebind_begin",
+          "offset": 1616,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint32_t, CyInputAction, uint32_t, uint32_t, uint32_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "input_rebind_poll",
+          "offset": 1624,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint32_t, CyInputRebind*)"
+        },
+        {
+          "alignment": 8,
+          "name": "input_rebind_cancel",
+          "offset": 1632,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint32_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "input_binding",
+          "offset": 1640,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint32_t, CyInputAction, uint32_t, uint32_t, char*, uint32_t, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "input_profile_save",
+          "offset": 1648,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint32_t, char*, uint32_t, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "input_profile_load",
+          "offset": 1656,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint32_t, const char*, uint64_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "input_profile_reset",
+          "offset": 1664,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint32_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "video_get_settings",
+          "offset": 1672,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyVideoSettings*)"
+        },
+        {
+          "alignment": 8,
+          "name": "video_set_settings",
+          "offset": 1680,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const CyVideoSettings*)"
+        },
+        {
+          "alignment": 8,
+          "name": "video_modes",
+          "offset": 1688,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyVideoMode*, uint32_t, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "user_data_write",
+          "offset": 1696,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const char*, const void*, uint64_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "user_data_read",
+          "offset": 1704,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const char*, void*, uint64_t, uint64_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_widget_set_tooltip",
+          "offset": 1712,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, const char*)"
         }
       ],
       "name": "CyInterface",
-      "size": 1616
+      "size": 1720
     },
     {
       "kind": "enum",

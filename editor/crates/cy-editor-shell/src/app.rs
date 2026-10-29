@@ -393,6 +393,13 @@ impl EditorWindow {
         }
     }
 
+    /// Open the UI layout editor once the engine has declared its widgets. Issue #29.
+    fn sync_ui_catalogue(&mut self) {
+        if self.editor.backend.ui_layout.catalogue().is_some() {
+            self.specialised.install_ui_catalogue();
+        }
+    }
+
     /// Install the engine's audio vocabulary into the mixer editor when it arrives. Issue #29.
     fn sync_audio_vocabulary(&mut self) {
         let revision = self.editor.backend.audio.vocabulary_revision();
@@ -1599,6 +1606,7 @@ impl eframe::App for EditorWindow {
         self.sync_material_catalogue();
         self.sync_vfx_catalogue();
         self.sync_audio_vocabulary();
+        self.sync_ui_catalogue();
         self.sync_script_catalogue();
         self.sync_animation_catalogue();
         #[cfg(target_os = "linux")]

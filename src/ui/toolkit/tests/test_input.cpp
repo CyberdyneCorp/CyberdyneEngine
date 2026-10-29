@@ -301,6 +301,39 @@ CY_TEST_CASE("ui_toolkit: tabs switch by click and by the shoulder buttons, one 
     CY_CHECK_EQ(kit.count_events(WidgetEventKind::Changed, tabs), 3U);
 }
 
+CY_TEST_CASE(
+    "ui_toolkit: a shoulder button leaves focus on the new page's tab, not a hidden page") {
+    Kit kit;
+    CY_REQUIRE(kit.started);
+    const WidgetId tabs = kit.make(kNoElement, WidgetKind::Tabs, "tabs");
+    CY_REQUIRE(kit.toolkit.set_anchors(tabs, Vec2{0, 0}, Vec2{0, 0}, Vec2{0, 0}, Vec2{400, 300})
+                   .has_value());
+    WidgetDesc page;
+    page.kind = WidgetKind::Column;
+    page.title = "Video";
+    auto video = kit.toolkit.create(tabs, page);
+    page.title = "Audio";
+    auto audio = kit.toolkit.create(tabs, page);
+    CY_REQUIRE(video.has_value());
+    CY_REQUIRE(audio.has_value());
+    const WidgetId resolution = kit.make(*video, WidgetKind::Button, "resolution", "1280x720");
+    (void)kit.make(*audio, WidgetKind::Button, "volume", "Volume");
+    CY_REQUIRE(kit.frame());
+    CY_REQUIRE(kit.toolkit.focus(resolution).has_value());
+    const ElementId bar = kit.toolkit.part(tabs, "tab-bar");
+    Array<ElementId> buttons(allocator());
+    CY_REQUIRE(kit.store.children_of(bar, buttons).has_value());
+    CY_REQUIRE_EQ(buttons.size(), 2U);
+    CY_CHECK(kit.toolkit.action(UiAction::NextTab));
+    CY_CHECK_FALSE(kit.toolkit.visible(*video));
+    // The control on the page just collapsed kept the focus, and the d-pad went nowhere a
+    // player could see.
+    CY_CHECK_EQ(kit.toolkit.focused(), buttons[1]);
+    CY_REQUIRE(kit.frame());
+    CY_CHECK(kit.toolkit.action(UiAction::NavigateDown));
+    CY_CHECK_EQ(kit.toolkit.text(kit.toolkit.focused()), std::string_view("Volume"));
+}
+
 CY_TEST_CASE("ui_toolkit: a scroll view clips, scrolls by wheel and by focus moving into it") {
     Kit kit;
     CY_REQUIRE(kit.started);
@@ -357,6 +390,15 @@ CY_TEST_CASE("ui_toolkit: a tooltip shows after the pointer rests, beside it, an
     CY_CHECK(has_flag(kit.store.flags(tooltip), ElementFlags::Visible));
     CY_CHECK_EQ(kit.rect(tooltip).x, over.x + 12.0F);
     (void)kit.toolkit.pointer(PointerInput{Vec2{700.0F, 500.0F}, false, {}, 0});
+    CY_REQUIRE(kit.frame());
+    CY_CHECK_FALSE(has_flag(kit.store.flags(tooltip), ElementFlags::Visible));
+
+    // Regression: a screen hidden under a resting pointer kept its widget's tooltip on screen,
+    // over whatever screen came next, until the pointer moved.
+    (void)kit.toolkit.pointer(PointerInput{over, false, {}, 0});
+    CY_REQUIRE(kit.frame(0.6F));
+    CY_REQUIRE(has_flag(kit.store.flags(tooltip), ElementFlags::Visible));
+    CY_REQUIRE(kit.toolkit.set_visible(row, false).has_value());
     CY_REQUIRE(kit.frame());
     CY_CHECK_FALSE(has_flag(kit.store.flags(tooltip), ElementFlags::Visible));
 }

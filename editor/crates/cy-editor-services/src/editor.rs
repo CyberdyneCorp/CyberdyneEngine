@@ -807,6 +807,83 @@ impl Editor {
         Ok(())
     }
 
+    /// Save a UI document or sheet as one transaction in the open world's history. Issue #29, "UI
+    /// layout". The canvas follows the file: a document it shows, or one that names the sheet or
+    /// theme it is drawn in, is drawn again.
+    fn save_ui_asset(&mut self, reference: &str, source: &str) -> Result<()> {
+        if std::path::Path::new(reference)
+            .extension()
+            .is_some_and(|extension| extension == "cyss")
+        {
+            crate::ui_document::validate_sheet_reference(reference)?;
+        } else {
+            crate::ui_document::validate_reference(reference)?;
+            crate::ui_document::UiDocument::decode(source)?;
+        }
+        if self.save_graph_source(
+            reference,
+            source,
+            crate::ui_document::DOMAIN_PREFIX,
+            "UI document",
+        )? {
+            self.ui_preview_follows(reference);
+        }
+        Ok(())
+    }
+
+    /// Ask the engine to draw `reference` from its saved text with the canvas's settings.
+    fn request_ui_preview(&mut self, reference: &str) -> Result<Option<RequestId>> {
+        crate::ui_document::validate_reference(reference)?;
+        let source = self.project.read_source(reference)?;
+        let project = &self.project;
+        let read = |path: &str| -> Option<String> {
+            project
+                .source_exists(path)
+                .then(|| project.read_source(path).ok())
+                .flatten()
+        };
+        let payload = crate::ui_layout_requests::payload_for(
+            &source,
+            self.backend.ui_layout.settings(),
+            &read,
+        );
+        self.backend
+            .ui_layout
+            .preview(&self.runtime, reference, payload)
+    }
+
+    /// THE CANVAS FOLLOWS THE FILE: after an edit, an undo or a redo of the document it shows, of a
+    /// sheet that document names, or of the theme it is drawn in, the engine draws it again.
+    fn ui_preview_follows(&mut self, changed: &str) {
+        let Some(shown) = self.backend.ui_layout.reference().map(str::to_owned) else {
+            return;
+        };
+        if !self.runtime.is_connected() || !self.project.source_exists(&shown) {
+            return;
+        }
+        let reaches = changed == shown
+            || changed == self.backend.ui_layout.settings().theme
+            || self
+                .project
+                .read_source(&shown)
+                .ok()
+                .and_then(|text| crate::ui_document::UiDocument::decode(&text).ok())
+                .is_some_and(|document| {
+                    let read = |path: &str| -> Option<String> {
+                        self.project
+                            .source_exists(path)
+                            .then(|| self.project.read_source(path).ok())
+                            .flatten()
+                    };
+                    crate::ui_layout_requests::reached_files(&document, &read)
+                        .iter()
+                        .any(|file| file.path == changed)
+                });
+        if reaches {
+            let _ = self.request_ui_preview(&shown);
+        }
+    }
+
     /// Save an animation graph as one transaction in the open world's history. Issue #29. A graph
     /// the engine is previewing is previewed again from its new text.
     fn save_animation_graph(&mut self, reference: &str, source: &str) -> Result<()> {
@@ -2207,6 +2284,44 @@ impl cy_editor_commands::ProjectHost for Editor {
 
     fn animation_characters(&mut self) -> Result<cy_editor_commands::AnimationCharacters> {
         self.list_animation_characters()
+    }
+
+    fn ui_asset_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        self.save_ui_asset(reference, source)
+    }
+
+    fn ui_kinds(&mut self) -> Option<Vec<String>> {
+        self.backend.ui_layout.want();
+        self.backend.ui_layout.catalogue().map(|catalogue| {
+            catalogue
+                .kinds
+                .iter()
+                .map(|kind| kind.name.clone())
+                .collect()
+        })
+    }
+
+    fn ui_preview(
+        &mut self,
+        reference: &str,
+        change: &cy_editor_commands::UiPreviewChange,
+    ) -> Result<u64> {
+        let settings =
+            crate::ui_layout_requests::changed_settings(self.backend.ui_layout.settings(), change);
+        self.backend.ui_layout.set_settings(settings);
+        self.request_ui_preview(reference)
+            .map(|sent| sent.map_or(0, RequestId::as_u64))
+    }
+
+    fn ui_status(&self, reference: &str) -> cy_editor_commands::Outcome {
+        let source = (!reference.is_empty() && self.project.source_exists(reference))
+            .then(|| self.project.read_source(reference).ok())
+            .flatten();
+        crate::ui_layout_requests::outcome(&self.backend.ui_layout, source.as_deref())
+    }
+
+    fn ui_asset_changed(&mut self, reference: &str) {
+        self.ui_preview_follows(reference);
     }
 
     fn animation_character_of(&self, reference: &str) -> Result<Option<String>> {

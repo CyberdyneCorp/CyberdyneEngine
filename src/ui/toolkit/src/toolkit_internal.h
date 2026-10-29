@@ -16,6 +16,19 @@ namespace cy::ui {
 }
 
 /// Placed by anchors in an absolute parent.
+/// Whether an element is drawn: neither it nor an ancestor is hidden or collapsed.
+[[nodiscard]] inline bool element_shown(const ElementStore& store, ElementId element) noexcept {
+    for (ElementId walk = element; walk.is_valid();) {
+        const ElementFlags flags = store.flags(walk);
+        if (!has_flag(flags, ElementFlags::Visible) || has_flag(flags, ElementFlags::Collapsed)) {
+            return false;
+        }
+        const Hierarchy* node = store.hierarchy(walk);
+        walk = node != nullptr ? node->parent : ElementId{};
+    }
+    return true;
+}
+
 inline void anchor(LayoutInput& input, Vec2 anchor_min, Vec2 anchor_max, Vec2 offset_min,
                    Vec2 offset_max) noexcept {
     input.anchor_min = anchor_min;

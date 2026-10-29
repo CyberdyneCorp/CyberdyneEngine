@@ -53,6 +53,26 @@ public:
 
     /// `input_pop_context`: NOT_FOUND when the context is not on that user's stack.
     [[nodiscard]] virtual CyResult pop_context(u32 user, CyInputContext context) noexcept = 0;
+
+    // --- ABI 1.17: rebinding and the player's profile ------------------------------------------
+    //
+    // Appended with defaults that answer UNAVAILABLE, so a backend written before 1.17 still
+    // builds and refuses by name. The thunks have checked the scheme and the policy are in range.
+
+    /// `input_rebind_begin`: open the input system's rebinding flow for one binding.
+    [[nodiscard]] virtual CyResult rebind_begin(u32 user, CyInputAction action, u32 scheme,
+                                                u32 slot, u32 conflict) noexcept;
+    /// `input_rebind_poll`: `out` arrives zeroed with `struct_size == sizeof`.
+    [[nodiscard]] virtual CyResult rebind_poll(u32 user, CyInputRebind& out) noexcept;
+    [[nodiscard]] virtual CyResult rebind_cancel(u32 user) noexcept;
+    /// `input_binding`: the control in effect, as a path written into `out`.
+    [[nodiscard]] virtual CyResult binding(u32 user, CyInputAction action, u32 scheme, u32 slot,
+                                           char (&out)[64]) noexcept;
+    /// `input_profile_save`: the profile's text, valid until the next call on this backend.
+    [[nodiscard]] virtual CyResult profile_save(u32 user, const char*& text, u32& size) noexcept;
+    /// `input_profile_load`: `text` is `size` bytes, not necessarily terminated.
+    [[nodiscard]] virtual CyResult profile_load(u32 user, const char* text, u64 size) noexcept;
+    [[nodiscard]] virtual CyResult profile_reset(u32 user) noexcept;
 };
 
 }  // namespace cy::abi::game

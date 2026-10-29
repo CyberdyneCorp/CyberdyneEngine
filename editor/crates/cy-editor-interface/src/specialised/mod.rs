@@ -438,8 +438,9 @@ pub struct SpecialisedEditors {
     active: Option<Domain>,
     catalogues: BTreeMap<Domain, Catalogue>,
     audio_vocabulary: Option<cy_editor_services::audio::AudioVocabulary>,
-    script_catalogue_ready: bool,
-    animation_catalogue_ready: bool,
+    /// The domains whose engine vocabulary has arrived: gameplay graphs, animation graphs and
+    /// the UI layout editor.
+    engine_vocabularies: std::collections::BTreeSet<Domain>,
 }
 
 impl SpecialisedEditors {
@@ -489,8 +490,7 @@ impl SpecialisedEditors {
             active: None,
             catalogues,
             audio_vocabulary: None,
-            script_catalogue_ready: false,
-            animation_catalogue_ready: false,
+            engine_vocabularies: std::collections::BTreeSet::new(),
         })
     }
 
@@ -529,7 +529,8 @@ impl SpecialisedEditors {
         if self.active == Some(Domain::GameplayAndUtilityGraphs) {
             self.canvas.replace_catalogue(catalogue);
         }
-        self.script_catalogue_ready = true;
+        self.engine_vocabularies
+            .insert(Domain::GameplayAndUtilityGraphs);
         Ok(())
     }
 
@@ -543,18 +544,21 @@ impl SpecialisedEditors {
         if self.active == Some(Domain::AnimationGraphsAndClips) {
             self.canvas.replace_catalogue(catalogue);
         }
-        self.animation_catalogue_ready = true;
+        self.engine_vocabularies
+            .insert(Domain::AnimationGraphsAndClips);
         Ok(())
     }
 
     /// Whether the engine's pose vocabulary is installed.
     pub fn animation_catalogue_ready(&self) -> bool {
-        self.animation_catalogue_ready
+        self.engine_vocabularies
+            .contains(&Domain::AnimationGraphsAndClips)
     }
 
     /// Whether the engine's gameplay graph vocabulary is installed.
     pub fn script_catalogue_ready(&self) -> bool {
-        self.script_catalogue_ready
+        self.engine_vocabularies
+            .contains(&Domain::GameplayAndUtilityGraphs)
     }
 
     /// The gameplay graph vocabulary in use: the engine's once installed.
@@ -846,6 +850,14 @@ impl SpecialisedEditors {
                 Domain::Terrain | Domain::LightingAndLightmapBaking | Domain::NavigationBaking
             )
             || (domain == Domain::AudioBusesAndMixing && self.audio_vocabulary.is_some())
+            || (domain == Domain::UiLayout && self.engine_vocabularies.contains(&Domain::UiLayout))
+    }
+
+    /// Record that the engine's widget vocabulary (`ui.catalogue.get`) arrived. Until it does the
+    /// UI layout editor refuses, naming `ui-system`: a palette the editor made up would offer
+    /// widgets the engine's toolkit may not make. Issue #29, "UI layout".
+    pub fn install_ui_catalogue(&mut self) {
+        self.engine_vocabularies.insert(Domain::UiLayout);
     }
 
     /// Install the audio vocabulary the engine's `audio.capabilities.get` answered: its effect

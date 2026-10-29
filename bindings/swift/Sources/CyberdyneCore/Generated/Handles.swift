@@ -803,6 +803,71 @@ public struct Engine: @unchecked Sendable {
     public func lockstepProjectiles(into: UnsafeMutablePointer<CyLockstepProjectile>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
         try interface.lockstepProjectiles(engine: raw, into: into, capacity: capacity, count: count)
     }
+
+    @inlinable
+    public func inputRebindBegin(user: UInt32, action: CyInputAction, scheme: UInt32, slot: UInt32, conflict: UInt32) throws {
+        try interface.inputRebindBegin(engine: raw, user: user, action: action, scheme: scheme, slot: slot, conflict: conflict)
+    }
+
+    @inlinable
+    public func inputRebindPoll(user: UInt32, into: UnsafeMutablePointer<CyInputRebind>?) throws {
+        try interface.inputRebindPoll(engine: raw, user: user, into: into)
+    }
+
+    @inlinable
+    public func inputRebindCancel(user: UInt32) throws {
+        try interface.inputRebindCancel(engine: raw, user: user)
+    }
+
+    @inlinable
+    public func inputBinding(user: UInt32, action: CyInputAction, scheme: UInt32, slot: UInt32, buffer: UnsafeMutablePointer<CChar>?, capacity: UInt32, size: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.inputBinding(engine: raw, user: user, action: action, scheme: scheme, slot: slot, buffer: buffer, capacity: capacity, size: size)
+    }
+
+    @inlinable
+    public func inputProfileSave(user: UInt32, buffer: UnsafeMutablePointer<CChar>?, capacity: UInt32, size: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.inputProfileSave(engine: raw, user: user, buffer: buffer, capacity: capacity, size: size)
+    }
+
+    @inlinable
+    public func inputProfileLoad(user: UInt32, text: UnsafePointer<CChar>?, size: UInt64) throws {
+        try interface.inputProfileLoad(engine: raw, user: user, text: text, size: size)
+    }
+
+    @inlinable
+    public func inputProfileReset(user: UInt32) throws {
+        try interface.inputProfileReset(engine: raw, user: user)
+    }
+
+    @inlinable
+    public func videoGetSettings(into: UnsafeMutablePointer<CyVideoSettings>?) throws {
+        try interface.videoGetSettings(engine: raw, into: into)
+    }
+
+    @inlinable
+    public func videoSetSettings(settings: UnsafePointer<CyVideoSettings>?) throws {
+        try interface.videoSetSettings(engine: raw, settings: settings)
+    }
+
+    @inlinable
+    public func videoModes(modes: UnsafeMutablePointer<CyVideoMode>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.videoModes(engine: raw, modes: modes, capacity: capacity, count: count)
+    }
+
+    @inlinable
+    public func userDataWrite(name: UnsafePointer<CChar>?, bytes: UnsafeRawPointer?, size: UInt64) throws {
+        try interface.userDataWrite(engine: raw, name: name, bytes: bytes, size: size)
+    }
+
+    @inlinable
+    public func userDataRead(name: UnsafePointer<CChar>?, buffer: UnsafeMutableRawPointer?, capacity: UInt64, size: UnsafeMutablePointer<UInt64>?) throws {
+        try interface.userDataRead(engine: raw, name: name, buffer: buffer, capacity: capacity, size: size)
+    }
+
+    @inlinable
+    public func uiWidgetSetTooltip(widget: CyUiElement, text: UnsafePointer<CChar>?) throws {
+        try interface.uiWidgetSetTooltip(engine: raw, widget: widget, text: text)
+    }
 }
 
 public struct World: @unchecked Sendable {

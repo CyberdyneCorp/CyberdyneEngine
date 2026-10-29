@@ -656,7 +656,12 @@ Status Toolkit::place_overlays(f32 seconds) noexcept {
         }
     }
 
-    // THE TOOLTIP: after the pointer has rested on a widget that has one, beside the pointer.
+    // THE TOOLTIP: after the pointer has rested on a widget that has one, beside the pointer. A
+    // widget hidden under a resting pointer — its screen closed — is no longer what it rests on.
+    if (hovered_.is_valid() && !element_shown(store_, hovered_)) {
+        hovered_ = kNoElement;
+        hover_seconds_ = 0.0F;
+    }
     const Widget* hovered = record(hovered_);
     const bool wants = hovered != nullptr && !hovered->tooltip.empty() && !pointer_down_;
     if (wants) {

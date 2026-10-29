@@ -233,98 +233,24 @@ private:
         return sheet_->diagnostics_.push_back(diagnostic);
     }
 
+    /// The most selectors one comma-separated list may hold.
+    static constexpr u32 kMaxSelectorList = 16;
+
     [[nodiscard]] Status parse_rule() noexcept {
-        StyleRule rule;
-        rule.line = lexer_.line;
-        rule.order = static_cast<u32>(sheet_->rules_.size());
+        // A SELECTOR LIST — `label, button-label { ... }` — is one rule per selector, sharing the
+        // declarations, each with its own specificity, in the order written: CSS's meaning.
+        StyleRule selectors[kMaxSelectorList];
+        u32 count = 1;
         bool root_block = false;
-
-        // The selector chain, up to the opening brace.
-        while (lexer_.cursor < lexer_.text.size() && lexer_.text[lexer_.cursor] != '{') {
-            lexer_.skip_trivia();
-            if (lexer_.cursor >= lexer_.text.size() || lexer_.text[lexer_.cursor] == '{') {
-                break;
-            }
-            if (lexer_.text[lexer_.cursor] == '>') {
-                lexer_.advance(1);
-                if (rule.part_count > 0) {
-                    rule.parts[rule.part_count - 1].child_combinator = true;
-                }
-                continue;
-            }
-            if (lexer_.text.compare(lexer_.cursor, 5, ":root") == 0) {
-                lexer_.advance(5);
-                root_block = true;
-                continue;
-            }
-            if (rule.part_count >= 4) {
-                if (Status reported = report("a selector chain of more than four parts is outside "
-                                             "the `.cyss` subset");
-                    !reported) {
-                    return reported;
-                }
-                lexer_.advance(1);
-                continue;
-            }
-            SelectorPart part;
-            bool parsed_any = false;
-            while (lexer_.cursor < lexer_.text.size()) {
-                const char byte = lexer_.text[lexer_.cursor];
-                if (byte == '.') {
-                    lexer_.advance(1);
-                    const std::string_view name = lexer_.take_while(is_ident);
-                    if (part.class_count < 4) {
-                        part.classes[part.class_count++] = Name::intern(name);
-                    }
-                    parsed_any = true;
-                } else if (byte == '#') {
-                    lexer_.advance(1);
-                    part.id = Name::intern(lexer_.take_while(is_ident));
-                    parsed_any = true;
-                } else if (byte == ':') {
-                    lexer_.advance(1);
-                    const std::string_view name = lexer_.take_while(is_ident);
-                    if (name == "hover") {
-                        part.states = part.states | PseudoState::Hover;
-                    } else if (name == "focus") {
-                        part.states = part.states | PseudoState::Focus;
-                    } else if (name == "active") {
-                        part.states = part.states | PseudoState::Active;
-                    } else if (name == "disabled") {
-                        part.states = part.states | PseudoState::Disabled;
-                    } else if (name == "checked") {
-                        part.states = part.states | PseudoState::Checked;
-                    } else if (name == "first-child") {
-                        part.states = part.states | PseudoState::FirstChild;
-                    } else if (name == "last-child") {
-                        part.states = part.states | PseudoState::LastChild;
-                    } else if (Status reported =
-                                   report("this pseudo-state is outside the `.cyss` subset",
-                                          Name::intern(name));
-                               !reported) {
-                        return reported;
-                    }
-                    parsed_any = true;
-                } else if (is_ident(byte)) {
-                    part.type = Name::intern(lexer_.take_while(is_ident));
-                    parsed_any = true;
-                } else {
-                    break;
-                }
-            }
-            if (!parsed_any) {
-                lexer_.advance(1);
-                continue;
-            }
-            rule.parts[rule.part_count++] = part;
+        if (Status chains = parse_selectors(selectors, count, root_block); !chains) {
+            return chains;
         }
-
         if (lexer_.cursor >= lexer_.text.size()) {
             return report("a rule with no body");
         }
         lexer_.advance(1);  // past '{'
 
-        rule.first_declaration = static_cast<u32>(sheet_->declarations_.size());
+        const auto first = static_cast<u32>(sheet_->declarations_.size());
         while (lexer_.cursor < lexer_.text.size() && lexer_.text[lexer_.cursor] != '}') {
             lexer_.skip_trivia();
             if (lexer_.cursor >= lexer_.text.size() || lexer_.text[lexer_.cursor] == '}') {
@@ -337,15 +263,30 @@ private:
         if (lexer_.cursor < lexer_.text.size()) {
             lexer_.advance(1);  // past '}'
         }
-        rule.declaration_count =
-            static_cast<u32>(sheet_->declarations_.size()) - rule.first_declaration;
-
         if (root_block) {
             // `:root` declares custom properties and is not a rule anything matches.
             return ok();
         }
-        // SPECIFICITY: (ids, classes and pseudo-states, types), packed so a lexicographic
-        // comparison is one integer comparison. Divergence 4.
+        const u32 declarations = static_cast<u32>(sheet_->declarations_.size()) - first;
+        for (u32 index = 0; index < count; ++index) {
+            StyleRule& rule = selectors[index];
+            if (rule.part_count == 0) {
+                continue;
+            }
+            rule.first_declaration = first;
+            rule.declaration_count = declarations;
+            rule.order = static_cast<u32>(sheet_->rules_.size());
+            rule.specificity = specificity_of(rule);
+            if (Status pushed = sheet_->rules_.push_back(rule); !pushed) {
+                return pushed;
+            }
+        }
+        return ok();
+    }
+
+    /// SPECIFICITY: (ids, classes and pseudo-states, types), packed so a lexicographic comparison
+    /// is one integer comparison. Divergence 4.
+    [[nodiscard]] static u32 specificity_of(const StyleRule& rule) noexcept {
         u32 ids = 0;
         u32 classes = 0;
         u32 types = 0;
@@ -360,8 +301,115 @@ private:
             }
             types += part.type.is_empty() ? 0U : 1U;
         }
-        rule.specificity = (ids << 20U) | (classes << 10U) | types;
-        return sheet_->rules_.push_back(rule);
+        return (ids << 20U) | (classes << 10U) | types;
+    }
+
+    /// Every selector chain up to the opening brace, a comma starting the next.
+    [[nodiscard]] Status parse_selectors(StyleRule (&selectors)[kMaxSelectorList], u32& count,
+                                         bool& root_block) noexcept {
+        selectors[0].line = lexer_.line;
+        while (lexer_.cursor < lexer_.text.size() && lexer_.text[lexer_.cursor] != '{') {
+            lexer_.skip_trivia();
+            if (lexer_.cursor >= lexer_.text.size() || lexer_.text[lexer_.cursor] == '{') {
+                break;
+            }
+            StyleRule& rule = selectors[count - 1];
+            const char lead = lexer_.text[lexer_.cursor];
+            if (lead == ',') {
+                lexer_.advance(1);
+                if (count == kMaxSelectorList) {
+                    if (Status reported = report("a selector list of more than sixteen selectors "
+                                                 "is outside the `.cyss` subset");
+                        !reported) {
+                        return reported;
+                    }
+                    continue;
+                }
+                selectors[count++].line = lexer_.line;
+                continue;
+            }
+            if (lead == '>') {
+                lexer_.advance(1);
+                if (rule.part_count > 0) {
+                    rule.parts[rule.part_count - 1].child_combinator = true;
+                }
+                continue;
+            }
+            if (lexer_.text.compare(lexer_.cursor, 5, ":root") == 0) {
+                lexer_.advance(5);
+                root_block = true;
+                continue;
+            }
+            if (Status part = parse_part(rule); !part) {
+                return part;
+            }
+        }
+        return ok();
+    }
+
+    /// One compound selector — a type, an id, classes and pseudo-states — appended to `rule`.
+    [[nodiscard]] Status parse_part(StyleRule& rule) noexcept {
+        if (rule.part_count >= 4) {
+            if (Status reported = report("a selector chain of more than four parts is outside "
+                                         "the `.cyss` subset");
+                !reported) {
+                return reported;
+            }
+            lexer_.advance(1);
+            return ok();
+        }
+        SelectorPart part;
+        bool parsed_any = false;
+        while (lexer_.cursor < lexer_.text.size()) {
+            const char byte = lexer_.text[lexer_.cursor];
+            if (byte == '.') {
+                lexer_.advance(1);
+                const std::string_view name = lexer_.take_while(is_ident);
+                if (part.class_count < 4) {
+                    part.classes[part.class_count++] = Name::intern(name);
+                }
+            } else if (byte == '#') {
+                lexer_.advance(1);
+                part.id = Name::intern(lexer_.take_while(is_ident));
+            } else if (byte == ':') {
+                lexer_.advance(1);
+                if (Status state = parse_state(part); !state) {
+                    return state;
+                }
+            } else if (is_ident(byte)) {
+                part.type = Name::intern(lexer_.take_while(is_ident));
+            } else {
+                break;
+            }
+            parsed_any = true;
+        }
+        if (!parsed_any) {
+            lexer_.advance(1);
+            return ok();
+        }
+        rule.parts[rule.part_count++] = part;
+        return ok();
+    }
+
+    /// A pseudo-state after its colon, added to `part`; one outside the subset is named.
+    [[nodiscard]] Status parse_state(SelectorPart& part) noexcept {
+        struct Named {
+            std::string_view name;
+            PseudoState state;
+        };
+        static constexpr Named kStates[] = {
+            {"hover", PseudoState::Hover},         {"focus", PseudoState::Focus},
+            {"active", PseudoState::Active},       {"disabled", PseudoState::Disabled},
+            {"checked", PseudoState::Checked},     {"first-child", PseudoState::FirstChild},
+            {"last-child", PseudoState::LastChild}};
+        const std::string_view name = lexer_.take_while(is_ident);
+        for (const Named& entry : kStates) {
+            if (entry.name == name) {
+                part.states = part.states | entry.state;
+                return ok();
+            }
+        }
+        return report("this pseudo-state is outside the `.cyss` subset", Name::intern(name));
     }
 
     [[nodiscard]] Status parse_declaration(bool root_block) noexcept {

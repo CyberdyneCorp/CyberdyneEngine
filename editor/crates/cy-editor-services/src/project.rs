@@ -349,6 +349,35 @@ impl ProjectService {
         }
     }
 
+    /// Every file anywhere in the project ending in `extension`, project-relative, in path order —
+    /// not only the module's sources: a UI document or a theme is content, kept wherever the
+    /// project keeps it (`ui/` beside `game/`). Hidden directories are skipped.
+    #[must_use]
+    pub fn paths_with_extension(&self, extension: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        let mut stack = vec![self.root.clone()];
+        while let Some(next) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&next) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let hidden = entry.file_name().to_string_lossy().starts_with('.');
+                if path.is_dir() {
+                    if !hidden {
+                        stack.push(path);
+                    }
+                } else if path.to_string_lossy().ends_with(extension)
+                    && let Ok(relative) = path.strip_prefix(&self.root)
+                {
+                    found.push(relative.to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+        found.sort_unstable();
+        found
+    }
+
     /// Every source file the project holds, project-relative, in path order.
     #[must_use]
     pub fn source_paths(&self) -> Vec<String> {
@@ -542,6 +571,7 @@ fn apply_domain(
             .or_else(|| kind.strip_prefix(crate::audio::DOMAIN_PREFIX))
             .or_else(|| kind.strip_prefix(crate::script_graph::DOMAIN_PREFIX))
             .or_else(|| kind.strip_prefix(crate::animation_graph::DOMAIN_PREFIX))
+            .or_else(|| kind.strip_prefix(crate::ui_document::DOMAIN_PREFIX))
         {
             let wanted = decode_source(if forward { after } else { before });
             let _ = project.put_source(reference, wanted.as_deref());
@@ -676,6 +706,34 @@ mod tests {
             .expect("editor checkout provides a Swift module driver");
         assert_eq!(driver.file_name().unwrap(), "cy_swift_module.py");
         assert!(driver.is_file());
+    }
+
+    #[test]
+    fn content_is_listed_wherever_the_project_keeps_it_not_only_under_the_sources() {
+        // Regression: the UI layout editor listed documents through `source_paths`, which walks
+        // `game/` only, so a project's `ui/main_menu.cyui` — where the menus sample keeps it — was
+        // never offered.
+        let (mut project, _held) = project();
+        project
+            .put_source("ui/main_menu.cyui", Some("cyui 1\n"))
+            .unwrap();
+        project
+            .put_source("game/ui/hud.cyui", Some("cyui 1\n"))
+            .unwrap();
+        project
+            .put_source("ui/menus.cyss", Some(".a { color: #fff; }"))
+            .unwrap();
+        assert_eq!(
+            project.paths_with_extension(".cyui"),
+            vec![
+                "game/ui/hud.cyui".to_owned(),
+                "ui/main_menu.cyui".to_owned()
+            ]
+        );
+        assert_eq!(
+            project.paths_with_extension(".cyss"),
+            vec!["ui/menus.cyss".to_owned()]
+        );
     }
 
     #[test]

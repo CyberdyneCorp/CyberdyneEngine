@@ -1671,6 +1671,54 @@ pub struct CyLockstepProjectile {
     pub aim: CyFixedVec2,
 }
 
+/// `CyInputRebind` — 116 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyInputRebind {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub status: u32,
+    /// `CyInputAction` at byte 8.
+    pub action: CyInputAction,
+    /// `uint32_t` at byte 12.
+    pub scheme: u32,
+    /// `uint32_t` at byte 16.
+    pub slot: u32,
+    /// `char[32]` at byte 20.
+    pub control: [::std::ffi::c_char; 32],
+    /// `char[64]` at byte 52.
+    pub conflict: [::std::ffi::c_char; 64],
+}
+
+/// `CyVideoSettings` — 24 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyVideoSettings {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub width: u32,
+    /// `uint32_t` at byte 8.
+    pub height: u32,
+    /// `uint32_t` at byte 12.
+    pub quality: u32,
+    /// `uint32_t` at byte 16.
+    pub upscale: u32,
+    /// `uint32_t` at byte 20.
+    pub flags: u32,
+}
+
+/// `CyVideoMode` — 8 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyVideoMode {
+    /// `uint32_t` at byte 0.
+    pub width: u32,
+    /// `uint32_t` at byte 4.
+    pub height: u32,
+}
+
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -1685,7 +1733,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 1616 bytes, 8-byte aligned.
+/// `CyInterface` — 1720 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -2306,6 +2354,62 @@ pub struct CyInterface {
     /// `CyResult(*)(CyEngine, CyLockstepProjectile*, uint32_t, uint32_t*)` at byte 1608.
     pub lockstep_projectiles:
         Option<unsafe extern "C" fn(CyEngine, *mut CyLockstepProjectile, u32, *mut u32) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t, CyInputAction, uint32_t, uint32_t, uint32_t)` at byte 1616.
+    pub input_rebind_begin:
+        Option<unsafe extern "C" fn(CyEngine, u32, CyInputAction, u32, u32, u32) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t, CyInputRebind*)` at byte 1624.
+    pub input_rebind_poll: Option<unsafe extern "C" fn(CyEngine, u32, *mut CyInputRebind) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t)` at byte 1632.
+    pub input_rebind_cancel: Option<unsafe extern "C" fn(CyEngine, u32) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t, CyInputAction, uint32_t, uint32_t, char*, uint32_t, uint32_t*)` at byte 1640.
+    pub input_binding: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            u32,
+            CyInputAction,
+            u32,
+            u32,
+            *mut ::std::ffi::c_char,
+            u32,
+            *mut u32,
+        ) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, uint32_t, char*, uint32_t, uint32_t*)` at byte 1648.
+    pub input_profile_save:
+        Option<unsafe extern "C" fn(CyEngine, u32, *mut ::std::ffi::c_char, u32, *mut u32) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t, const char*, uint64_t)` at byte 1656.
+    pub input_profile_load:
+        Option<unsafe extern "C" fn(CyEngine, u32, *const ::std::ffi::c_char, u64) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t)` at byte 1664.
+    pub input_profile_reset: Option<unsafe extern "C" fn(CyEngine, u32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyVideoSettings*)` at byte 1672.
+    pub video_get_settings: Option<unsafe extern "C" fn(CyEngine, *mut CyVideoSettings) -> i32>,
+    /// `CyResult(*)(CyEngine, const CyVideoSettings*)` at byte 1680.
+    pub video_set_settings: Option<unsafe extern "C" fn(CyEngine, *const CyVideoSettings) -> i32>,
+    /// `CyResult(*)(CyEngine, CyVideoMode*, uint32_t, uint32_t*)` at byte 1688.
+    pub video_modes: Option<unsafe extern "C" fn(CyEngine, *mut CyVideoMode, u32, *mut u32) -> i32>,
+    /// `CyResult(*)(CyEngine, const char*, const void*, uint64_t)` at byte 1696.
+    pub user_data_write: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            *const ::std::ffi::c_char,
+            *const ::std::ffi::c_void,
+            u64,
+        ) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, const char*, void*, uint64_t, uint64_t*)` at byte 1704.
+    pub user_data_read: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            *const ::std::ffi::c_char,
+            *mut ::std::ffi::c_void,
+            u64,
+            *mut u64,
+        ) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyUiElement, const char*)` at byte 1712.
+    pub ui_widget_set_tooltip:
+        Option<unsafe extern "C" fn(CyEngine, CyUiElement, *const ::std::ffi::c_char) -> i32>,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -2548,5 +2652,18 @@ impl CyInterface {
         lockstep_structure: None,
         lockstep_events: None,
         lockstep_projectiles: None,
+        input_rebind_begin: None,
+        input_rebind_poll: None,
+        input_rebind_cancel: None,
+        input_binding: None,
+        input_profile_save: None,
+        input_profile_load: None,
+        input_profile_reset: None,
+        video_get_settings: None,
+        video_set_settings: None,
+        video_modes: None,
+        user_data_write: None,
+        user_data_read: None,
+        ui_widget_set_tooltip: None,
     };
 }

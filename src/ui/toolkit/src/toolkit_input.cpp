@@ -83,12 +83,8 @@ Status Toolkit::focus(WidgetId widget_id) noexcept {
     }
     // A widget that is not drawn — on a tab page not shown, under a collapsed panel — is not a
     // place focus may go, whatever its own flags say.
-    for (ElementId walk = widget_id; walk.is_valid();) {
-        const ElementFlags flags = store_.flags(walk);
-        if (!has_flag(flags, ElementFlags::Visible) || has_flag(flags, ElementFlags::Collapsed)) {
-            return fail(ErrorCode::InvalidArgument, "toolkit: that widget is not shown");
-        }
-        walk = store_.hierarchy(walk)->parent;
+    if (!element_shown(store_, widget_id)) {
+        return fail(ErrorCode::InvalidArgument, "toolkit: that widget is not shown");
     }
     if (Status set = interaction_.set_focus(store_, widget_id); !set) {
         return set;
@@ -97,6 +93,12 @@ Status Toolkit::focus(WidgetId widget_id) noexcept {
     note_focus();
     scroll_into_view(widget_id);
     return ok();
+}
+
+void Toolkit::clear_focus() noexcept {
+    (void)interaction_.set_focus(store_, kNoElement);
+    focus_visible_ = false;
+    note_focus();
 }
 
 void Toolkit::note_focus() noexcept {
@@ -523,7 +525,14 @@ bool Toolkit::handle_tabs_action(UiAction action) noexcept {
     const auto count = static_cast<u32>(tabs->rows.size());
     const u32 next = (action == UiAction::NextTab) ? (tabs->selected + 1) % count
                                                    : (tabs->selected + count - 1) % count;
+    const WidgetId header = tabs->rows[next];
     (void)select(*tabs, next, true);
+    // The page the focus was on is collapsed now, and a widget not drawn is no place for focus:
+    // it moves to the new page's tab, from where the d-pad goes down into the page.
+    const ElementId focus = interaction_.focus();
+    if (focus.is_valid() && !element_shown(store_, focus)) {
+        (void)this->focus(header);
+    }
     return true;
 }
 

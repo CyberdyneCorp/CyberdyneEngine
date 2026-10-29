@@ -48,6 +48,7 @@ mod terrain;
 // The shared timeline for the animation, sequencer and audio-cue editors #29 adds: the animation
 // editor draws a clip and its events on it.
 mod timeline;
+pub mod ui_layout;
 mod vfx_graph;
 mod viewport;
 
@@ -312,6 +313,8 @@ pub struct Inputs {
     pub script: script_graph::ScriptInputs,
     /// The animation editor's state: the graph, the palette search, the timeline and the preview.
     pub animation: animation::AnimationInputs,
+    /// The UI layout editor's state: the document, the selection, a canvas drag, the image.
+    pub ui_layout: ui_layout::UiLayoutInputs,
     /// The console's command line.
     pub console: String,
     /// The Settings panel's permanent search.
@@ -430,6 +433,7 @@ impl Default for Inputs {
             audio: audio_mixer::AudioInputs::default(),
             script: script_graph::ScriptInputs::default(),
             animation: animation::AnimationInputs::default(),
+            ui_layout: ui_layout::UiLayoutInputs::default(),
             console: String::new(),
             settings_filter: String::new(),
             settings_platform: if cfg!(target_os = "macos") {
@@ -567,6 +571,7 @@ impl egui_dock::TabViewer for Panels<'_> {
                 "editor-animation-graphs-and-clips" | "animation" => {
                     specialised::show::<animation::AnimationTool>(self, ui);
                 }
+                "editor-ui-layout" => specialised::show::<ui_layout::UiLayoutTool>(self, ui),
                 "console" => diagnostics::console(self, ui),
                 "problems" => diagnostics::problems(self, ui),
                 "profiler" => diagnostics::profiler(self, ui),

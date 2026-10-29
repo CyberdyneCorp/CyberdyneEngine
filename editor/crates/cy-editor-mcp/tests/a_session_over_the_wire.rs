@@ -6390,3 +6390,361 @@ fn the_global_illumination_tools_author_and_undo_over_the_wire() {
     assert!(undone.emission.is_empty());
     assert!(undone.settings_node.is_none());
 }
+
+// --- UI layout (#29) -------------------------------------------------------------------------------
+
+/// What the UI double was asked: every `ui.*` operation with its payload.
+type UiAsked = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
+
+/// A runtime that answers `ui.*` with the ENGINE'S OWN replies, byte for byte:
+/// `cy_test_integration_editor_backend_ui_layout`'s vocabulary and its 320x180 preview.
+fn ui_runtime_double(editor: &mut Editor) -> UiAsked {
+    let (editor_reader, runtime_writer) = std::io::pipe().unwrap();
+    let (runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let asked: UiAsked = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&asked);
+    let catalogue = engine_audio_fixture("ui_catalogue_v1.wire");
+    let preview = engine_audio_fixture("ui_preview_reply_v1.wire");
+    std::thread::spawn(move || {
+        let (mut reader, mut writer) = (runtime_reader, runtime_writer);
+        let _ = cy_editor_protocol::server::serve(&mut reader, &mut writer, |message| {
+            Some(match message {
+                Message::ServiceRequest {
+                    request,
+                    operation,
+                    payload,
+                    ..
+                } => {
+                    let (kind, reply) = match operation.as_str() {
+                        "ui.catalogue.get" => (ServiceEventKind::Completed, catalogue.clone()),
+                        "ui.preview.render" => (ServiceEventKind::Completed, preview.clone()),
+                        _ => {
+                            let mut failure = Writer::new();
+                            failure.u32(1);
+                            failure.text("operation-unsupported");
+                            failure.text("the UI double serves ui.* only");
+                            (ServiceEventKind::Failed, failure.finish())
+                        }
+                    };
+                    if operation.starts_with("ui.") {
+                        recorded.lock().unwrap().push((operation, payload));
+                    }
+                    vec![Message::ServiceEvent {
+                        request,
+                        kind,
+                        schema_version: 1,
+                        payload: reply,
+                    }]
+                }
+                Message::Apply { request, .. } | Message::SyncWorld { request, .. } => {
+                    vec![Message::Applied {
+                        request,
+                        frame: cy_editor_protocol::FrameId::from_raw(1),
+                        observed: Vec::new(),
+                    }]
+                }
+                _ => Vec::new(),
+            })
+        });
+    });
+    asked
+}
+
+/// Pump the editor until the double has answered everything the editor asked.
+fn settle_ui(editor: &mut Editor) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        editor.pump();
+        let requests = &editor.backend.ui_layout;
+        if !requests.pending() && requests.catalogue().is_some() {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the UI requests were never answered"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+fn ui_previews(asked: &UiAsked) -> Vec<Vec<u8>> {
+    asked
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(operation, _)| operation == "ui.preview.render")
+        .map(|(_, payload)| payload.clone())
+        .collect()
+}
+
+/// The `cyui` text a preview payload carries: its first text, after the format.
+fn previewed_text(payload: &[u8]) -> String {
+    let mut reader = cy_editor_core::codec::Reader::new(payload);
+    assert_eq!(reader.u32().unwrap(), 1);
+    reader.text().unwrap()
+}
+
+const UI_DOCUMENT: &str = "game/ui/menu.cyui";
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one conversation: create, add, lay out, bind, style, preview, then undo it all"
+)]
+fn a_ui_document_is_laid_out_previewed_and_undone_over_mcp() {
+    let sandbox = Sandbox::new("ui-layout");
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/menus.cyworld").unwrap();
+    let asked = ui_runtime_double(&mut editor);
+    // The vocabulary is asked for once something wants it; an agent's first preview does.
+    editor.backend.ui_layout.want();
+    settle_ui(&mut editor);
+
+    let authored = converse(
+        &[
+            INITIALIZE,
+            &tool_call(2, "ui.document.create", &[("reference", UI_DOCUMENT)]),
+            &tool_call(
+                3,
+                "ui.widget.add",
+                &[
+                    ("reference", UI_DOCUMENT),
+                    ("kind", "column"),
+                    ("parent", "#root"),
+                    ("id", "main"),
+                ],
+            ),
+            &tool_call(
+                4,
+                "ui.widget.add",
+                &[
+                    ("reference", UI_DOCUMENT),
+                    ("kind", "button"),
+                    ("parent", "#main"),
+                    ("id", "play"),
+                    ("text", "Play"),
+                ],
+            ),
+            &tool_call(
+                5,
+                "ui.widget.add",
+                &[
+                    ("reference", UI_DOCUMENT),
+                    ("kind", "button"),
+                    ("parent", "#main"),
+                    ("id", "quit"),
+                    ("text", "Quit"),
+                ],
+            ),
+            &tool_call(
+                6,
+                "ui.widget.identity",
+                &[
+                    ("reference", UI_DOCUMENT),
+                    ("widget", "#play"),
+                    ("id", "play"),
+                    ("classes", "primary wide"),
+                ],
+            ),
+            r##"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"ui.widget.layout","arguments":{"reference":"game/ui/menu.cyui","widget":"#main","anchor":[0.5,0.5,0.5,0.5],"offset":[-120,-60,120,60]}}}"##,
+            &tool_call(
+                8,
+                "ui.widget.set",
+                &[
+                    ("reference", UI_DOCUMENT),
+                    ("widget", "#main"),
+                    ("key", "gap"),
+                    ("value", "8"),
+                ],
+            ),
+            &tool_call(
+                9,
+                "ui.widget.bind",
+                &[
+                    ("reference", UI_DOCUMENT),
+                    ("widget", "#quit"),
+                    ("name", "quit_label"),
+                    ("mode", "one-way"),
+                ],
+            ),
+            // Quit before Play: a reorder among the column's children.
+            &tool_call(
+                10,
+                "ui.widget.move",
+                &[
+                    ("reference", UI_DOCUMENT),
+                    ("widget", "#quit"),
+                    ("parent", "#main"),
+                    ("position", "0"),
+                ],
+            ),
+            // A kind the engine's toolkit does not make is refused, naming the ones it does.
+            &tool_call(
+                11,
+                "ui.widget.add",
+                &[
+                    ("reference", UI_DOCUMENT),
+                    ("kind", "sliderr"),
+                    ("parent", "#main"),
+                ],
+            ),
+        ],
+        &mut editor,
+    );
+    for index in 1..=9 {
+        assert_eq!(
+            result(&authored, index).get("isError"),
+            &Json::Bool(false),
+            "{}",
+            tool_text(&authored, index)
+        );
+    }
+    assert_eq!(result(&authored, 10).get("isError"), &Json::Bool(true));
+    assert!(tool_text(&authored, 10).contains("slider"));
+    let expected = "cyui 1\npanel #root anchor=[0, 0, 1, 1] offset=[0, 0, 0, 0]\n  column #main anchor=[0.5, 0.5, 0.5, 0.5] offset=[-120, -60, 120, 60] gap=8\n    button #quit text=\"Quit\" bind=quit_label\n    button #play .primary .wide text=\"Play\"\n";
+    let on_disk = std::fs::read_to_string(sandbox.0.join(UI_DOCUMENT)).unwrap();
+    assert_eq!(on_disk, expected);
+
+    // A preview at a target, a DPI and a state: the engine is sent the document as saved, with
+    // the state on the line of the widget it names.
+    let previewed = converse(
+        &[
+            INITIALIZE,
+            r##"{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"ui.preview","arguments":{"reference":"game/ui/menu.cyui","size":[640,360],"dpi":2,"state":"hover","state_widget":"#play"}}}"##,
+        ],
+        &mut editor,
+    );
+    assert_eq!(
+        result(&previewed, 1).get("isError"),
+        &Json::Bool(false),
+        "{}",
+        tool_text(&previewed, 1)
+    );
+    settle_ui(&mut editor);
+    let sent = ui_previews(&asked);
+    let last = sent.last().expect("a preview was sent");
+    assert_eq!(previewed_text(last), expected);
+    let tail = &last[last.len() - 5..];
+    assert_eq!(&tail[..4], &5_u32.to_le_bytes(), "button #play is line 5");
+    assert_eq!(tail[4], 1, "hover");
+    let status = converse(
+        &[
+            INITIALIZE,
+            &tool_call(13, "ui.status", &[("reference", UI_DOCUMENT)]),
+        ],
+        &mut editor,
+    );
+    // The engine's own numbers, decoded from the reply its suite wrote.
+    assert_eq!(structured(&status, 1, "image"), "320x180");
+    assert_eq!(structured(&status, 1, "target"), "640x360");
+    assert_eq!(structured(&status, 1, "state"), "hover");
+    assert!(structured(&status, 1, "classes").contains("primary"));
+
+    // Undo puts the file back one edit — Play before Quit again — and the canvas is drawn again
+    // from it; redo restores the move.
+    let before = ui_previews(&asked).len();
+    let undone = converse(&[INITIALIZE, &tool_call(14, "edit.undo", &[])], &mut editor);
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    let reverted = std::fs::read_to_string(sandbox.0.join(UI_DOCUMENT)).unwrap();
+    assert!(
+        reverted.find("#play").unwrap() < reverted.find("#quit").unwrap(),
+        "{reverted}"
+    );
+    settle_ui(&mut editor);
+    let after = ui_previews(&asked);
+    assert!(after.len() > before, "the undo was not previewed");
+    assert_eq!(previewed_text(after.last().unwrap()), reverted);
+    let redone = converse(&[INITIALIZE, &tool_call(15, "edit.redo", &[])], &mut editor);
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(
+        std::fs::read_to_string(sandbox.0.join(UI_DOCUMENT)).unwrap(),
+        expected
+    );
+}
+
+/// `samples/16-menus/project/ui/`: the menus sample's documents, sheet and themes.
+fn menus_sample_ui() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../samples/16-menus/project/ui")
+}
+
+#[test]
+fn the_menus_sample_is_authored_by_the_ui_layout_tools() {
+    // The menus a game copies are MADE IN THE EDITOR: `session.jsonl` is the designer's session —
+    // every widget placed, named, classed, laid out and bound through the UI layout tools — and
+    // replaying it over MCP into an empty project writes exactly the committed documents. Write
+    // them again after changing the session with `CY_MENUS_UPDATE=1`.
+    let sandbox = Sandbox::new("menus-authoring");
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/menus.cyworld").unwrap();
+    let session = std::fs::read_to_string(menus_sample_ui().join("session.jsonl")).unwrap();
+    let calls: Vec<String> = session
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .enumerate()
+        .map(|(index, call)| {
+            format!(
+                r#"{{"jsonrpc":"2.0","id":{},"method":"tools/call","params":{call}}}"#,
+                index + 2
+            )
+        })
+        .collect();
+    // In connections of forty calls: a connection's budget is an agent's, not a session's.
+    for (batch, chunk) in calls.chunks(40).enumerate() {
+        let mut lines: Vec<&str> = vec![INITIALIZE];
+        lines.extend(chunk.iter().map(String::as_str));
+        let replies = converse_within(&lines, &mut editor, "ui/");
+        assert_eq!(replies.len(), chunk.len() + 1);
+        for index in 1..replies.len() {
+            assert_eq!(
+                result(&replies, index).get("isError"),
+                &Json::Bool(false),
+                "call {}: {}",
+                batch * 40 + index,
+                tool_text(&replies, index)
+            );
+        }
+    }
+    let update = std::env::var_os("CY_MENUS_UPDATE").is_some();
+    let mut compared = 0;
+    for relative in [
+        "menus.cyss",
+        "themes/high-contrast.cyss",
+        "themes/ember.cyss",
+        "main_menu.cyui",
+        "settings.cyui",
+        "pause.cyui",
+        "inventory.cyui",
+        "playing.cyui",
+    ] {
+        let made = std::fs::read_to_string(sandbox.0.join("ui").join(relative)).unwrap();
+        let committed = menus_sample_ui().join(relative);
+        if update {
+            std::fs::create_dir_all(committed.parent().unwrap()).unwrap();
+            std::fs::write(&committed, &made).unwrap();
+        }
+        assert_eq!(
+            std::fs::read_to_string(&committed).unwrap_or_default(),
+            made,
+            "{relative} is not what the session authors"
+        );
+        compared += 1;
+    }
+    assert_eq!(compared, 8);
+    // And the whole session is undoable, one call at a time: undo every edit and nothing is left.
+    let undo: Vec<String> = (0..calls.len())
+        .map(|index| tool_call(1000 + u32::try_from(index).unwrap(), "edit.undo", &[]))
+        .collect();
+    for chunk in undo.chunks(40) {
+        let mut lines: Vec<&str> = vec![INITIALIZE];
+        lines.extend(chunk.iter().map(String::as_str));
+        let _ = converse_within(&lines, &mut editor, "ui/");
+    }
+    assert!(
+        !sandbox.0.join("ui/main_menu.cyui").exists(),
+        "undoing the session left a document behind"
+    );
+}

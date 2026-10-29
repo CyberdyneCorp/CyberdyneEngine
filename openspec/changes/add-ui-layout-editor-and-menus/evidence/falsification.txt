@@ -1,0 +1,84 @@
+# Mutations applied to the shipped sources, each rebuilt, run on the case it targets, and restored;
+# the tree was clean after every one. Driver: replace one line -> cmake --build build/dev -j4
+# --target <suite> -> run the suite binary with --test-case=<case> -> restore the file.
+# Host: Linux Mint 22.1, NVIDIA GeForce RTX 5060 (Vulkan), GCC 13, Development build.
+#
+# Every mutation below turned its case RED. A first pass reported M4, M5, M7, M8, M11 and M12 GREEN:
+# doctest reads a comma in --test-case as a list of filters, so a name with a comma ran no case at
+# all, and M4 was run against unit.editor_backend, which does not hold the composite's cases
+# (integration.editor_backend_navigation does). Those six were run again with the commas as `*` and
+# the right suite; their second results are the ones recorded.
+
+== M1: a selector list keeps only its first selector
+   src/ui/src/style.cpp
+   case: ui_style: a comma-separated selector list is one rule per selector
+   RED exit=-11 src/ui/tests/test_style.cpp:274: ERROR: CHECK_EQ( sheet.diagnostics().size(), 0U ) is NOT correct!
+   src/ui/tests/test_style.cpp:275: FATAL ERROR: REQUIRE_EQ( sheet.rules().size(), 7U ) is NOT correct!
+
+== M2: an empty sheet is not applied on reload
+   src/ui/toolkit/src/toolkit_document.cpp
+   case: ui_document: a reload that drops the stylesheet line is no longer styled by it
+   RED exit=1 src/ui/toolkit/tests/test_document.cpp:361: ERROR: CHECK( kit.toolkit.stylesheet().rules().empty() ) is NOT correct!
+   src/ui/toolkit/tests/test_document.cpp:362: ERROR: CHECK( kit.store.paint(instance.roots()[0])->background != 0xFF102030U ) is NOT correct!
+
+== M3: destroying a widget leaves the overlay's layers open
+   src/ui/toolkit/src/toolkit.cpp
+   case: ui_document: unloading takes an open drop-down's list and the document's dialogs
+   RED exit=1 src/ui/toolkit/tests/test_document.cpp:393: ERROR: CHECK_EQ( kit.toolkit.widget_count(), 0U ) is NOT correct!
+   src/ui/toolkit/tests/test_document.cpp:394: ERROR: CHECK_FALSE( kit.toolkit.captures_input() ) is NOT correct!
+
+== M4: the composite holds eight routes again
+   src/editor_backend/include/cy/editor/composite_service.h
+   case: composite: the hosted runtime's whole route table fits, and the limit names itself
+   RED exit=1 src/editor_backend/tests/test_composite_service.cpp:202: FATAL ERROR: REQUIRE( table.route("illumination.", services.navigation).has_value() ) is NOT correct!
+   src/editor_backend/tests/test_composite_service.cpp:203: FATAL ERROR: REQUIRE( table.route("ui.", services.navigation).has_value() ) is NOT correct!
+
+== M5: an override's slot counts every action's bindings
+   src/servers/input/src/user.cpp
+   case: input: any action of a context is rebound at its own slot, not the first action's
+   RED exit=1 src/servers/input/tests/test_schemes.cpp:257: FATAL ERROR: REQUIRE( user.binding_control(fire, SchemeKind::KeyboardMouse, 0, control) ) is NOT correct!
+   src/servers/input/tests/test_schemes.cpp:258: ERROR: CHECK( control == key_control(Key::G) ) is NOT correct!
+
+== M6: a rebind's conflict search spans every context
+   src/servers/input/src/user.cpp
+   case: input: a control held in another context is no conflict for a rebind
+   RED exit=1 src/servers/input/tests/test_schemes.cpp:308: ERROR: CHECK_FALSE( user.holder_of(gamepad_control(GamepadControl::North), SchemeKind::Gamepad, jump, holder, slot) ) is NOT correct!
+
+== M7: a shoulder button leaves focus on the collapsed page
+   src/ui/toolkit/src/toolkit_input.cpp
+   case: ui_toolkit: a shoulder button leaves focus on the new page's tab, not a hidden page
+   RED exit=1 src/ui/toolkit/tests/test_input.cpp:331: ERROR: CHECK_EQ( kit.toolkit.focused(), buttons[1] ) is NOT correct!
+   src/ui/toolkit/tests/test_input.cpp:334: ERROR: CHECK_EQ( kit.toolkit.text(kit.toolkit.focused()), std::string_view("Volume") ) is NOT correct!
+
+== M8: a hidden widget under a resting pointer keeps its tooltip
+   src/ui/toolkit/src/toolkit_frame.cpp
+   case: ui_toolkit: a tooltip shows after the pointer rests, beside it, and hides on leave
+   RED exit=1 src/ui/toolkit/tests/test_input.cpp:403: ERROR: CHECK_FALSE( has_flag(kit.store.flags(tooltip), ElementFlags::Visible) ) is NOT correct!
+
+== M9: a null focus leaves the toolkit's widget focused
+   src/game_backend/ui/src/ui_backend.cpp
+   case: ui toolkit: clearing the focus takes it from a widget too
+   RED exit=1 src/game_backend/tests/test_ui_toolkit_backend.cpp:504: ERROR: CHECK_FALSE( fixture.toolkit.focused().is_valid() ) is NOT correct!
+   src/game_backend/tests/test_ui_toolkit_backend.cpp:505: ERROR: CHECK_FALSE( fixture.toolkit.focus_visible() ) is NOT correct!
+
+== M10: a pressed preview is only hovered
+   src/editor_backend/src/ui_layout_service.cpp
+   case: ui layout: a state previewed is the state the toolkit draws for it
+   RED exit=1 src/editor_backend/tests/test_ui_layout_service.cpp:399: ERROR: CHECK_LE( channel_delta(body_texel(render(request), kBackLine), rgba(0x22334f)), 1U ) is NOT correct!
+
+== M11: the Escape that cancels a rebind also leaves Settings
+   samples/16-menus/game/Menus.swift
+   case: menus sample: a gamepad plays every screen, and a second start keeps what it set
+   RED exit=1 samples/16-menus/tests/test_menus_sample.cpp:161: ERROR: CHECK_EQ( seen[7].number("screen"), kSettings ) is NOT correct!
+   samples/16-menus/tests/test_menus_sample.cpp:162: ERROR: CHECK_EQ( seen[7].number("backs"), 0.0 ) is NOT correct!
+
+== M12: Apply never reaches the video adapter
+   samples/16-menus/game/Settings.swift
+   case: menus sample: a gamepad plays every screen, and a second start keeps what it set
+   RED exit=1 samples/16-menus/tests/test_menus_sample.cpp:168: ERROR: CHECK_EQ( seen[8].text("video"), "1920x1080" ) is NOT correct!
+   samples/16-menus/tests/test_menus_sample.cpp:169: ERROR: CHECK_EQ( seen[8].number("quality"), 1.0 ) is NOT correct!
+
+== M13: the project-wide listing walks only the module's sources
+   editor/crates/cy-editor-services/src/project.rs
+   case: project::tests::content_is_listed_wherever_the_project_keeps_it_not_only_under_the_sources
+   RED (cargo test -p cy-editor-services --lib) left: ["game/ui/hud.cyui"] right: ["game/ui/hud.cyui", "ui/main_menu.cyui"]

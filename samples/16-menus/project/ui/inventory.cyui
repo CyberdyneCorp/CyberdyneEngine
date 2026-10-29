@@ -1,0 +1,31 @@
+cyui 1
+stylesheet "ui/menus.cyss"
+panel #inventory-screen .overlay anchor=[0, 0, 1, 1] offset=[0, 0, 0, 0]
+  column #inventory .menu-panel anchor=[0.5, 0.5, 0.5, 0.5] offset=[-320, -175, 320, 175]
+    label #inventory-title .title text="Inventory"
+    row #inventory-body gap=18
+      grid #slots columns=6 gap=6
+        button #slot-0 .slot
+        button #slot-1 .slot
+        button #slot-2 .slot
+        button #slot-3 .slot
+        button #slot-4 .slot
+        button #slot-5 .slot
+        button #slot-6 .slot
+        button #slot-7 .slot
+        button #slot-8 .slot
+        button #slot-9 .slot
+        button #slot-10 .slot
+        button #slot-11 .slot
+        button #slot-12 .slot
+        button #slot-13 .slot
+        button #slot-14 .slot
+        button #slot-15 .slot
+        button #slot-16 .slot
+        button #slot-17 .slot
+      column #details .details
+        label #item-name .item-name text="Nothing held"
+        rich-text #item-description text="Choose a slot to see what is in it."
+    label #inventory-hint .hint text="Drag an item, or Enter / A to pick it up and again to put it down"
+    row #inventory-actions justify-content=end
+      button #inventory-back text="Back"
