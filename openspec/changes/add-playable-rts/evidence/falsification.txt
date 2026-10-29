@@ -2,7 +2,9 @@
 # mutation is in it), the targeted suite run whole, and the source restored and rebuilt.
 # Driver: apply -> ninja (the suite's targets) -> ctest -R <suite> -> restore.
 # Host: Linux, NVIDIA RTX 5060 (Vulkan 1.4), Development build, GCC 13, Swift 6.3.3.
-# Every mutation below turned its suite RED; the suites are green on the restored tree.
+# Every mutation below turned its suite RED; the suites are green on the restored tree. M1 and M2
+# were run on the tree rebased onto #149 (whose event injector this change extends); M0 and M3 to
+# M8 on the tree before it, whose game, host and tests are the same.
 #
 # M0 is the Vulkan resize as it was before main's fix (#149, which found the same defect); this
 # change's smoke.rts_api_play is a second regression test of it. Its first run was reported
@@ -18,6 +20,10 @@
    ^integration.sdl3_input$: RED
    TEST CASE:  sdl3 input: the pointer mapping turns window coordinates into the view's
    platform/desktop-sdl3/tests/test_input_source.cpp:270: ERROR: CHECK_EQ( fixture.server.pending()[2].value, 640.0F ) is NOT correct!
+== M2 an injected wheel turns the other way
+   ^integration.sdl3_input$: RED
+   TEST CASE:  sdl3 input: an injected wheel turns by its notches, and draining empties the queue
+   platform/desktop-sdl3/tests/test_input_source.cpp:292: ERROR: CHECK_EQ( pending[0].value, -2.0F ) is NOT correct!
 == M3 a right click orders the first selected unit only
    ^integration.rts_api_play$: RED
    TEST CASE:  rts api play: a box picks the swordsmen and a right click orders them to attack

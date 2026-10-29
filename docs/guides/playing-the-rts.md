@@ -15,6 +15,9 @@ ctest -R rts_api_play                          integration.rts_api_play and smok
 ```
 
 The controls are in [the sample's README](../../samples/13-rts-api/README.md#playing-the-rts).
+[Playing a game](playing-a-game.md) is the first- and third-person games' play host
+(`samples/play`); the RTS keeps a loop of its own over the same platform pieces, because its pointer
+is absolute, its pause is the game's, and its fixed steps are a lockstep session's.
 
 ## The loop, piece by piece
 
