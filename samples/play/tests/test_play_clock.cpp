@@ -156,8 +156,8 @@ CY_TEST_CASE("a frame between ticks carries things forward by the last tick's mo
     // Halfway to the next tick: half of the last step again, the turn too.
     const cy::Vec3 drawn =
         cy::play::carried_forward(cy::Vec3{0.0F, 0.0F, 0.0F}, cy::Vec3{1.0F, 0.0F, -2.0F}, 0.5F);
-    CY_CHECK(near(drawn.x, 1.5));
-    CY_CHECK(near(drawn.z, -3.0));
+    CY_CHECK(std::fabs(drawn.x - 1.5F) < 1e-6F);
+    CY_CHECK(std::fabs(drawn.z + 3.0F) < 1e-6F);
     cy::Transform from = cy::Transform::identity();
     cy::Transform to = cy::Transform::identity();
     to.rotation = cy::Quat::from_axis_angle(cy::Vec3{0.0F, 1.0F, 0.0F}, 0.2F);
