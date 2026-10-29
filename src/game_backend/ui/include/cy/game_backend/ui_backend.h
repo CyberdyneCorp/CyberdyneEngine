@@ -195,6 +195,9 @@ public:
     [[nodiscard]] CyResult widget_set_enabled(CyUiElement widget, bool enabled) noexcept override;
     [[nodiscard]] CyResult widget_set_classes(CyUiElement widget,
                                               const char* classes) noexcept override;
+    /// ABI 1.17: a widget's tooltip, shown when the pointer rests on it.
+    [[nodiscard]] CyResult widget_set_tooltip(CyUiElement widget,
+                                              const char* utf8) noexcept override;
     [[nodiscard]] CyResult widget_open(CyUiElement widget, bool open) noexcept override;
     [[nodiscard]] CyResult widget_animate(CyUiElement widget,
                                           const CyUiAnimation& animation) noexcept override;

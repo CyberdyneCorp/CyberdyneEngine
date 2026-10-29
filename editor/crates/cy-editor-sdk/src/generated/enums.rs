@@ -2714,6 +2714,283 @@ impl LockstepEventKind {
         }
     }
 }
+/// `CyInputScheme`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum InputScheme {
+    /// `CY_INPUT_SCHEME_KEYBOARD_MOUSE` = 0.
+    KeyboardMouse = 0,
+    /// `CY_INPUT_SCHEME_GAMEPAD` = 1.
+    Gamepad = 1,
+}
+
+impl InputScheme {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [InputScheme; 2] = [InputScheme::KeyboardMouse, InputScheme::Gamepad];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(InputScheme::KeyboardMouse),
+            1 => Some(InputScheme::Gamepad),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            InputScheme::KeyboardMouse => "CY_INPUT_SCHEME_KEYBOARD_MOUSE",
+            InputScheme::Gamepad => "CY_INPUT_SCHEME_GAMEPAD",
+        }
+    }
+}
+/// `CyInputConflict`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum InputConflict {
+    /// `CY_INPUT_CONFLICT_REJECT` = 0.
+    Reject = 0,
+    /// `CY_INPUT_CONFLICT_SWAP` = 1.
+    Swap = 1,
+    /// `CY_INPUT_CONFLICT_ALLOW` = 2.
+    Allow = 2,
+    /// `CY_INPUT_CONFLICT_UNBIND_PREVIOUS` = 3.
+    UnbindPrevious = 3,
+}
+
+impl InputConflict {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [InputConflict; 4] = [
+        InputConflict::Reject,
+        InputConflict::Swap,
+        InputConflict::Allow,
+        InputConflict::UnbindPrevious,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(InputConflict::Reject),
+            1 => Some(InputConflict::Swap),
+            2 => Some(InputConflict::Allow),
+            3 => Some(InputConflict::UnbindPrevious),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            InputConflict::Reject => "CY_INPUT_CONFLICT_REJECT",
+            InputConflict::Swap => "CY_INPUT_CONFLICT_SWAP",
+            InputConflict::Allow => "CY_INPUT_CONFLICT_ALLOW",
+            InputConflict::UnbindPrevious => "CY_INPUT_CONFLICT_UNBIND_PREVIOUS",
+        }
+    }
+}
+/// `CyInputRebindStatus`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum InputRebindStatus {
+    /// `CY_INPUT_REBIND_IDLE` = 0.
+    Idle = 0,
+    /// `CY_INPUT_REBIND_LISTENING` = 1.
+    Listening = 1,
+    /// `CY_INPUT_REBIND_APPLIED` = 2.
+    Applied = 2,
+    /// `CY_INPUT_REBIND_CONFLICT` = 3.
+    Conflict = 3,
+    /// `CY_INPUT_REBIND_CANCELLED` = 4.
+    Cancelled = 4,
+}
+
+impl InputRebindStatus {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [InputRebindStatus; 5] = [
+        InputRebindStatus::Idle,
+        InputRebindStatus::Listening,
+        InputRebindStatus::Applied,
+        InputRebindStatus::Conflict,
+        InputRebindStatus::Cancelled,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(InputRebindStatus::Idle),
+            1 => Some(InputRebindStatus::Listening),
+            2 => Some(InputRebindStatus::Applied),
+            3 => Some(InputRebindStatus::Conflict),
+            4 => Some(InputRebindStatus::Cancelled),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            InputRebindStatus::Idle => "CY_INPUT_REBIND_IDLE",
+            InputRebindStatus::Listening => "CY_INPUT_REBIND_LISTENING",
+            InputRebindStatus::Applied => "CY_INPUT_REBIND_APPLIED",
+            InputRebindStatus::Conflict => "CY_INPUT_REBIND_CONFLICT",
+            InputRebindStatus::Cancelled => "CY_INPUT_REBIND_CANCELLED",
+        }
+    }
+}
+/// `CyVideoQuality`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum VideoQuality {
+    /// `CY_VIDEO_QUALITY_LOW` = 0.
+    Low = 0,
+    /// `CY_VIDEO_QUALITY_MEDIUM` = 1.
+    Medium = 1,
+    /// `CY_VIDEO_QUALITY_HIGH` = 2.
+    High = 2,
+    /// `CY_VIDEO_QUALITY_ULTRA` = 3.
+    Ultra = 3,
+}
+
+impl VideoQuality {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [VideoQuality; 4] = [
+        VideoQuality::Low,
+        VideoQuality::Medium,
+        VideoQuality::High,
+        VideoQuality::Ultra,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(VideoQuality::Low),
+            1 => Some(VideoQuality::Medium),
+            2 => Some(VideoQuality::High),
+            3 => Some(VideoQuality::Ultra),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            VideoQuality::Low => "CY_VIDEO_QUALITY_LOW",
+            VideoQuality::Medium => "CY_VIDEO_QUALITY_MEDIUM",
+            VideoQuality::High => "CY_VIDEO_QUALITY_HIGH",
+            VideoQuality::Ultra => "CY_VIDEO_QUALITY_ULTRA",
+        }
+    }
+}
+/// `CyVideoUpscale`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum VideoUpscale {
+    /// `CY_VIDEO_UPSCALE_NATIVE` = 0.
+    Native = 0,
+    /// `CY_VIDEO_UPSCALE_QUALITY` = 1.
+    Quality = 1,
+    /// `CY_VIDEO_UPSCALE_BALANCED` = 2.
+    Balanced = 2,
+    /// `CY_VIDEO_UPSCALE_PERFORMANCE` = 3.
+    Performance = 3,
+}
+
+impl VideoUpscale {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [VideoUpscale; 4] = [
+        VideoUpscale::Native,
+        VideoUpscale::Quality,
+        VideoUpscale::Balanced,
+        VideoUpscale::Performance,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(VideoUpscale::Native),
+            1 => Some(VideoUpscale::Quality),
+            2 => Some(VideoUpscale::Balanced),
+            3 => Some(VideoUpscale::Performance),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            VideoUpscale::Native => "CY_VIDEO_UPSCALE_NATIVE",
+            VideoUpscale::Quality => "CY_VIDEO_UPSCALE_QUALITY",
+            VideoUpscale::Balanced => "CY_VIDEO_UPSCALE_BALANCED",
+            VideoUpscale::Performance => "CY_VIDEO_UPSCALE_PERFORMANCE",
+        }
+    }
+}
 
 impl Status {
     /// What a caller should understand by this status.

@@ -2846,6 +2846,93 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
+    size_of::<ffi::CyInputRebind>() == 116,
+    "CyInputRebind is not 116 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyInputRebind>() == 4,
+    "CyInputRebind is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInputRebind, struct_size) == 0,
+    "CyInputRebind::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInputRebind, status) == 4,
+    "CyInputRebind::status is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInputRebind, action) == 8,
+    "CyInputRebind::action is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInputRebind, scheme) == 12,
+    "CyInputRebind::scheme is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInputRebind, slot) == 16,
+    "CyInputRebind::slot is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInputRebind, control) == 20,
+    "CyInputRebind::control is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInputRebind, conflict) == 52,
+    "CyInputRebind::conflict is not at byte 52"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyVideoSettings>() == 24,
+    "CyVideoSettings is not 24 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyVideoSettings>() == 4,
+    "CyVideoSettings is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyVideoSettings, struct_size) == 0,
+    "CyVideoSettings::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyVideoSettings, width) == 4,
+    "CyVideoSettings::width is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyVideoSettings, height) == 8,
+    "CyVideoSettings::height is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyVideoSettings, quality) == 12,
+    "CyVideoSettings::quality is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyVideoSettings, upscale) == 16,
+    "CyVideoSettings::upscale is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyVideoSettings, flags) == 20,
+    "CyVideoSettings::flags is not at byte 20"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyVideoMode>() == 8,
+    "CyVideoMode is not 8 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyVideoMode>() == 4,
+    "CyVideoMode is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyVideoMode, width) == 0,
+    "CyVideoMode::width is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyVideoMode, height) == 4,
+    "CyVideoMode::height is not at byte 4"
+);
+
+const _: () = assert!(
     size_of::<ffi::CyInterfaceHeader>() == 16,
     "CyInterfaceHeader is not 16 bytes; the ABI description and rustc disagree"
 );
@@ -2871,8 +2958,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 1616,
-    "CyInterface is not 1616 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 1720,
+    "CyInterface is not 1720 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -3682,6 +3769,58 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, lockstep_projectiles) == 1608,
     "CyInterface::lockstep_projectiles is not at byte 1608"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, input_rebind_begin) == 1616,
+    "CyInterface::input_rebind_begin is not at byte 1616"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, input_rebind_poll) == 1624,
+    "CyInterface::input_rebind_poll is not at byte 1624"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, input_rebind_cancel) == 1632,
+    "CyInterface::input_rebind_cancel is not at byte 1632"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, input_binding) == 1640,
+    "CyInterface::input_binding is not at byte 1640"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, input_profile_save) == 1648,
+    "CyInterface::input_profile_save is not at byte 1648"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, input_profile_load) == 1656,
+    "CyInterface::input_profile_load is not at byte 1656"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, input_profile_reset) == 1664,
+    "CyInterface::input_profile_reset is not at byte 1664"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, video_get_settings) == 1672,
+    "CyInterface::video_get_settings is not at byte 1672"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, video_set_settings) == 1680,
+    "CyInterface::video_set_settings is not at byte 1680"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, video_modes) == 1688,
+    "CyInterface::video_modes is not at byte 1688"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, user_data_write) == 1696,
+    "CyInterface::user_data_write is not at byte 1696"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, user_data_read) == 1704,
+    "CyInterface::user_data_read is not at byte 1704"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_widget_set_tooltip) == 1712,
+    "CyInterface::ui_widget_set_tooltip is not at byte 1712"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -3728,7 +3867,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        200,
+        213,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }

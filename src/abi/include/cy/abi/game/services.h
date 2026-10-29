@@ -62,6 +62,8 @@ class LightsBackend;
 class FirstPersonBackend;
 class EffectsBackend;
 class DecalsBackend;
+class VideoBackend;
+class UserDataBackend;
 
 // --- Phases --------------------------------------------------------------------------------------
 
@@ -126,6 +128,10 @@ struct GameServices {
     EffectsBackend* effects = nullptr;
     /// ABI 1.15: `decal_*`. Null in a host that draws nothing.
     DecalsBackend* decals = nullptr;
+    /// ABI 1.17: `video_*`. Null in a host with no display.
+    VideoBackend* video = nullptr;
+    /// ABI 1.17: `user_data_*`. Null in a host that keeps no player files.
+    UserDataBackend* user_data = nullptr;
     GameClock clock;
 };
 
