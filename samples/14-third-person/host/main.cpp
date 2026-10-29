@@ -32,7 +32,12 @@
 #include "script.h"
 #include "tps_host.h"
 #if defined(CY_THIRD_PERSON_RENDER)
+#    include "golden.h"
 #    include "render.h"
+#endif
+#if defined(CY_THIRD_PERSON_PLAY)
+#    include "hosted_game.h"
+#    include "play_arguments.h"
 #endif
 
 namespace {
@@ -193,9 +198,179 @@ void print_report(ThirdPersonHost& host) noexcept {
     std::printf("tps digest value=%016llx\n", static_cast<unsigned long long>(seen.digest));
 }
 
+#if defined(CY_THIRD_PERSON_PLAY)
+// --- Played ---------------------------------------------------------------------------------------
+//
+// `--play`: the hillside in a window, a person at the mouse and the keyboard (or a pad), through
+// the desktop play host (samples/play). The game is the same Swift module; nothing scripts it.
+
+#    if defined(CY_THIRD_PERSON_RENDER)
+using PlayedRenderer = sample::tps::Renderer;
+#    else
+using PlayedRenderer = cy::play::NoRenderer;
+#    endif
+
+struct PlayFlags {
+    cy::play::PlayArguments play;
+    const char* package = CY_THIRD_PERSON_PACKAGE;
+#    if defined(CY_THIRD_PERSON_RENDER)
+    sample::tps::RenderOptions render;
+#    endif
+};
+
+[[nodiscard]] bool parse_play(int argc, char** argv, PlayFlags& out) noexcept {
+    out.play.options.title = "CyberEngine — third person (Esc: pause)";
+    Arguments render;
+#    if defined(CY_THIRD_PERSON_RENDER)
+    render.options.validation = false;
+#    endif
+    for (int index = 1; index < argc; ++index) {
+        if (cy::play::parse_play_flag(argc, argv, index, out.play)) {
+            continue;
+        }
+        if (std::strcmp(argv[index], "--map") == 0 && index + 1 < argc) {
+            out.package = argv[++index];
+            continue;
+        }
+        if (!render_flag(render, argc, argv, index)) {
+            std::fprintf(stderr, "cy_sample_third-person: --play does not take '%s'\n",
+                         argv[index]);
+            return false;
+        }
+    }
+#    if defined(CY_THIRD_PERSON_RENDER)
+    out.render = render.options;
+    out.render.validation = out.play.options.validation;
+#    endif
+    return true;
+}
+
+/// Each captured frame as `<dir>/frame-<n>.png`.
+[[nodiscard]] cy::Status write_capture(const std::string& directory, cy::u64 frame,
+                                       cy::Span<const cy::u32> pixels, cy::u32 width,
+                                       cy::u32 height) noexcept {
+#    if defined(CY_THIRD_PERSON_RENDER)
+    cy::render_test::Image image(cy::system_allocator(cy::MemoryDomain::Renderer));
+    if (cy::Status adopted = cy::render_test::adopt(image, pixels, width, height); !adopted) {
+        return adopted;
+    }
+    char name[64];
+    (void)std::snprintf(name, sizeof(name), "/frame-%05llu.png",
+                        static_cast<unsigned long long>(frame));
+    return cy::render_test::write_png((directory + name).c_str(), image);
+#    else
+    (void)directory;
+    (void)frame;
+    (void)pixels;
+    (void)width;
+    (void)height;
+    return cy::ok();
+#    endif
+}
+
+/// The renderer on the play host's device, when the run draws.
+[[nodiscard]] cy::Status start_renderer(ThirdPersonHost& host, cy::play::PlayHost& play,
+                                        const sample::rts::map::MapContent& content,
+                                        const PlayFlags& flags,
+                                        std::unique_ptr<PlayedRenderer>& out) noexcept {
+    if (play.device() == nullptr) {
+        return cy::ok();
+    }
+#    if defined(CY_THIRD_PERSON_RENDER)
+    out = std::make_unique<PlayedRenderer>(cy::system_allocator(cy::MemoryDomain::Renderer));
+    sample::tps::RenderOptions render = flags.render;
+    render.device = play.device();
+    return out->start(host, content, render);
+#    else
+    (void)host;
+    (void)content;
+    (void)flags;
+    (void)out;
+    return cy::ok();
+#    endif
+}
+
+/// The game in the play host until it ends: the report printed, everything released in order.
+[[nodiscard]] int play_game(cy::play::PlayHost& play, const sample::rts::map::MapContent& content,
+                            const PlayFlags& flags) noexcept {
+    sample::tps::HostOptions options;
+    options.module_library = CY_THIRD_PERSON_MODULE_LIBRARY;
+    options.module_manifest = CY_THIRD_PERSON_MODULE_MANIFEST;
+    options.map = &content;
+    options.scripted_devices = false;
+    options.fenced = true;
+#    if defined(CY_THIRD_PERSON_RENDER)
+    options.illumination = play.device() != nullptr && flags.render.gi;
+#    endif
+    cy::play::PlayUi& ui = play.ui();
+    options.bind_services = [&ui](cy::abi::Host& abi) { ui.bind(abi); };
+    cy::Allocator& allocator = cy::system_allocator(cy::MemoryDomain::Engine);
+    ThirdPersonHost host(allocator, options);
+    const char* detail = "";
+    std::unique_ptr<PlayedRenderer> renderer;
+    cy::Status ready = host.start(&detail);
+    ready = ready ? start_renderer(host, play, content, flags, renderer) : ready;
+    cy::play::HostedGame<ThirdPersonHost, PlayedRenderer> game(host, ui, renderer.get());
+    ready = ready ? play.attach(game) : ready;
+    if (!ready) {
+        std::fprintf(stderr, "cy_sample_third-person: --play: %s %s\n", detail,
+                     ready.error().message);
+        return 1;
+    }
+    const std::string directory = flags.play.capture_directory;
+    play.on_capture = [&directory](cy::u64 frame, cy::Span<const cy::u32> pixels, cy::u32 width,
+                                   cy::u32 height) {
+        return write_capture(directory, frame, pixels, width, height);
+    };
+    const cy::Expected<cy::play::PlayReport, cy::Error> report = play.run();
+    int code = 0;
+    if (report) {
+        print_report(host);
+        cy::play::print_play_report(*report);
+    } else {
+        std::fprintf(stderr, "cy_sample_third-person: --play: %s\n", report.error().message);
+        code = 1;
+    }
+    renderer.reset();
+    host.shutdown();
+    return code;
+}
+
+[[nodiscard]] int run_play(int argc, char** argv) noexcept {
+    PlayFlags flags;
+    if (!parse_play(argc, argv, flags)) {
+        return 2;
+    }
+    cy::Allocator& allocator = cy::system_allocator(cy::MemoryDomain::Engine);
+    sample::rts::map::MapContent content;
+    sample::rts::map::LoadReport loaded;
+    std::string detail;
+    if (cy::Status read =
+            sample::rts::map::load_map(allocator, flags.package, content, loaded, detail);
+        !read) {
+        std::fprintf(stderr, "cy_sample_third-person: the level did not load (%s): %s\n",
+                     detail.c_str(), read.error().message);
+        return 1;
+    }
+    cy::play::PlayHost play(allocator);
+    if (cy::Status opened = play.open(flags.play.options); !opened) {
+        std::fprintf(stderr, "cy_sample_third-person: --play: %s\n", opened.error().message);
+        return opened.error().code == cy::ErrorCode::Unavailable ? 0 : 1;
+    }
+    const int code = play_game(play, content, flags);
+    play.close();
+    return code;
+}
+#endif
+
 }  // namespace
 
 int main(int argc, char** argv) {
+#if defined(CY_THIRD_PERSON_PLAY)
+    if (cy::play::wants_play(argc, argv)) {
+        return run_play(argc, argv);
+    }
+#endif
     const Arguments arguments = parse(argc, argv);
     if (!arguments.valid) {
         return 2;

@@ -129,6 +129,13 @@ cy::Status ArenaBodies::fell(u32 index) noexcept {
     return server_->set_body_filter(targets_[index].body, fallen);
 }
 
+cy::Status ArenaBodies::rose(u32 index) noexcept {
+    cy::physics::CollisionFilter standing;
+    standing.layer = static_cast<cy::u8>(kTargetLayer);
+    standing.mask = kSolidMask;
+    return server_->set_body_filter(targets_[index].body, standing);
+}
+
 cy::physics::BodyHandle ArenaBodies::body_of(CyEntity entity) const noexcept {
     if (entity == CY_ENTITY_NULL) {
         return {};

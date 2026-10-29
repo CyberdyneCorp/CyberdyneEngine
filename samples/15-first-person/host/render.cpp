@@ -231,6 +231,10 @@ struct FpsRenderer::State {
     // --- Building ------------------------------------------------------------------------------
 
     [[nodiscard]] Status create_device() noexcept {
+        if (options.device != nullptr) {
+            device = options.device;  // the play host's: its swapchain presents what is drawn
+            return cy::ok();
+        }
         (void)rhi::vulkan::register_vulkan_backend();
         (void)rhi::null::register_null_backend();
         rhi::DeviceDescription description;
@@ -609,7 +613,8 @@ struct FpsRenderer::State {
         out.name = "fps output";
         out.format = kOutputFormat;
         out.extent = rhi::Extent3D{options.width, options.height, 1};
-        out.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::TransferSource;
+        out.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::TransferSource |
+                    rhi::TextureUsage::Sampled;
         cy::Expected<rhi::TextureHandle, cy::Error> made = device->create_texture(out);
         if (!made) {
             return cy::make_unexpected(made.error());
@@ -722,13 +727,13 @@ struct FpsRenderer::State {
         const cy::Span<const PropBox> props = prop_boxes();
         for (u32 prop = 0; prop < kPropCount; ++prop) {
             if (Status moved =
-                    move(first_prop + prop, box_matrix(host.prop(prop), props[prop].half));
+                    move(first_prop + prop, box_matrix(host.drawn_prop(prop), props[prop].half));
                 !moved) {
                 return moved;
             }
         }
         for (u32 target = 0; target < kTargetCount; ++target) {
-            const cy::Transform body = target_placement(host.target(target));
+            const cy::Transform body = target_placement(host.drawn_target(target));
             if (Status moved = move(first_target + (target * 2U), box_matrix(body, kTargetHalf));
                 !moved) {
                 return moved;
@@ -1052,7 +1057,7 @@ struct FpsRenderer::State {
         request.format = kOutputFormat;
         request.width = options.width;
         request.height = options.height;
-        request.extra_usage = rhi::TextureUsage::TransferSource;
+        request.extra_usage = rhi::TextureUsage::TransferSource | rhi::TextureUsage::Sampled;
         frame_view.output = graph.import_texture(request, output, rhi::ImageUse::Undefined);
         return frame_view;
     }
@@ -1109,6 +1114,14 @@ struct FpsRenderer::State {
         capture = Capture{assembly.resources().output, readback, options.width, options.height};
         if (executed && read_back && capture.output != rendering::kInvalidResource) {
             declare_capture();
+        }
+        if (executed && options.device != nullptr &&
+            capture.output != rendering::kInvalidResource) {
+            // HANDED TO THE PRESENTER: the output left as a fragment shader samples it, which is
+            // the use the play host imports it in.
+            graph.add_pass("fps hand off", rhi::QueueKind::Graphics)
+                .read(capture.output, rhi::Access::FragmentSampledRead)
+                .side_effect();
         }
         rendering::GraphExecutor executor(*allocator, *device);
         const auto submitted = std::chrono::steady_clock::now();
@@ -1349,8 +1362,9 @@ FpsRenderer::~FpsRenderer() {
             }
         }
     }
+    const bool owned = state_->options.device == nullptr;
     state_.reset();
-    if (device != nullptr) {
+    if (device != nullptr && owned) {
         rhi::destroy_device(cy::system_allocator(cy::MemoryDomain::Gpu), device);
     }
 }
@@ -1388,7 +1402,9 @@ cy::Status FpsRenderer::frame(FpsHost& host) noexcept {
         return packed;
     }
     state.place_rows();
-    const bool still = std::ranges::find(kStills, state.frame) != std::end(kStills);
+    const bool played = state.options.device != nullptr;
+    const bool still =
+        !played && std::ranges::find(kStills, state.frame) != std::end(kStills);
     const bool video = !state.options.video_directory.empty() &&
                        state.frame % std::max<u32>(state.options.video_every, 1U) == 0U;
     rendering::assembly::AssemblyReport assembled{};
@@ -1413,6 +1429,22 @@ cy::Status FpsRenderer::frame(FpsHost& host) noexcept {
     state.stills += 1;
     state.print_marks(host);
     return cy::ok();
+}
+
+cy::rhi::TextureHandle FpsRenderer::output() const noexcept {
+    return state_ == nullptr ? cy::rhi::TextureHandle{} : state_->output;
+}
+
+cy::u32 FpsRenderer::width() const noexcept {
+    return state_ == nullptr ? 0U : state_->options.width;
+}
+
+cy::u32 FpsRenderer::height() const noexcept {
+    return state_ == nullptr ? 0U : state_->options.height;
+}
+
+cy::f64 FpsRenderer::last_frame_ms() const noexcept {
+    return state_ == nullptr ? 0.0 : state_->last_record_ms + state_->last_wait_ms;
 }
 
 void FpsRenderer::print_report() const noexcept {

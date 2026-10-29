@@ -64,6 +64,14 @@ public:
     Expected<VSyncMode, Error> window_vsync(WindowId window) const override;
     Status set_window_vsync(WindowId window, VSyncMode mode) override;
 
+    Status set_window_relative_mouse(WindowId window, bool enabled) override;
+    Expected<bool, Error> window_relative_mouse(WindowId window) const override;
+
+    /// SDL's own number for a window — what an `SDL_Event` addressed to it carries — or zero. A
+    /// number rather than an SDL type, so `Sdl3EventInjector` can address a window's events with
+    /// no SDL type crossing this header.
+    [[nodiscard]] u32 native_window_id(WindowId window) const;
+
     [[nodiscard]] usize screen_count() const override;
     Expected<ScreenInfo, Error> screen(usize index) const override;
     Expected<ScreenInfo, Error> screen_by_id(ScreenId id) const override;

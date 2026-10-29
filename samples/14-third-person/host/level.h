@@ -19,8 +19,10 @@
 // Each is a static box collider on the physics world, drawn with its material, and held by the
 // GI. The ramp is the one turned box: about +Z by its slope.
 //
-// THE INPUT: four actions — `hero.move` (WASD), `camera.look` (the arrow keys), `hero.jump`
-// (space) and `hero.sprint` (left shift) — in one mapping context on user 0.
+// THE INPUT: four actions — `hero.move` (WASD, the pad's left stick), `camera.look` (the arrow
+// keys, the pad's right stick), `hero.jump` (space, the south button) and `hero.sprint` (left
+// shift, the left stick pressed or the east button) — in one mapping context on user 0. Played, the
+// mouse orbits the camera too, by its pointer's counts.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>

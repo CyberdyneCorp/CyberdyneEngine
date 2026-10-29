@@ -13,7 +13,8 @@
 //
 //   selector
 //     sequence  [down]      fall            health gone: topple over, and leave every layer a
-//                                           shot or a character uses
+//                                           shot or a character uses — and get back up, solid
+//                                           again, when the game gives the health back
 //     sequence  [hit]       flinch          a hit felt this moment: stagger back from where it
 //                                           came from
 //     sequence  [contact]   engage          the player is known: face where it was last seen and
@@ -100,6 +101,8 @@ struct TargetState {
     cy::Vec3 known{0.0F, 0.0F, 0.0F};
     bool knows = false;
     cy::f32 hits_seen = 0.0F;
+    /// Times it got back up, the game having given its health back.
+    cy::u32 rises = 0;
 };
 
 /// The body's placement for a target's state: standing, turned to its yaw, or toppled about its
@@ -149,6 +152,7 @@ private:
     void feel(cy::u32 index, cy::u32 tick, const TargetHealth& health,
               cy::ecs::Entity player) noexcept;
     void move(cy::u32 index, cy::u32 tick, cy::f32 dt) noexcept;
+    void rise(cy::u32 index, cy::f32 dt) noexcept;
 
     cy::Allocator* allocator_;
     cy::physics::PhysicsServer* server_;

@@ -102,9 +102,18 @@ static_assert(CY_INPUT_BUTTON_LEFT == 1U << 0U && CY_INPUT_BUTTON_RIGHT == 1U <<
 void InputAdapter::observe_pending() noexcept {
     const auto& pending = server_->pending();
     const auto& devices = server_->devices();
+    // ONCE PER EVENT. The window is observed before every tick AND at every frame's start, and a
+    // frame that ran no tick sees the same window again with more appended: what was observed
+    // already is skipped. A resolution since emptied the window, so the count starts over.
+    if (server_->resolutions() != observed_window_) {
+        observed_window_ = server_->resolutions();
+        observed_ = 0;
+    }
+    const usize first = observed_ <= pending.size() ? observed_ : 0;
+    observed_ = pending.size();
     // In buffer order, which is resolution order for a single backend; `resolve_tick` sorts only
     // when two producers interleaved.
-    for (usize index = 0; index < pending.size(); ++index) {
+    for (usize index = first; index < pending.size(); ++index) {
         const cy::input::DeviceEvent& event = pending[index];
         // ABI 1.17: a listening rebind sees every device's events, before the pointer's.
         offer(event);
@@ -150,7 +159,10 @@ void InputAdapter::observe(const cy::input::DeviceEvent& event, u32 user) noexce
             edges.delta[0] += event.value;
             break;
         case MouseControl::MoveY:
-            edges.delta[1] += event.value;
+            // The input layer's +Y is UP — the platform flips the window's axis, once, at the
+            // boundary — and the ABI's pointer is in WINDOW pixels, +y down, the space its
+            // position is in. A mouse pushed away is a negative delta here.
+            edges.delta[1] -= event.value;
             break;
         case MouseControl::WheelX:
             edges.wheel[0] += event.value;
@@ -164,6 +176,9 @@ void InputAdapter::observe(const cy::input::DeviceEvent& event, u32 user) noexce
 }
 
 void InputAdapter::begin_frame() noexcept {
+    // What arrived since the last tick belongs to THIS frame: a frame that runs no tick — a fast
+    // display over a sixty-hertz simulation — still turns with the mouse moved during it.
+    observe_pending();
     for (PointerTrack& track : tracks_) {
         track.published = track.accumulating;
         track.accumulating = PointerEdges{};

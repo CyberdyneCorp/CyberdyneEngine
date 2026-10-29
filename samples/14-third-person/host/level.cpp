@@ -3,6 +3,8 @@
 
 #include "level.h"
 
+#include "play_bindings.h"
+
 #include <cmath>
 #include <utility>
 
@@ -174,6 +176,7 @@ cy::Status declare_input(cy::input::InputServer& input, cy::Allocator& allocator
     if (cy::Status finalized = input.finalize_declarations(); !finalized) {
         return finalized;
     }
+    using cy::input::GamepadControl;
     using cy::input::Key;
     cy::input::MappingContext context(allocator);
     context.set_name(cy::Name::intern("third-person"));
@@ -182,6 +185,15 @@ cy::Status declare_input(cy::input::InputServer& input, cy::Allocator& allocator
         axis2_binding(*look, Key::Left, Key::Right, Key::Down, Key::Up),
         key_binding(*jump, Key::Space),
         key_binding(*sprint, Key::LeftShift),
+        // THE PLAYED GAME'S: the pad — both sticks with radial dead zones, the south button to
+        // jump, the left stick pressed to run. The mouse orbits the camera by its pointer's
+        // counts (game/CameraDirector.swift). A player rebinds any of these
+        // (samples/play/bindings_file.h); the four above are the scripted run's as they were.
+        cy::play::stick_binding(*move, GamepadControl::LeftStickX, GamepadControl::LeftStickY),
+        cy::play::stick_binding(*look, GamepadControl::RightStickX, GamepadControl::RightStickY),
+        cy::play::scheme_binding(*jump, cy::input::gamepad_control(GamepadControl::South)),
+        cy::play::scheme_binding(*sprint, cy::input::gamepad_control(GamepadControl::LeftStick)),
+        cy::play::scheme_binding(*sprint, cy::input::gamepad_control(GamepadControl::East)),
     };
     for (const cy::input::Binding& binding : bindings) {
         if (cy::Status added = context.add(binding); !added) {

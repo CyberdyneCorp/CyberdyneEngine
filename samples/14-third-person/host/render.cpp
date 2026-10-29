@@ -288,6 +288,10 @@ struct Renderer::State {
     // ----------------------------------------------------------------------------------
 
     [[nodiscard]] Status create_device() noexcept {
+        if (options.device != nullptr) {
+            device = options.device;  // the play host's: its swapchain presents what is drawn
+            return cy::ok();
+        }
         (void)rhi::vulkan::register_vulkan_backend();
         (void)rhi::null::register_null_backend();
         rhi::DeviceDescription description;
@@ -1036,7 +1040,9 @@ struct Renderer::State {
         readback = *buffer;
         if (Status made = create_texture(
                 "third-person output", kOutputFormat, options.width, options.height,
-                rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::TransferSource, output);
+                rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::TransferSource |
+                    rhi::TextureUsage::Sampled,
+                output);
             !made) {
             return made;
         }
@@ -1123,7 +1129,7 @@ struct Renderer::State {
         // THE SUN'S MAP follows the hero: an orthographic box round it, camera-relative as the
         // frame's rows are.
         const Vec3 travel = cy::normalize(sun_travel);
-        const Vec3 centre = from.hero_placement().translation - eye;
+        const Vec3 centre = from.drawn_hero().translation - eye;
         const Vec3 light_eye = centre - (travel * (kShadowRadius * 2.5F));
         const Mat4 light_view = cy::look_at(light_eye, centre, Vec3{0.0F, 1.0F, 0.0F});
         const Mat4 light_projection =
@@ -1163,7 +1169,7 @@ struct Renderer::State {
     /// The hero where its node is, posed as the animation system published it.
     [[nodiscard]] Status place_hero(const ThirdPersonHost& from) noexcept {
         Instance& figure = instances[hero];
-        figure.world = from.hero_placement().to_matrix();
+        figure.world = from.drawn_hero().to_matrix();
         const DrawMesh& mesh = meshes[figure.mesh];
         if (Status moved =
                 index.update(figure.index_slot, transform_box(figure.world, mesh.low, mesh.high));
@@ -1352,7 +1358,7 @@ struct Renderer::State {
         request.format = kOutputFormat;
         request.width = options.width;
         request.height = options.height;
-        request.extra_usage = rhi::TextureUsage::TransferSource;
+        request.extra_usage = rhi::TextureUsage::TransferSource | rhi::TextureUsage::Sampled;
         frame_view.output = graph.import_texture(request, output, rhi::ImageUse::Undefined);
 
         if (Status bound = recorder.bind(assembly); !bound) {
@@ -1397,6 +1403,13 @@ struct Renderer::State {
                 .record(&State::record_capture, &capture);
             graph.add_pass("third-person capture host", rhi::QueueKind::Graphics)
                 .read(destination, rhi::Access::HostRead)
+                .side_effect();
+        }
+        if (options.device != nullptr && capture.output != rendering::kInvalidResource) {
+            // HANDED TO THE PRESENTER: the output left as a fragment shader samples it, which is
+            // the use the play host imports it in.
+            graph.add_pass("third-person hand off", rhi::QueueKind::Graphics)
+                .read(capture.output, rhi::Access::FragmentSampledRead)
                 .side_effect();
         }
         rendering::GraphExecutor executor(*allocator, *device);
@@ -1473,8 +1486,9 @@ Renderer::~Renderer() {
             }
         }
     }
+    const bool owned = state_->options.device == nullptr;
     state_.reset();
-    if (device != nullptr) {
+    if (device != nullptr && owned) {
         rhi::destroy_device(cy::system_allocator(cy::MemoryDomain::Gpu), device);
     }
 }
@@ -1558,9 +1572,11 @@ Status Renderer::frame(ThirdPersonHost& host) noexcept {
         return placed;
     }
     state.place_rows();
+    const bool played = state.options.device != nullptr;
     const bool still =
-        std::ranges::find(kStills, state.frame) != std::end(kStills) ||
-        (state.options.stills_every != 0U && state.frame % state.options.stills_every == 0U);
+        !played &&
+        (std::ranges::find(kStills, state.frame) != std::end(kStills) ||
+         (state.options.stills_every != 0U && state.frame % state.options.stills_every == 0U));
     const bool video = !state.options.video_directory.empty() &&
                        state.frame % std::max<u32>(state.options.video_every, 1U) == 0U;
     rendering::assembly::AssemblyReport assembled{};
@@ -1604,6 +1620,18 @@ Status Renderer::frame(ThirdPersonHost& host) noexcept {
     }
     report.validation_errors = state.validation_errors;
     return cy::ok();
+}
+
+cy::rhi::TextureHandle Renderer::output() const noexcept {
+    return state_ == nullptr ? cy::rhi::TextureHandle{} : state_->output;
+}
+
+cy::u32 Renderer::width() const noexcept {
+    return state_ == nullptr ? 0U : state_->options.width;
+}
+
+cy::u32 Renderer::height() const noexcept {
+    return state_ == nullptr ? 0U : state_->options.height;
 }
 
 const RenderReport& Renderer::report() const noexcept {

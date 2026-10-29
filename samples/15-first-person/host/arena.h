@@ -105,6 +105,9 @@ inline constexpr const char* kJumpAction = "player.jump";
 inline constexpr const char* kCrouchAction = "player.crouch";
 inline constexpr const char* kFireAction = "weapon.fire";
 inline constexpr const char* kAimAction = "weapon.aim";
+/// The played game's: the pad's look stick and the reload.
+inline constexpr const char* kLookAction = "player.look";
+inline constexpr const char* kReloadAction = "weapon.reload";
 inline constexpr const char* kShotCue = "weapon.shot";
 inline constexpr const char* kImpactCue = "weapon.impact";
 inline constexpr const char* kHitCue = "target.hit";

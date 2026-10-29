@@ -119,6 +119,10 @@ enum class Feature {
     NativeFileDialog,
     NativeMessageDialog,
     CustomCursor,
+    // The cursor hidden and held in a window, the mouse's motion delivered as raw counts with no
+    // pointer acceleration: what a first-person look and an orbiting camera read. Asked before
+    // set_window_relative_mouse(), which an implementation without it refuses.
+    RelativeMouse,
     ImePositioning,
     OnScreenKeyboard,
     ScreenOrientation,
@@ -278,6 +282,11 @@ public:
 
     virtual Expected<VSyncMode, Error> window_vsync(WindowId window) const = 0;
     virtual Status set_window_vsync(WindowId window, VSyncMode mode) = 0;
+
+    // Relative mouse mode — Feature::RelativeMouse. Not pure: an implementation that cannot hold
+    // the pointer answers Unsupported through these defaults rather than every port restating it.
+    virtual Status set_window_relative_mouse(WindowId window, bool enabled);
+    virtual Expected<bool, Error> window_relative_mouse(WindowId window) const;
 
     // --- Screens ----------------------------------------------------------------------------
 

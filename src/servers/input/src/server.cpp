@@ -242,6 +242,7 @@ Status InputServer::rebuild_user(InputUser& target) noexcept {
 
 void InputServer::resolve_tick(u64 tick, Nanoseconds now, f32 delta_seconds) noexcept {
     tick_ = tick;
+    ++resolutions_;
     pump_device_lifecycle();
 
     for (auto& user : users_) {

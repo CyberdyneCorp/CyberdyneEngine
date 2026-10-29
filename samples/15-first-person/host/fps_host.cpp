@@ -4,6 +4,7 @@
 #include "fps_host.h"
 
 #include <cy/backends/physics/jolt/server.h>
+#include <cy/core/math/quat.h>
 #include <cy/core/math/scalar.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/servers/camera/first_person.h>
@@ -116,6 +117,16 @@ template <class T>
     return digest;
 }
 
+/// `now` carried forward by `ahead` of the step that took `before` to it: where a moving thing is
+/// at a frame drawn between two ticks. Its turn is carried forward along the same arc.
+[[nodiscard]] cy::Transform carried_forward(const cy::Transform& before, const cy::Transform& now,
+                                            f32 ahead) noexcept {
+    cy::Transform out = now;
+    out.translation = now.translation + ((now.translation - before.translation) * ahead);
+    out.rotation = cy::nlerp(before.rotation, now.rotation, 1.0F + ahead);
+    return out;
+}
+
 /// A float at a fixed quantisation — a millimetre's quarter — so the digest is a statement about
 /// the simulation rather than about its last bit.
 [[nodiscard]] u64 quantised(f32 value) noexcept {
@@ -178,6 +189,9 @@ cy::Status FpsHost::start(const char** detail) noexcept {
     cy::game_backend::bind_lights(host_, &lights_);
     cy::game_backend::bind_effects(host_, effects_adapter_.get());
     cy::game_backend::bind_decals(host_, decals_adapter_.get());
+    if (options_.bind_services) {
+        options_.bind_services(host_);
+    }
     started_ = true;
 
     if (cy::Status loaded = load_module(detail); !loaded) {
@@ -252,6 +266,12 @@ cy::Status FpsHost::start_input() noexcept {
     if (cy::Status ready = input_.initialize(); !ready) {
         return ready;
     }
+    if (cy::Status declared = declare_input(input_, allocator_); !declared) {
+        return declared;
+    }
+    if (!options_.scripted_devices) {
+        return cy::ok();
+    }
     const auto keyboard = connect(input_, cy::input::DeviceKind::Keyboard, "fps-keyboard");
     const auto mouse = connect(input_, cy::input::DeviceKind::Mouse, "fps-mouse");
     if (!keyboard || !mouse) {
@@ -259,9 +279,6 @@ cy::Status FpsHost::start_input() noexcept {
     }
     keyboard_ = *keyboard;
     mouse_ = *mouse;
-    if (cy::Status declared = declare_input(input_, allocator_); !declared) {
-        return declared;
-    }
     // The pointer starts in the middle of the window, where a captured mouse is.
     return move_pointer(0.0F, 0.0F);
 }
@@ -463,45 +480,60 @@ cy::Status FpsHost::load_module(const char** detail) noexcept {
 
 cy::Status FpsHost::frame() noexcept {
     const auto started = std::chrono::steady_clock::now();
-    const cy::Status ran = run_frame();
+    cy::Status ran = pump();
+    if (ran) {
+        ran = tick(static_cast<cy::Nanoseconds>(tick_ + 1U) * kStepNs);
+    }
+    if (ran) {
+        begin_frame();
+        ran = update(FrameStep{});
+    }
     frame_ms_ =
         std::chrono::duration<cy::f64, std::milli>(std::chrono::steady_clock::now() - started)
             .count();
     return ran;
 }
 
-cy::Status FpsHost::run_frame() noexcept {
-    if (cy::Status pumped = tree_.pump(); !pumped) {
-        return pumped;
-    }
-    if (cy::Status ticked = fixed_tick(); !ticked) {
-        return ticked;
-    }
+cy::Status FpsHost::pump() noexcept {
+    return tree_.pump();
+}
+
+void FpsHost::begin_frame() noexcept {
     input_adapter_.begin_frame();
+}
+
+cy::Status FpsHost::update(const FrameStep& step) noexcept {
+    interpolation_ = step.interpolation;
+    // WHAT PRESENTATION ADVANCES BY: the frame's seconds, or nothing while the game is paused —
+    // a flash, a burst, the recoil's spring and a sound all hold where they are.
+    const f32 presented = step.paused ? 0.0F : step.seconds;
     // THE PRESENTATION POOLS, before the game's frame: last frame's lights age, so a flash this
     // frame spawns is drawn at its full brightness; the marks are stamped with this frame's time.
-    lights_.advance(kStep);
-    decals_adapter_->begin_frame(static_cast<cy::f64>(frame_ + 1U) * static_cast<cy::f64>(kStep));
-    host_.game.clock.interpolation = 0.0;
-    runtime_.frame_update(kStep);
-    first_person_.advance(kStep);
-    if (cy::Status placed = place_eye(); !placed) {
+    lights_.advance(presented);
+    decals_adapter_->begin_frame((static_cast<cy::f64>(tick_) * static_cast<cy::f64>(kStep)) +
+                                 (step.interpolation * static_cast<cy::f64>(kStep)));
+    host_.game.clock.interpolation = step.interpolation;
+    host_.game.clock.flags = step.paused ? (host_.game.clock.flags | CY_TIME_PAUSED)
+                                         : (host_.game.clock.flags & ~CY_TIME_PAUSED);
+    runtime_.frame_update(step.seconds);
+    first_person_.advance(presented);
+    if (cy::Status placed = place_eye(presented); !placed) {
         return placed;
     }
-    if (cy::Status stepped = effects_->step(kStep); !stepped) {
+    if (cy::Status stepped = effects_->step(presented); !stepped) {
         return stepped;
     }
     if (options_.illumination) {
         cy::Transform props[kPropCount];
         for (u32 index = 0; index < kPropCount; ++index) {
-            props[index] = bodies_->prop(index);
+            props[index] = drawn_prop(index);
         }
         if (cy::Status lit = gi_->update(eye_.translation, props, frame_ + 1U); !lit) {
             return lit;
         }
     }
-    audio_adapter_.update(kStep);
-    audio_.update(kStep);
+    audio_adapter_.update(presented);
+    audio_.update(presented);
     (void)audio_device_.advance(mix_scratch_.data(), kFramesPerTick);
     peak_voices_ = cy::math::max(peak_voices_, audio_.statistics().active_voices);
     lights_live_peak_ = cy::math::max(lights_live_peak_, lights_.pool().status().live);
@@ -511,11 +543,31 @@ cy::Status FpsHost::run_frame() noexcept {
     return cy::ok();
 }
 
-cy::Status FpsHost::fixed_tick() noexcept {
-    const u64 tick = frame_ + 1U;
+cy::Status FpsHost::tick(cy::Nanoseconds now) noexcept {
+    return fixed_tick(now);
+}
+
+cy::Status FpsHost::drain(cy::Nanoseconds now) noexcept {
+    input_adapter_.observe_pending();
+    input_.resolve_tick(tick_, now, 0.0F);
+    return cy::ok();
+}
+
+void FpsHost::remember_tick() noexcept {
+    for (u32 index = 0; index < kPropCount; ++index) {
+        props_before_[index] = bodies_->prop(index);
+    }
+    for (u32 index = 0; index < kTargetCount; ++index) {
+        targets_before_[index] = targets_->state(index);
+    }
+}
+
+cy::Status FpsHost::fixed_tick(cy::Nanoseconds now) noexcept {
+    remember_tick();
+    const u64 tick = ++tick_;
     host_.game.clock.tick = tick;
     input_adapter_.observe_pending();
-    input_.resolve_tick(tick, static_cast<cy::Nanoseconds>(tick) * kStepNs, kStep);
+    input_.resolve_tick(tick, now, kStep);
     runtime_.fixed_update(kStep);
     // A SHOT THE GAME FIRED this step is captured now, before anything moves: the world its ray
     // crossed is still the world the host's own ray crosses.
@@ -544,11 +596,11 @@ cy::Status FpsHost::fixed_tick() noexcept {
     return physics_->step(physics_world_, step);
 }
 
-cy::Status FpsHost::place_eye() noexcept {
+cy::Status FpsHost::place_eye(f32 seconds) noexcept {
     // THE HEAD IS THE GAME'S: it overrides the camera's pose with where the player's head is this
     // frame. The look, the bob and the recoil are the first-person behaviours', applied here.
     cy::camera::EvaluationContext context;
-    context.delta_seconds = kStep;
+    context.delta_seconds = seconds;
     const auto evaluated = camera_.evaluate(rig_, context);
     if (!evaluated) {
         return cy::make_unexpected(evaluated.error());
@@ -689,7 +741,8 @@ cy::Status FpsHost::press_key(cy::input::Key key, bool down) noexcept {
 cy::Status FpsHost::move_pointer(f32 dx, f32 dy) noexcept {
     using cy::input::MouseControl;
     // A captured mouse: its relative motion is what the game turns by, and its position moves
-    // with it as a desktop mouse's would.
+    // with it as a desktop mouse's would. `dy` is in window pixels, +y down; the input layer's
+    // `MoveY` is +y up, as `Sdl3InputSource` delivers a real mouse's, so it is injected flipped.
     pointer_x_ += dx;
     pointer_y_ += dy;
     const cy::Nanoseconds at = event_time();
@@ -697,7 +750,7 @@ cy::Status FpsHost::move_pointer(f32 dx, f32 dy) noexcept {
         MouseControl control;
         f32 value;
     } events[] = {{MouseControl::MoveX, dx},
-                  {MouseControl::MoveY, dy},
+                  {MouseControl::MoveY, -dy},
                   {MouseControl::PositionX, pointer_x_},
                   {MouseControl::PositionY, pointer_y_}};
     for (const auto& event : events) {
@@ -754,7 +807,45 @@ CyEntity FpsHost::raycast(Vec3 origin, Vec3 direction, f32 distance,
     return static_cast<CyEntity>(hit->user_data);
 }
 
+// --- A played frame's interface -----------------------------------------------------------------
+
+CyInputPointer FpsHost::pointer() noexcept {
+    CyInputPointer out{};
+    out.struct_size = sizeof(out);
+    (void)input_adapter_.pointer(0, out);
+    return out;
+}
+
+void FpsHost::set_pointer_over_ui(bool over) noexcept {
+    input_adapter_.set_pointer_focus(0, true, over);
+}
+
+void FpsHost::ui_event(const CyUiEvent& event) noexcept {
+    (void)runtime_.ui_event(event);
+}
+
 // --- The eyes ------------------------------------------------------------------------------------
+
+cy::Transform FpsHost::drawn_prop(u32 index) const noexcept {
+    const cy::Transform now = bodies_->prop(index);
+    if (interpolation_ <= 0.0) {
+        return now;
+    }
+    return carried_forward(props_before_[index], now, static_cast<f32>(interpolation_));
+}
+
+TargetState FpsHost::drawn_target(u32 index) const noexcept {
+    TargetState drawn = targets_->state(index);
+    if (interpolation_ <= 0.0) {
+        return drawn;
+    }
+    const TargetState& before = targets_before_[index];
+    const auto ahead = static_cast<f32>(interpolation_);
+    drawn.feet = drawn.feet + ((drawn.feet - before.feet) * ahead);
+    drawn.yaw = drawn.yaw + (cy::math::wrap_angle(drawn.yaw - before.yaw) * ahead);
+    drawn.fall = cy::math::clamp(drawn.fall + ((drawn.fall - before.fall) * ahead), 0.0F, 1.0F);
+    return drawn;
+}
 
 cy::rendering::viewmodel::ViewmodelSettings FpsHost::weapon_view() const noexcept {
     return first_person_.viewmodel(camera_handle_);

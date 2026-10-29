@@ -169,6 +169,11 @@ public:
     [[nodiscard]] u32 dropped_events() const noexcept { return dropped_total_; }
 
     [[nodiscard]] u64 tick() const noexcept { return tick_; }
+    /// How many times `resolve_tick` has run — the identity of the window `pending()` holds, for
+    /// an observer that walks it more than once before it is resolved. Not the tick: a paused host
+    /// resolves its input again at the tick it stopped on, to drain what arrived, and that is a new
+    /// window with the same tick.
+    [[nodiscard]] u64 resolutions() const noexcept { return resolutions_; }
 
     /// Rebuild user `index`'s resolved table now when its stack or profile changed, rather than at
     /// the next `resolve_tick`: what a rebinding menu calls before it shows the bindings in effect.
@@ -192,6 +197,7 @@ private:
     bool null_backend_ = true;
     bool initialised_ = false;
     u64 tick_ = 0;
+    u64 resolutions_ = 0;
     u32 last_events_ = 0;
     u32 dropped_total_ = 0;
     u32 virtual_devices_ = 0;

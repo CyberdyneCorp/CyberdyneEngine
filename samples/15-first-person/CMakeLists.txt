@@ -116,7 +116,8 @@ cy_add_module(
         cy::servers-physics
         cy::vfx
         cy::vfx-compiler)
-target_include_directories(cy_sample_first-person PRIVATE "${CMAKE_SOURCE_DIR}/src/vfx/tests")
+target_include_directories(cy_sample_first-person PRIVATE "${CMAKE_SOURCE_DIR}/src/vfx/tests"
+                                                          "${CMAKE_SOURCE_DIR}/samples/play")
 add_dependencies(cy_sample_first-person cy_sample_first-person_game)
 
 # `--render <dir>`: the session drawn every frame on a device through the engine's frame — the GI,
@@ -142,6 +143,14 @@ if(CY_RENDERER_VULKAN)
         target_link_libraries(cy_sample_first-person PRIVATE cy::import)
         target_compile_definitions(cy_sample_first-person PRIVATE CY_FIRST_PERSON_TEXTURES=1)
     endif()
+endif()
+
+# `--play`: the arena in a window, played with a mouse, a keyboard or a pad, through the desktop
+# play host (samples/play) — drawn when the build has the Vulkan renderer, driven with no picture
+# (`--no-draw`) when it has not.
+if(TARGET cy::sample-play)
+    target_link_libraries(cy_sample_first-person PRIVATE cy::sample-play)
+    target_compile_definitions(cy_sample_first-person PRIVATE CY_FIRST_PERSON_PLAY=1)
 endif()
 
 # The tests run the host as a separate process, so each run loads the Swift module into a fresh

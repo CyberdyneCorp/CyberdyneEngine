@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "arena.h"
+#include "play_bindings.h"
 
 namespace sample::fps {
 namespace {
@@ -16,6 +17,8 @@ using cy::f32;
 using cy::u32;
 using cy::Vec3;
 using cy::input::Key;
+using cy::play::scheme_binding;
+using cy::play::stick_binding;
 
 [[nodiscard]] cy::input::Binding control_binding(cy::input::ActionId action,
                                                  cy::input::Control control) noexcept {
@@ -72,6 +75,7 @@ private:
 
 cy::Status declare_input(cy::input::InputServer& input, cy::Allocator& allocator) noexcept {
     using cy::input::ActionValueType;
+    using cy::input::GamepadControl;
     using cy::input::MouseControl;
     const auto move = declare(input, kMoveAction, 1, ActionValueType::Axis2);
     const auto sprint = declare(input, kSprintAction, 2, ActionValueType::Digital);
@@ -79,7 +83,10 @@ cy::Status declare_input(cy::input::InputServer& input, cy::Allocator& allocator
     const auto crouch = declare(input, kCrouchAction, 4, ActionValueType::Digital);
     const auto fire = declare(input, kFireAction, 5, ActionValueType::Digital);
     const auto aim = declare(input, kAimAction, 6, ActionValueType::Digital);
-    if (!move || !sprint || !jump || !crouch || !fire || !aim) {
+    // Declared after the scripted run's six, so their ids are what they were.
+    const auto look = declare(input, kLookAction, 7, ActionValueType::Axis2);
+    const auto reload = declare(input, kReloadAction, 8, ActionValueType::Digital);
+    if (!move || !sprint || !jump || !crouch || !fire || !aim || !look || !reload) {
         return cy::fail(cy::ErrorCode::Internal, "an fps action could not be declared");
     }
     if (cy::Status finalized = input.finalize_declarations(); !finalized) {
@@ -94,6 +101,19 @@ cy::Status declare_input(cy::input::InputServer& input, cy::Allocator& allocator
         control_binding(*crouch, cy::input::key_control(Key::C)),
         control_binding(*fire, cy::input::mouse_control(MouseControl::Left)),
         control_binding(*aim, cy::input::mouse_control(MouseControl::Right)),
+        // THE PLAYED GAME'S: a second crouch key, the reload, and the pad — sticks with radial
+        // dead zones, the triggers past half way, the face buttons. A player rebinds any of
+        // these (samples/play/bindings_file.h); the six above are the scripted run's as they were.
+        scheme_binding(*crouch, cy::input::key_control(Key::LeftControl)),
+        scheme_binding(*reload, cy::input::key_control(Key::R)),
+        stick_binding(*move, GamepadControl::LeftStickX, GamepadControl::LeftStickY),
+        stick_binding(*look, GamepadControl::RightStickX, GamepadControl::RightStickY),
+        scheme_binding(*sprint, cy::input::gamepad_control(GamepadControl::LeftStick)),
+        scheme_binding(*jump, cy::input::gamepad_control(GamepadControl::South)),
+        scheme_binding(*crouch, cy::input::gamepad_control(GamepadControl::East)),
+        scheme_binding(*reload, cy::input::gamepad_control(GamepadControl::West)),
+        scheme_binding(*fire, cy::input::gamepad_control(GamepadControl::RightTrigger)),
+        scheme_binding(*aim, cy::input::gamepad_control(GamepadControl::LeftTrigger)),
     };
     for (const cy::input::Binding& binding : bindings) {
         if (cy::Status added = context.add(binding); !added) {

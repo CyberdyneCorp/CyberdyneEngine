@@ -4,10 +4,14 @@
 // content.h — the content this host makes in code and registers under the names arena.h and
 // game/Contract.swift share: the actions and their bindings, and four sounds.
 //
-//   player.move      a two-axis action on WASD
-//   player.sprint    left Shift          player.jump    Space          player.crouch  C
-//   weapon.fire      the left mouse button
-//   weapon.aim       the right mouse button: the sights
+//   player.move      a two-axis action on WASD, and the pad's left stick
+//   player.look      the pad's right stick (the mouse's look is its pointer's counts)
+//   player.sprint    left Shift, or the left stick pressed
+//   player.jump      Space, or the pad's south button
+//   player.crouch    C or left Control, or the east button
+//   weapon.fire      the left mouse button, or the right trigger
+//   weapon.aim       the right mouse button, or the left trigger: the sights
+//   weapon.reload    R, or the west button
 //   weapon.shot      a crack and its tail: noise under a fast decay, a low thump under it
 //   weapon.impact    a short tick
 //   target.hit       a dull knock: a decaying low tone

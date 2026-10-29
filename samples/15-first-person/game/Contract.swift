@@ -17,6 +17,9 @@ enum Content {
     static let crouch = "player.crouch"
     static let fire = "weapon.fire"
     static let aim = "weapon.aim"
+    /// The played game's: the pad's look stick and the reload.
+    static let look = "player.look"
+    static let reload = "weapon.reload"
     static let shot = "weapon.shot"
     static let impact = "weapon.impact"
     static let hit = "target.hit"
@@ -84,6 +87,12 @@ struct PlayerReport {
     var sounds: Float = 0
     /// Presentation calls a fixed step made and was refused: an effect and a mark.
     var refused: Float = 0
+    // The magazine: the rounds in it, the reloads finished, the pulls on an empty one, and the
+    // targets the game stood back up.
+    var ammo: Float = 0
+    var reloads: Float = 0
+    var dryFires: Float = 0
+    var respawns: Float = 0
     // The last shot, whole: the host captures it the tick its count moves.
     var lastOrigin: Vec3 = Vec3()
     var lastDirection: Vec3 = Vec3()

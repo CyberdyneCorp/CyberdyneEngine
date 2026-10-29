@@ -4,6 +4,7 @@
 #include "tps_host.h"
 
 #include <cy/backends/physics/jolt/server.h>
+#include <cy/core/math/quat.h>
 #include <cy/core/math/scalar.h>
 #include <cy/core/memory/system_allocator.h>
 
@@ -227,6 +228,9 @@ cy::Status ThirdPersonHost::start(const char** detail) noexcept {
     cy::game_backend::bind_characters(host_, characters_.get());
     cy::game_backend::bind_scene(host_, &bridge_);
     cy::game_backend::bind_animation(host_, animation_adapter_.get());
+    if (options_.bind_services) {
+        options_.bind_services(host_);
+    }
     started_ = true;
     if (cy::Status loaded = load_module(detail); !loaded) {
         return loaded;
@@ -278,6 +282,9 @@ cy::Status ThirdPersonHost::start_input() noexcept {
     }
     if (cy::Status ready = input_.initialize(); !ready) {
         return ready;
+    }
+    if (!options_.scripted_devices) {
+        return declare_input(input_, allocator_);
     }
     cy::input::DeviceDescription description;
     description.kind = cy::input::DeviceKind::Keyboard;
@@ -441,6 +448,35 @@ cy::Status ThirdPersonHost::start_level() noexcept {
         }
         const PlacedBox box = placed_box(placement, content.props.meshes[placement.mesh]);
         if (cy::Status built = static_box(box.centre, box.half, box.rotation, courtyard); !built) {
+            return built;
+        }
+    }
+    return options_.fenced ? fence() : cy::ok();
+}
+
+cy::Status ThirdPersonHost::fence() noexcept {
+    // FOUR WALLS A METRE IN FROM THE TERRAIN'S EDGE, tall and not drawn: past the edge there is
+    // nothing to stand on, and a hero that walked off it would fall for ever.
+    const map::MapLayout& layout = options_.map->layout;
+    const f32 half = layout.size * 0.5F;
+    const Vec3 middle{layout.origin_x + half, 0.0F, layout.origin_z + half};
+    constexpr f32 kInset = 1.0F;
+    constexpr f32 kThick = 0.5F;
+    constexpr f32 kTall = 60.0F;
+    const f32 reach = half - kInset + kThick;
+    const struct {
+        Vec3 offset;
+        Vec3 half;
+    } walls[] = {
+        {Vec3{reach, 0.0F, 0.0F}, Vec3{kThick, kTall, half}},
+        {Vec3{-reach, 0.0F, 0.0F}, Vec3{kThick, kTall, half}},
+        {Vec3{0.0F, 0.0F, reach}, Vec3{half, kTall, kThick}},
+        {Vec3{0.0F, 0.0F, -reach}, Vec3{half, kTall, kThick}},
+    };
+    for (const auto& wall : walls) {
+        if (cy::Status built = static_box(middle + wall.offset, wall.half, cy::Quat::identity(),
+                                          CY_ENTITY_NULL);
+            !built) {
             return built;
         }
     }
@@ -616,49 +652,73 @@ cy::Status ThirdPersonHost::attach_behaviours(const char** detail) noexcept {
 
 cy::Status ThirdPersonHost::frame() noexcept {
     const auto started = std::chrono::steady_clock::now();
-    const cy::Status ran = run_frame();
+    cy::Status ran = pump();
+    if (ran) {
+        ran = tick(static_cast<cy::Nanoseconds>(tick_ + 1U) * kStepNs);
+    }
+    if (ran) {
+        begin_frame();
+        ran = update(FrameStep{});
+    }
     frame_ms_ =
         std::chrono::duration<cy::f64, std::milli>(std::chrono::steady_clock::now() - started)
             .count();
     return ran;
 }
 
-cy::Status ThirdPersonHost::run_frame() noexcept {
-    if (cy::Status pumped = tree_.pump(); !pumped) {
-        return pumped;
-    }
-    if (cy::Status ticked = fixed_tick(); !ticked) {
-        return ticked;
-    }
+cy::Status ThirdPersonHost::pump() noexcept {
+    return tree_.pump();
+}
+
+cy::Status ThirdPersonHost::tick(cy::Nanoseconds now) noexcept {
+    return fixed_tick(now);
+}
+
+cy::Status ThirdPersonHost::drain(cy::Nanoseconds now) noexcept {
+    input_adapter_.observe_pending();
+    input_.resolve_tick(tick_, now, 0.0F);
+    return cy::ok();
+}
+
+void ThirdPersonHost::begin_frame() noexcept {
     input_adapter_.begin_frame();
+}
+
+cy::Status ThirdPersonHost::update(const FrameStep& step) noexcept {
+    interpolation_ = step.interpolation;
+    // WHAT PRESENTATION ADVANCES BY: the frame's seconds, or nothing while the game is paused.
+    const f32 presented = step.paused ? 0.0F : step.seconds;
     if (cy::Status snapshot = animation_adapter_->begin_frame(); !snapshot) {
         return snapshot;
     }
-    if (cy::Status driven = drive_camera(); !driven) {
+    if (cy::Status driven = drive_camera(presented); !driven) {
         return driven;
     }
-    host_.game.clock.interpolation = 0.0;
-    runtime_.frame_update(kStep);
+    host_.game.clock.interpolation = step.interpolation;
+    host_.game.clock.flags = step.paused ? (host_.game.clock.flags | CY_TIME_PAUSED)
+                                         : (host_.game.clock.flags & ~CY_TIME_PAUSED);
+    runtime_.frame_update(step.seconds);
     if (cy::Status staged = run_stages(cy::ecs::Stage::Frame, cy::ecs::Stage::UI); !staged) {
         return staged;
     }
     if (gi_->built()) {
-        if (cy::Status lit = gi_->update(hero_placement().translation, frame_ + 1U); !lit) {
+        if (cy::Status lit = gi_->update(drawn_hero().translation, frame_ + 1U); !lit) {
             return lit;
         }
     }
-    update_audio();
+    update_audio(presented);
     ++frame_;
     events_this_frame_ = 0;
     track();
     return cy::ok();
 }
 
-cy::Status ThirdPersonHost::fixed_tick() noexcept {
-    const u64 tick = frame_ + 1U;
+cy::Status ThirdPersonHost::fixed_tick(cy::Nanoseconds now) noexcept {
+    hero_before_ = hero_placement();
+    const u64 tick = ++tick_;
     host_.game.clock.tick = tick;
     input_adapter_.observe_pending();
-    input_.resolve_tick(tick, static_cast<cy::Nanoseconds>(tick) * kStepNs, kStep);
+    input_.resolve_tick(tick, now, kStep);
     runtime_.fixed_update(kStep);
     if (cy::Status staged =
             run_stages(cy::ecs::Stage::PreSimulation, cy::ecs::Stage::PostSimulation);
@@ -678,7 +738,7 @@ cy::Status ThirdPersonHost::fixed_tick() noexcept {
     return cy::ok();
 }
 
-cy::Status ThirdPersonHost::drive_camera() noexcept {
+cy::Status ThirdPersonHost::drive_camera(f32 seconds) noexcept {
     // THE GAME'S LAST REQUEST, as the orbit's intent: the yaw and pitch it moved by since the one
     // last applied, and its distance as the rig's one zoom parameter.
     const cy::game_backend::CameraAdapter::Framing* framing = camera_adapter_.framing(rig_);
@@ -701,7 +761,7 @@ cy::Status ThirdPersonHost::drive_camera() noexcept {
     }
     camera_.begin_frame();
     cy::camera::EvaluationContext context;
-    context.delta_seconds = kStep;
+    context.delta_seconds = seconds;
     context.aspect = static_cast<f32>(kViewportWidth) / static_cast<f32>(kViewportHeight);
     const auto evaluated = camera_.evaluate(rig_, context);
     if (!evaluated) {
@@ -776,9 +836,9 @@ void ThirdPersonHost::place_hero() noexcept {
     (void)tree_.propagate();
 }
 
-void ThirdPersonHost::update_audio() noexcept {
-    audio_adapter_.update(kStep);
-    audio_.update(kStep);
+void ThirdPersonHost::update_audio(f32 seconds) noexcept {
+    audio_adapter_.update(seconds);
+    audio_.update(seconds);
     const u32 mixed = audio_device_.advance(mix_scratch_.data(), kFramesPerTick);
     if (options_.mix != nullptr) {
         options_.mix->insert(options_.mix->end(), mix_scratch_.begin(),
@@ -879,6 +939,33 @@ f32 ThirdPersonHost::camera_fov() const noexcept {
 
 cy::Transform ThirdPersonHost::hero_placement() const noexcept {
     return hero_.local_transform();
+}
+
+cy::Transform ThirdPersonHost::drawn_hero() const noexcept {
+    const cy::Transform now = hero_placement();
+    if (interpolation_ <= 0.0) {
+        return now;
+    }
+    const auto ahead = static_cast<f32>(interpolation_);
+    cy::Transform drawn = now;
+    drawn.translation = now.translation + ((now.translation - hero_before_.translation) * ahead);
+    drawn.rotation = cy::nlerp(hero_before_.rotation, now.rotation, 1.0F + ahead);
+    return drawn;
+}
+
+CyInputPointer ThirdPersonHost::pointer() noexcept {
+    CyInputPointer out{};
+    out.struct_size = sizeof(out);
+    (void)input_adapter_.pointer(0, out);
+    return out;
+}
+
+void ThirdPersonHost::set_pointer_over_ui(bool over) noexcept {
+    input_adapter_.set_pointer_focus(0, true, over);
+}
+
+void ThirdPersonHost::ui_event(const CyUiEvent& event) noexcept {
+    (void)runtime_.ui_event(event);
 }
 
 cy::Span<const cy::Mat4> ThirdPersonHost::hero_pose() const noexcept {
