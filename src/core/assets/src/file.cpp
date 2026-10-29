@@ -824,12 +824,18 @@ Status read_whole(const char* path, Array<u8>& out) noexcept {
     return ok();
 }
 
-Status write_atomic(const char* path, const void* data, usize size) noexcept {
-    // <path>.<pid>.<serial>.cytmp — unique per process and per call, so two concurrent saves of one
-    // file do not overwrite each other's temporary and then rename twice.
-    char temporary[4096] = {};
+namespace {
+
+/// `<path>.<pid>.<serial>.cytmp` — unique per process and per call, so two concurrent saves of one
+/// file do not overwrite each other's temporary and then rename twice.
+using TemporaryName = char[4096];
+
+/// Write `data` to a fresh temporary beside `path`, flushed, and answer its name in `temporary`.
+/// The first half of both atomic writes; on failure nothing is left behind.
+Status write_temporary(const char* path, const void* data, usize size,
+                       TemporaryName& temporary) noexcept {
     const int written =
-        std::snprintf(temporary, sizeof(temporary), "%s.%llu.%llu%s", path,
+        std::snprintf(temporary, sizeof(TemporaryName), "%s.%llu.%llu%s", path,
                       static_cast<unsigned long long>(
 #if CY_ASSETS_POSIX_IO
                           ::getpid()
@@ -840,33 +846,100 @@ Status write_atomic(const char* path, const void* data, usize size) noexcept {
 #endif
                               ),
                       static_cast<unsigned long long>(next_temporary_serial()), kTemporarySuffix);
-    if (written < 0 || static_cast<usize>(written) >= sizeof(temporary)) {
+    if (written < 0 || static_cast<usize>(written) >= sizeof(TemporaryName)) {
         return fail(ErrorCode::InvalidArgument, "the path is too long for an atomic write");
     }
 
-    {
-        Expected<File, Error> file = File::open(temporary, FileMode::Write);
-        if (!file) {
-            return make_unexpected(file.error());
-        }
-        if (Status put = file.value().write(data, size); !put) {
-            (void)remove_file(temporary);
-            return put;
-        }
-        // Flushed BEFORE the rename. Without it the rename can be visible while the data is not,
-        // and the interrupted-save guarantee would hold for the directory entry and not for the
-        // contents it points at.
-        if (Status flushed = file.value().flush(); !flushed) {
-            (void)remove_file(temporary);
-            return flushed;
-        }
+    Expected<File, Error> file = File::open(temporary, FileMode::Write);
+    if (!file) {
+        return make_unexpected(file.error());
     }
+    if (Status put = file.value().write(data, size); !put) {
+        (void)remove_file(temporary);
+        return put;
+    }
+    // Flushed BEFORE the rename. Without it the rename can be visible while the data is not, and
+    // the interrupted-save guarantee would hold for the directory entry and not for the contents
+    // it points at.
+    if (Status flushed = file.value().flush(); !flushed) {
+        (void)remove_file(temporary);
+        return flushed;
+    }
+    return ok();
+}
 
+/// Give `from` the name `to` unless `to` already exists, in one step: `AlreadyExists` when it
+/// does, and the file at `to` is not touched. `from` is gone afterwards either way.
+///
+/// POSIX has no portable no-replace rename, but `link` refuses an existing name atomically; the
+/// temporary's own name is then dropped. Windows' `MoveFileEx` without
+/// `MOVEFILE_REPLACE_EXISTING` is the same operation.
+Status move_file_no_replace(const char* from, const char* to) noexcept {
+#if CY_ASSETS_POSIX_IO
+    if (::link(from, to) == 0) {
+        (void)remove_file(from);
+        return ok();
+    }
+    const int code = errno;
+    if (code == EEXIST) {
+        (void)remove_file(from);
+        return make_unexpected(Error{ErrorCode::AlreadyExists, "the file already exists", code});
+    }
+    if (code != EPERM && code != ENOTSUP) {
+        (void)remove_file(from);
+        return make_unexpected(Error{ErrorCode::Io, "the file could not be published", code});
+    }
+    // A filesystem without hard links (some network and FAT mounts). The check and the rename are
+    // two steps here, so a racing writer can still be replaced — by a file of the same name, which
+    // on POSIX is invisible to anyone holding the old one open.
+    if (exists(to)) {
+        (void)remove_file(from);
+        return fail(ErrorCode::AlreadyExists, "the file already exists");
+    }
+    if (Status moved = move_file(from, to); !moved) {
+        (void)remove_file(from);
+        return moved;
+    }
+    return ok();
+#elif CY_ASSETS_WIN32_IO
+    if (::MoveFileExA(from, to, 0) != 0) {
+        return ok();
+    }
+    const DWORD code = ::GetLastError();
+    (void)remove_file(from);
+    if (code == ERROR_ALREADY_EXISTS || code == ERROR_FILE_EXISTS) {
+        return make_unexpected(
+            Error{ErrorCode::AlreadyExists, "the file already exists", static_cast<i64>(code)});
+    }
+    return make_unexpected(
+        Error{ErrorCode::Io, "the file could not be published", static_cast<i64>(code)});
+#else
+    (void)remove_file(from);
+    (void)to;
+    return fail(ErrorCode::Unsupported, "file access is not implemented for this platform");
+#endif
+}
+
+}  // namespace
+
+Status write_atomic(const char* path, const void* data, usize size) noexcept {
+    TemporaryName temporary = {};
+    if (Status written = write_temporary(path, data, size, temporary); !written) {
+        return written;
+    }
     if (Status moved = move_file(temporary, path); !moved) {
         (void)remove_file(temporary);
         return moved;
     }
     return ok();
+}
+
+Status write_atomic_no_replace(const char* path, const void* data, usize size) noexcept {
+    TemporaryName temporary = {};
+    if (Status written = write_temporary(path, data, size, temporary); !written) {
+        return written;
+    }
+    return move_file_no_replace(temporary, path);
 }
 
 Expected<usize, Error> discard_temporaries(const char* directory) noexcept {

@@ -22,9 +22,14 @@
 #include <filesystem>
 #include <system_error>
 
+#if !defined(_WIN32)
+#    include <sys/stat.h>
+#endif
+
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -678,4 +683,124 @@ CY_TEST_CASE("the service speaks a structured protocol, and degrades to local wi
     CY_REQUIRE(plain.has_value());
     CY_CHECK_EQ(artefact_bytes(*plain, local.artefacts()),
                 artefact_bytes(*report, service.artefacts()));
+}
+
+namespace {
+
+/// The file's identity, so a test can tell "left in place" from "replaced by identical bytes".
+/// Windows answers 0 here (its `stat` reports no inode), which is why the race case below also
+/// holds the entry open: there, a replace of an open file is refused outright.
+[[nodiscard]] u64 file_identity(const std::string& path) {
+#if defined(_WIN32)
+    CY_REQUIRE(assets::fs::exists(path.c_str()));
+    return 0;
+#else
+    struct stat status{};
+    CY_REQUIRE(::stat(path.c_str(), &status) == 0);
+    return static_cast<u64>(status.st_ino);
+#endif
+}
+
+/// The second writer of the race: it puts the same artefact through a store of its own over the
+/// same root, in the window between the first writer's existence check and its publish, and then
+/// holds the published entry open the way a concurrent `get` (or a virus scanner) does.
+struct Rival {
+    ArtefactStore store;
+    std::string content;
+    StoreOutcome outcome = StoreOutcome::AlreadyPresent;
+    bool stored = false;
+    u64 identity = 0;
+    std::optional<assets::File> reader;
+};
+
+void rival_publishes_first(void* user, const std::string& path) {
+    Rival& rival = *static_cast<Rival*>(user);
+    rival.stored =
+        rival.store.put(rival.content.data(), rival.content.size(), &rival.outcome).has_value();
+    Expected<assets::File, Error> opened = assets::File::open(path.c_str(), assets::FileMode::Read);
+    if (opened) {
+        rival.reader = std::move(opened.value());
+    }
+    rival.identity = file_identity(path);
+}
+
+}  // namespace
+
+CY_TEST_CASE("two writers of one artefact: the second finds it present and leaves it in place") {
+    // The Windows `integration.material_cook` failure, made deterministic. Eight material nodes on
+    // four workers produce three distinct artefacts, so two workers routinely put the SAME artefact
+    // at once: both find it absent, the first publishes it, and the second published over it with
+    // a replacing rename. Windows refuses to replace a file someone has open, so the second node
+    // failed with "the artefact could not be stored" in roughly one run in thirty. The probe puts
+    // the rival's publish, and an open reader, exactly in that window.
+    cy::test::TempDir temp("build-store-race");
+    CY_REQUIRE(temp.valid());
+    const std::string root = temp.path() + "/store";
+
+    ArtefactStore store;
+    CY_REQUIRE(store.configure(root).has_value());
+    Rival rival;
+    rival.content = "one artefact, produced by two nodes at once";
+    CY_REQUIRE(rival.store.configure(root).has_value());
+    store.set_publish_probe(&rival_publishes_first, &rival);
+
+    StoreOutcome outcome = StoreOutcome::Written;
+    const Expected<assets::ContentHash, Error> digest =
+        store.put(rival.content.data(), rival.content.size(), &outcome);
+    store.set_publish_probe(nullptr, nullptr);
+
+    CY_REQUIRE(rival.stored);
+    CY_CHECK_EQ(rival.outcome, StoreOutcome::Written);
+    CY_REQUIRE_MESSAGE(digest.has_value(), "the losing writer failed: ",
+                       digest.has_value() ? "" : digest.error().message);
+    CY_CHECK_EQ(outcome, StoreOutcome::AlreadyPresent);
+    CY_CHECK_EQ(store.statistics().writes, 0U);
+    CY_CHECK_EQ(store.statistics().already_present, 1U);
+
+    // The published entry is the rival's file, not a replacement of it, and it still verifies.
+    const std::string path = store.path_of(*digest);
+    CY_CHECK_EQ(file_identity(path), rival.identity);
+    rival.reader.reset();
+    CY_CHECK(store.verify(*digest).has_value());
+    const std::string directory = path.substr(0, path.rfind('/'));
+    const Expected<usize, Error> leftovers = assets::fs::discard_temporaries(directory.c_str());
+    CY_REQUIRE(leftovers.has_value());
+    CY_CHECK_EQ(*leftovers, 0U);
+}
+
+CY_TEST_CASE("many workers putting one artefact at once all succeed, and one of them writes it") {
+    // The same race without a seam, as the build service meets it: sixteen threads released
+    // together, each storing identical bytes. Every put answers the digest; exactly one publishes.
+    cy::test::TempDir temp("build-store-stampede");
+    CY_REQUIRE(temp.valid());
+    ArtefactStore store;
+    CY_REQUIRE(store.configure(temp.path() + "/store").has_value());
+
+    constexpr u32 kWriters = 16;
+    constexpr u32 kRounds = 8;
+    for (u32 round = 0; round < kRounds; ++round) {
+        const std::string content = "stampede round " + std::to_string(round);
+        std::atomic<u32> waiting{kWriters};
+        std::atomic<u32> failures{0};
+        std::vector<std::thread> writers;
+        writers.reserve(kWriters);
+        for (u32 writer = 0; writer < kWriters; ++writer) {
+            writers.emplace_back([&] {
+                waiting.fetch_sub(1, std::memory_order_acq_rel);
+                while (waiting.load(std::memory_order_acquire) != 0) {
+                    std::this_thread::yield();
+                }
+                if (!store.put(content.data(), content.size()).has_value()) {
+                    failures.fetch_add(1, std::memory_order_relaxed);
+                }
+            });
+        }
+        for (std::thread& writer : writers) {
+            writer.join();
+        }
+        CY_CHECK_EQ(failures.load(), 0U);
+    }
+    const StoreStatistics statistics = store.statistics();
+    CY_CHECK_EQ(statistics.writes, u64{kRounds});
+    CY_CHECK_EQ(statistics.writes + statistics.already_present, u64{kRounds} * kWriters);
 }

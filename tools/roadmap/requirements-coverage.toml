@@ -4271,7 +4271,7 @@ row = "build-and-packaging"
 requirement = "Artefacts are immutable"
 evidence = "test:integration.build_service"
 case = "an artefact mutated in place is reported rather than served"
-note = "An artefact's name is its digest, written 0444. This case edits a stored artefact in place and requires the store to report it rather than serve it, which is 'Identity implies content'. artefact_store.h documents the concurrency model: writes are atomic per output and there is no project lock above `fs::write_atomic`. NOT TESTED: 'Concurrent builds do not conflict' has no case running two builds against one store at once. 'independent nodes run in parallel, and the result does not depend on how many did' is concurrency inside one build."
+note = "An artefact's name is its digest, written 0444. This case edits a stored artefact in place and requires the store to report it rather than serve it, which is 'Identity implies content'. artefact_store.h documents the concurrency model: writes are atomic per output, published with `fs::write_atomic_no_replace`, and there is no project lock above it. 'Two writers of one artefact' is the cases 'two writers of one artefact: the second finds it present and leaves it in place' (a probe puts a rival publish and an open reader between the existence check and the publish; the loser reports AlreadyPresent and the entry keeps its inode) and 'many workers putting one artefact at once all succeed, and one of them writes it'. NOT TESTED: 'Concurrent builds do not conflict' has no case running two builds against one store at once. 'independent nodes run in parallel, and the result does not depend on how many did' is concurrency inside one build."
 
 [[coverage]]
 row = "build-and-packaging"

@@ -478,9 +478,10 @@ NodeResult BuildService::run_producer(Run& run, NodeId id, const assets::Derivat
                       [](const NodeOutput& a, const NodeOutput& b) { return a.name < b.name; });
     for (const NodeOutput& output : result.outputs) {
         const std::string& content = context.output_bytes(output.name);
-        if (!artefacts_.put(content.data(), content.size())) {
+        if (auto stored = artefacts_.put(content.data(), content.size()); !stored) {
             result.outcome = NodeOutcome::Failed;
-            result.reason = "the artefact could not be stored";
+            result.reason =
+                std::string("the artefact could not be stored: ") + stored.error().message;
             return result;
         }
         result.bytes_produced += output.size;

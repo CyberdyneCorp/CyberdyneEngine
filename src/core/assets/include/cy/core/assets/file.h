@@ -176,6 +176,18 @@ inline constexpr const char* kTemporarySuffix = ".cytmp";
 /// contents or entirely the new.
 [[nodiscard]] Status write_atomic(const char* path, const void* data, usize size) noexcept;
 
+/// `write_atomic` for a file that, once written, never changes: the temporary is published under
+/// `path` only if nothing is there yet, and `AlreadyExists` is answered — with the file at `path`
+/// untouched — when something is.
+///
+/// For content-addressed stores, where the name is the digest and a second writer of one name is
+/// writing the same bytes. Replacing is not merely redundant there, it is a hazard on Windows:
+/// `MoveFileEx` cannot replace a file another thread or process has open (a reader, a concurrent
+/// rename finishing, a virus scanner), so two workers producing one artefact made one of them
+/// fail. Not replacing means the second writer never touches the published file at all.
+[[nodiscard]] Status write_atomic_no_replace(const char* path, const void* data,
+                                             usize size) noexcept;
+
 /// Remove the temporaries an interrupted save left in a directory. Called at start-up on the user
 /// mount; it is the second half of the interrupted-save requirement, and it reports how many it
 /// removed so that a repeated crash is visible rather than silent.

@@ -254,7 +254,9 @@ CY_TEST_CASE("material_cook: the producer is safe to run on several workers at o
         name += static_cast<char>('a' + static_cast<char>(index));
         name += ".cymat";
         std::string source = kWornMetal;
-        // Each one differs, so no two nodes share a key and every worker does real work.
+        // Each node has its own key, so every worker does real work, but only three distinct
+        // bundles come out of the eight nodes: workers routinely store the SAME artefact at once,
+        // which is the race the artefact store's no-replace publish exists for.
         const usize position = source.find("0.35");
         CY_REQUIRE_NE(position, std::string::npos);
         source.replace(position, 4, index % 2 == 0 ? "0.41" : "0.42");
@@ -271,6 +273,10 @@ CY_TEST_CASE("material_cook: the producer is safe to run on several workers at o
         CY_REQUIRE(service.configure(std::move(config)).has_value());
         auto report = service.build();
         CY_REQUIRE(report.has_value());
+        for (const NodeResult& node : report.value().nodes) {
+            CY_CHECK_MESSAGE(node.outcome != NodeOutcome::Failed, "run ", run, ": ", node.name,
+                             " failed: ", node.reason);
+        }
         CY_CHECK_EQ(report.value().failed, 0U);
         CY_CHECK_EQ(report.value().nodes.size(), 8U);
         if (run == 0) {

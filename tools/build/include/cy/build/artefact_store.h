@@ -29,10 +29,13 @@
 //
 // --- WRITES ARE ATOMIC AND CONCURRENCY-SAFE, WITH NO PROJECT LOCK --------------------------------
 //
-// Every write goes to a temporary in the same directory and is renamed into place, so a reader
-// never observes a partial artefact and two builds producing the same artefact write the same bytes
-// to the same name. That is the whole locking story: `fs::write_atomic` is the per-output lock the
-// specification asks for, and there is no lock above it.
+// Every write goes to a temporary in the same directory and is published under its name only if the
+// name is still free (`fs::write_atomic_no_replace`), so a reader never observes a partial artefact
+// and of two builds producing the same artefact, the first publishes it and the second finds it
+// present. The second never REPLACES the first's file: on Windows a replace fails while anyone has
+// the file open, which made a parallel build fail one node in a few dozen runs. That is the whole
+// locking story: the no-replace publish is the per-output lock the specification asks for, and
+// there is no lock above it.
 
 #include <cy/core/assets/hash.h>
 #include <cy/core/base/expected.h>
@@ -115,10 +118,22 @@ public:
     /// between stores.
     [[nodiscard]] std::string path_of(const assets::ContentHash& digest) const;
 
+    /// Called by `put` after it has found the entry absent and before it publishes it, with the
+    /// entry's path. A test seam: it lets a test put the same artefact from a second writer in that
+    /// window, which is the interleaving two workers producing one artefact meet. Set it while no
+    /// `put` is running; null removes it.
+    using PublishProbe = void (*)(void* user, const std::string& path);
+    void set_publish_probe(PublishProbe probe, void* user) noexcept {
+        publish_probe_ = probe;
+        publish_probe_user_ = user;
+    }
+
 private:
     void count_read(u64 bytes) const noexcept;
 
     std::string root_;
+    PublishProbe publish_probe_ = nullptr;
+    void* publish_probe_user_ = nullptr;
     mutable std::atomic<u64> writes_{0};
     mutable std::atomic<u64> already_present_{0};
     mutable std::atomic<u64> reads_{0};

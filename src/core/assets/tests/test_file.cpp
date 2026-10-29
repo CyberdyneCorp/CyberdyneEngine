@@ -113,6 +113,25 @@ CY_TEST_CASE("An atomic write replaces the file whole and leaves no temporary") 
     CY_CHECK_EQ(leftovers.value(), 0u);
 }
 
+CY_TEST_CASE("A no-replace atomic write publishes once and then leaves the file alone") {
+    const test::TempDir directory("atomic_no_replace");
+    const std::string entry = directory.file("entry.cyart");
+    const char first[] = "first";
+    const char second[] = "second, and longer";
+    CY_REQUIRE(fs::write_atomic_no_replace(entry.c_str(), first, sizeof(first) - 1).has_value());
+    CY_CHECK(read_file(entry) == "first");
+
+    const cy::Status again = fs::write_atomic_no_replace(entry.c_str(), second, sizeof(second) - 1);
+    CY_REQUIRE_FALSE(again.has_value());
+    CY_CHECK_EQ(again.error().code, cy::ErrorCode::AlreadyExists);
+    CY_CHECK(read_file(entry) == "first");
+
+    // The refused write's temporary is gone too: a store that loses a race leaves nothing behind.
+    const auto leftovers = fs::discard_temporaries(directory.c_str());
+    CY_REQUIRE(leftovers.has_value());
+    CY_CHECK_EQ(leftovers.value(), 0u);
+}
+
 CY_TEST_CASE("Directories are created, enumerated in order, moved, copied and removed") {
     const test::TempDir directory("directories");
     CY_REQUIRE(fs::create_directories(directory.file("a/b").c_str()).has_value());
