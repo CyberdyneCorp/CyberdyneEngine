@@ -1,0 +1,66 @@
+# Mutations applied to the shipped sources, each rebuilt (the Swift game module too, where the
+# mutation is in it), the targeted suite run whole, and the source restored and rebuilt.
+# Driver: apply -> ninja (the suite's targets) -> ctest -R <suite> -> restore.
+# Host: Linux, NVIDIA RTX 5060 (Vulkan 1.4), Development build, GCC 13, Swift 6.3.3.
+# Every mutation below turned its suite RED; the suites are green on the restored tree. M1 and M2
+# were run on the tree rebased onto #149 (whose event injector this change extends); M0 and M3 to
+# M8 on the tree before it, whose game, host and tests are the same.
+#
+# M0 is the Vulkan resize as it was before main's fix (#149, which found the same defect); this
+# change's smoke.rts_api_play is a second regression test of it. Its first run was reported
+# green because smoke.rts_api_play's skip expression matched a message the test itself printed on
+# its skip path; that message was removed, so only the child's own "no requested graphics device"
+# skips the suite, and the run below is the second.
+== M0 the Vulkan resize as it was: the caller's handle destroyed, the rebuilt one's never returned
+   ^smoke.rts_api_play$: RED
+   rts-api: --play: resize_swapchain(): stale handle
+   TEST CASE:  rts api play on a device: a skirmish played to victory at 1080p within 16.7 ms
+   samples/13-rts-api/tests/test_rts_api_play_device.cpp:62: FATAL ERROR: REQUIRE_EQ( run.exit_code, 0 ) is NOT correct!
+== M1 the pointer mapping ignored: window coordinates forwarded as they are
+   ^integration.sdl3_input$: RED
+   TEST CASE:  sdl3 input: the pointer mapping turns window coordinates into the view's
+   platform/desktop-sdl3/tests/test_input_source.cpp:270: ERROR: CHECK_EQ( fixture.server.pending()[2].value, 640.0F ) is NOT correct!
+== M2 an injected wheel turns the other way
+   ^integration.sdl3_input$: RED
+   TEST CASE:  sdl3 input: an injected wheel turns by its notches, and draining empties the queue
+   platform/desktop-sdl3/tests/test_input_source.cpp:292: ERROR: CHECK_EQ( pending[0].value, -2.0F ) is NOT correct!
+== M3 a right click orders the first selected unit only
+   ^integration.rts_api_play$: RED
+   TEST CASE:  rts api play: a box picks the swordsmen and a right click orders them to attack
+   samples/13-rts-api/tests/test_rts_api_play.cpp:171: ERROR: CHECK_EQ( number_after(skirmish, "attacks="), 6.0 ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:190: ERROR: CHECK( attacked == kBoxed ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:196: ERROR: CHECK_EQ( unit.stance, kAttack ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:197: ERROR: CHECK_EQ( unit.target, kTarget ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:196: ERROR: CHECK_EQ( unit.stance, kAttack ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:196: ERROR: CHECK_EQ( unit.stance, kAttack ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:197: ERROR: CHECK_EQ( unit.target, kTarget ) is NOT correct!
+== M4 a box picks only the unit under the button's release, as a click
+   ^integration.rts_api_play$: RED
+   TEST CASE:  rts api play: a box picks the swordsmen and a right click orders them to attack
+   samples/13-rts-api/tests/test_rts_api_play.cpp:168: ERROR: CHECK_EQ( number_after(skirmish, "selected="), 6.0 ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:169: ERROR: CHECK_EQ( number_after(skirmish, "outlined="), 6.0 ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:171: ERROR: CHECK_EQ( number_after(skirmish, "attacks="), 6.0 ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:190: ERROR: CHECK( attacked == kBoxed ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:196: ERROR: CHECK_EQ( unit.stance, kAttack ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:197: ERROR: CHECK_EQ( unit.target, kTarget ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:196: ERROR: CHECK_EQ( unit.stance, kAttack ) is NOT correct!
+== M5 the camera pans along its view instead of its right
+   ^integration.rts_api_play$: RED
+   TEST CASE:  rts api play: a box picks the swordsmen and a right click orders them to attack
+   samples/13-rts-api/tests/test_rts_api_play.cpp:211: ERROR: CHECK( std::fabs(focus_x - start_x) < 0.05 ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:212: ERROR: CHECK( std::fabs((focus_z - start_z) - kPan) < 0.05 ) is NOT correct!
+== M6 a replay records each order one tick late
+   ^integration.rts_api_play$: RED
+   TEST CASE:  rts api play: the recorded command log replays to the same digest, and only it
+   samples/13-rts-api/tests/test_rts_api_play.cpp:234: ERROR: CHECK_EQ( number_after(replay, "match="), 1.0 ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:235: ERROR: CHECK_EQ( word_after(replay, "digest="), word_after(recorded, "digest=") ) is NOT correct!
+   samples/13-rts-api/tests/test_rts_api_play.cpp:236: ERROR: CHECK_EQ( word_after(replay, "follower="), word_after(recorded, "follower=") ) is NOT correct!
+== M7 the host ignores the game's pause
+   ^integration.rts_api_play$: RED
+   TEST CASE:  rts api play: P holds the session, and the Esc menu resumes it and quits
+   samples/13-rts-api/tests/test_rts_api_play.cpp:297: ERROR: CHECK_EQ( number_after(session, "ticks="), frames - (held - 1.0) ) is NOT correct!
+== M8 the replay's comparison says it matched whatever it compared
+   ^integration.rts_api_play$: RED
+   TEST CASE:  rts api play: the recorded command log replays to the same digest, and only it
+   samples/13-rts-api/tests/test_rts_api_play.cpp:263: ERROR: CHECK_EQ( number_after(line_with(moved.output, "rts replay"), "match="), 0.0 ) is NOT correct!
+restored and rebuilt: ok

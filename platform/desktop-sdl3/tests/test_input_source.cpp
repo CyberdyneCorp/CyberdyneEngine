@@ -21,6 +21,7 @@
 
 #include <SDL3/SDL.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/platform/sdl3_event_injector.h>
 #include <cy/platform/sdl3_input_source.h>
 #include <cy/test/test.h>
 
@@ -236,4 +237,64 @@ CY_TEST_CASE("sdl3 input: detaching stops the watch") {
     // Nothing more arrived: a source that kept forwarding after detachment would be a dangling
     // callback into an `InputServer` the caller believes it has finished with.
     CY_CHECK_EQ(fixture.server.pending().size(), 1);
+}
+
+CY_TEST_CASE("sdl3 input: the pointer mapping turns window coordinates into the view's") {
+    const SdlEvents sdl;
+    CY_REQUIRE(sdl.initialised);
+    Fixture fixture;
+    CY_REQUIRE(fixture.start());
+    CY_REQUIRE(fixture.source.attach(fixture.server).has_value());
+
+    // A 1280 x 720 view drawn into a 2560 x 1600 window: twice the size, with 80-pixel bars above
+    // and below. A pointer at the window's (1280, 880) is the middle of the view's bottom half.
+    cy::PointerMapping mapping;
+    mapping.scale_x = 0.5F;
+    mapping.scale_y = 0.5F;
+    mapping.offset_y = 80.0F;
+    fixture.source.set_pointer_mapping(mapping);
+
+    SDL_Event event{};
+    event.type = SDL_EVENT_MOUSE_MOTION;
+    event.motion.timestamp = 900;
+    event.motion.x = 1280.0F;
+    event.motion.y = 880.0F;
+    event.motion.xrel = 8.0F;
+    event.motion.yrel = -6.0F;
+    (void)SDL_PushEvent(&event);
+
+    CY_REQUIRE_EQ(fixture.server.pending().size(), 4);
+    // The relative motion is scaled and never offset; the position is both.
+    CY_CHECK_EQ(fixture.server.pending()[0].value, 4.0F);
+    CY_CHECK_EQ(fixture.server.pending()[1].value, 3.0F);
+    CY_CHECK_EQ(fixture.server.pending()[2].value, 640.0F);
+    CY_CHECK(fixture.server.pending()[3].control ==
+             cy::input::mouse_control(cy::input::MouseControl::PositionY));
+    CY_CHECK_EQ(fixture.server.pending()[3].value, 400.0F);
+
+    fixture.source.detach();
+}
+
+CY_TEST_CASE("sdl3 input: an injected wheel turns by its notches, and draining empties the queue") {
+    const SdlEvents sdl;
+    CY_REQUIRE(sdl.initialised);
+    Fixture fixture;
+    CY_REQUIRE(fixture.start());
+    CY_REQUIRE(fixture.source.attach(fixture.server).has_value());
+
+    cy::Sdl3EventInjector hand;
+    CY_REQUIRE(hand.mouse_wheel(-2.0F, 300.0F, 200.0F).has_value());
+    CY_CHECK_EQ(hand.pushed(), 1U);
+    // The wheel's two axes, the vertical one by the notches pushed: what an RTS camera zooms by.
+    const auto& pending = fixture.server.pending();
+    CY_REQUIRE_EQ(pending.size(), 2U);
+    CY_CHECK(pending[0].control == cy::input::mouse_control(cy::input::MouseControl::Wheel));
+    CY_CHECK_EQ(pending[0].value, -2.0F);
+    CY_CHECK_EQ(pending[0].source, cy::input::EventSource::Physical);
+
+    // A host with no display server pumping drains the queue itself; the watch has seen it all.
+    CY_CHECK(SDL_HasEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST));
+    cy::Sdl3EventInjector::drain();
+    CY_CHECK_FALSE(SDL_HasEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST));
+    fixture.source.detach();
 }

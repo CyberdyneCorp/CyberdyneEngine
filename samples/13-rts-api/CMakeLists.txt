@@ -161,6 +161,9 @@ cy_add_module(
         host/illumination.cpp
         host/fog.cpp
         host/battle_host.cpp
+        host/replay.cpp
+        host/input_script.cpp
+        host/play.cpp
     PRIVATE_DEFINITIONS
         "CY_RTS_API_MODULE_LIBRARY=\"${CY_RTS_API_MODULE_LIBRARY}\""
         "CY_RTS_API_MODULE_MANIFEST=\"${CY_RTS_API_MODULE_MANIFEST}\""
@@ -186,7 +189,12 @@ cy_add_module(
         cy::servers-input
         cy::servers-audio
         cy::servers-camera
-        cy::servers-physics)
+        cy::servers-physics
+        # `--play`: the platform's keyboard, mouse and window, the selection outlines' component the
+        # game marks what the player picked with, and the widget toolkit its menus are made with.
+        cy::platform-desktop-sdl3
+        cy::rendering-selection
+        cy::ui-toolkit)
 add_dependencies(cy_sample_rts-api cy_sample_rts-api_game)
 
 # ABI 1.16's battle looks like one only with the VFX runtime: its five effects are authored as the
@@ -221,12 +229,14 @@ if(CY_RENDERER_VULKAN)
     target_compile_definitions(cy_sample_rts-api PRIVATE CY_RTS_API_RENDER=1)
     # `--map <package>`: the session drawn on the RTS test map, which needs the map's loader.
     if(TARGET cy_sample_rts_map)
-        target_sources(cy_sample_rts-api PRIVATE host/map_render.cpp)
+        # `--play`'s window draws the map too, and presents it with host/present_pass.*.
+        target_sources(cy_sample_rts-api PRIVATE host/map_render.cpp host/present_pass.cpp)
         target_link_libraries(cy_sample_rts-api PRIVATE
                               cy_sample_rts_map cy::rendering-skinning cy::rendering-occlusion
                               cy::rendering-lighting cy::rendering-material cy::rendering-minimap
                               cy::ui-render)
-        target_compile_definitions(cy_sample_rts-api PRIVATE CY_RTS_API_MAP=1)
+        target_compile_definitions(cy_sample_rts-api PRIVATE CY_RTS_API_MAP=1
+                                   "CY_RTS_API_MAP_PACKAGE=\"${CY_RTS_MAP_PACKAGE}\"")
         add_dependencies(cy_sample_rts-api cy_rts_map_package)
     endif()
 endif()
@@ -252,6 +262,24 @@ if(CY_BUILD_TESTS)
                                PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke"
                                        "${CMAKE_CURRENT_SOURCE_DIR}/host")
     add_dependencies(cy_test_integration_rts_api_sample cy_sample_rts-api)
+
+    # integration.rts_api_play: `--play --headless`, a written hand pushed through SDL's queue — a
+    # select-and-attack, a camera scroll, the command log replayed, pause and the menu. SDL's event
+    # subsystem needs no display, so it runs on every CI leg.
+    cy_add_test(
+        NAME rts_api_play
+        KIND integration
+        SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rts_api_play.cpp"
+                "${CMAKE_CURRENT_SOURCE_DIR}/host/input_script.cpp"
+        DEPENDENCIES cy::core-base cy::servers-input
+        DEFINITIONS
+            CY_SAMPLE_RTS_API="$<TARGET_FILE:cy_sample_rts-api>"
+            CY_RTS_API_PLAY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/play"
+            CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+    target_include_directories(cy_test_integration_rts_api_play
+                               PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke"
+                                       "${CMAKE_CURRENT_SOURCE_DIR}/host")
+    add_dependencies(cy_test_integration_rts_api_play cy_sample_rts-api)
 
     # render.rts_api_hud: the Swift HUD against samples/13-rts-selection's C++ HUD, on a device.
     # It loads the game module into the test process and draws over the pipeline suites' one scene,
@@ -341,6 +369,27 @@ if(CY_BUILD_TESTS)
             target_link_libraries(cy_test_smoke_rts_api_map PRIVATE cy::game-backend-lockstep)
             add_dependencies(cy_test_smoke_rts_api_map cy_sample_rts-api cy_rts_map_package)
             set_tests_properties(smoke.rts_api_map PROPERTIES
+                                 SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine"
+                                 RUN_SERIAL TRUE)
+        endif()
+
+        # smoke.rts_api_play: `--play` in a window on a device — a skirmish played to victory by a
+        # written hand through SDL's queue, its frame at 1080p within 16.7 ms, the swapchain
+        # rebuilt through two resizes, and no validation error. RUN_SERIAL for its timing.
+        if(TARGET cy_sample_rts_map)
+            cy_add_test(
+                NAME rts_api_play
+                KIND smoke
+                SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rts_api_play_device.cpp"
+                DEPENDENCIES cy::core-base
+                DEFINITIONS
+                    CY_SAMPLE_RTS_API="$<TARGET_FILE:cy_sample_rts-api>"
+                    CY_RTS_MAP_PACKAGE="${CY_RTS_MAP_PACKAGE}"
+                    CY_RTS_API_PLAY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/play")
+            target_include_directories(cy_test_smoke_rts_api_play
+                                       PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke")
+            add_dependencies(cy_test_smoke_rts_api_play cy_sample_rts-api cy_rts_map_package)
+            set_tests_properties(smoke.rts_api_play PROPERTIES
                                  SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine"
                                  RUN_SERIAL TRUE)
         endif()

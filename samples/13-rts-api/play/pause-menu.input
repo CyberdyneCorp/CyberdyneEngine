@@ -1,0 +1,19 @@
+# integration.rts_api_play: the pause key, the Esc menu's Resume and Quit, through SDL's queue.
+0   move 640 360
+# P pauses and P goes on: a second the session holds while frames still run.
+10  key p down
+11  key p up
+70  key p down
+71  key p up
+# Esc opens the menu, which holds the session too; its Resume button lets it go on.
+100 key escape down
+101 key escape up
+110 aim ui resume
+112 press left
+114 release left
+# Esc again, and the menu's Quit ends the session: the game asks, the host stops.
+150 key escape down
+151 key escape up
+160 aim ui quit-menu
+162 press left
+164 release left

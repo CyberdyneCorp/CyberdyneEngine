@@ -157,11 +157,22 @@ struct Battle {
 
     // --- State -----------------------------------------------------------------------------
 
+    /// Who gives the orders. `scripted` is the plan above; `skirmish` is a player's hand and an
+    /// opponent's (Skirmish.swift), so every unit is enlisted in a group of its own and can be
+    /// ordered alone — the session addresses a group, never a unit.
+    enum Mode {
+        case scripted
+        case skirmish
+    }
+
     /// The units, in enlistment order, their kinds, and the soldier each is drawn as (null once
     /// the game has taken a fallen one off the field).
     private(set) var units: [UInt32] = []
-    private var kinds: [Kind] = []
-    private var soldiers: [Entity] = []
+    private(set) var kinds: [Kind] = []
+    private(set) var soldiers: [Entity] = []
+    private(set) var mode = Mode.scripted
+    /// Each unit's group: its squad's in a scripted battle, its own in a skirmish.
+    private(set) var groups: [UInt32] = []
     private(set) var structures: [UInt32] = []
     /// The first event not yet read.
     private var cursor: UInt64 = 0
@@ -171,15 +182,17 @@ struct Battle {
 
     /// `onCreate`: a soldier spawned for every unit — the node the fog of war places its vision
     /// by — enlisted, armed and given its side's sight; then red's buildings.
-    mutating func create(soldier prefab: Prefab) throws {
+    mutating func create(soldier prefab: Prefab, mode: Mode = .scripted) throws {
+        self.mode = mode
         for squad in Battle.squads {
             for index in 0..<squad.count {
                 let at = Battle.spawn(squad, index)
                 let soldier = try prefab.instantiate(
                     at: Pose(position: Battle.level(at, height: 0)))
+                let group = mode == .skirmish ? UInt32(units.count) : squad.group
                 let unit = try Lockstep.enlist(
                     .init(
-                        group: squad.group, entity: soldier, position: at,
+                        group: group, entity: soldier, position: at,
                         radius: squad.kind == .catapult ? Battle.quarters(4) : .zero,
                         maxSpeed: squad.kind == .catapult ? Battle.quarters(12) : .zero))
                 try Lockstep.arm(unit, Battle.arms(squad.kind))
@@ -189,6 +202,7 @@ struct Battle {
                 units.append(unit)
                 kinds.append(squad.kind)
                 soldiers.append(soldier)
+                groups.append(group)
             }
         }
         for building in Battle.buildings {
@@ -209,7 +223,7 @@ struct Battle {
     /// taken off the field so they no longer see.
     mutating func step() throws {
         let tick = try Lockstep.status.tick
-        for planned in Battle.plan where planned.tick == tick {
+        for planned in Battle.plan where mode == .scripted && planned.tick == tick {
             let point = FixedVec2(x: Battle.quarters(planned.x), y: Battle.quarters(planned.z))
             try Lockstep.order(
                 planned.attack
@@ -240,6 +254,11 @@ struct Battle {
         if frames % 15 == 0 {
             try smokeDamagedBuildings()
         }
+    }
+
+    /// An order the game gave from elsewhere (a player's or an opponent's), counted with the plan's.
+    mutating func countOrder() {
+        tally.orders += 1
     }
 
     /// Where blue's living army stands, in the level's metres: what the camera follows.

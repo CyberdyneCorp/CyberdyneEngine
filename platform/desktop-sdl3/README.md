@@ -27,8 +27,8 @@ task 3.2.4. A fourth desktop platform is a fourth file and one branch in `CMakeL
 | `include/cy/platform/sdl3_event_injector.h` | `Sdl3EventInjector` — synthetic input as REAL SDL events on SDL's own queue: keys, the mouse, a window's focus, and a virtual gamepad through SDL's virtual joystick. What a played game's tests and captures push their hands through (`samples/play`) |
 | `src/sdl3_platform.cpp` | every SDL call for the process services |
 | `src/sdl3_display_server.cpp` | every SDL call for windows, screens and events |
-| `src/sdl3_input_source.cpp` | every SDL call for keyboards, mice and gamepads |
-| `src/sdl3_event_injector.cpp` | the injector: the input source's translations run backwards (`src/sdl3_controls.h`), so an injected key is the scancode a person's press of it carries |
+| `src/sdl3_input_source.cpp` | every SDL call for keyboards, mice and gamepads, and the window-to-view pointer mapping |
+| `src/sdl3_event_injector.cpp` | the injector: the input source's translations run backwards (`src/sdl3_controls.h`), so an injected key is the scancode a person's press of it carries; and `Sdl3EventSystem`, SDL's event subsystem alone |
 | `src/host/host.h` | the four host services SDL3 has no API for |
 | `src/host/host_linux.cpp` | `/proc/self/exe`, `/proc/meminfo`, the X11 and Wayland handles |
 | `src/host/host_macos.cpp` | `_NSGetExecutablePath`, mach memory statistics, the `NSWindow` — **unverified** |
@@ -74,6 +74,16 @@ restating it.
 "Fixed-step input handling" requirement — the platform layer's whole obligation is to deliver every
 transition with its timestamp, and `src/servers/input/` resolves them per tick.
 `integration.sdl3_input` drives it headlessly with synthetic SDL events.
+
+**A view of another size.** A host that draws a fixed-size view scaled and letterboxed into a
+window of any size sets `Sdl3InputSource::set_pointer_mapping` (`cy::PointerMapping`, `view =
+(window - offset) * scale`), and every pointer position and motion forwarded from then on is in the
+view's pixels — converted once, where the coordinate is first read. The identity by default.
+
+**A hand with no display.** `Sdl3EventSystem` brings SDL's event subsystem up alone, and
+`Sdl3EventInjector::mouse_wheel` and `drain` let a host with no display server push a wheel's turn
+and empty the queue itself: `samples/13-rts-api --play --headless --input` plays a whole skirmish
+that way, and `integration.sdl3_input` covers both.
 
 What is genuinely still absent is the rest of `core-platform-abstraction`'s "Clipboard, dialogs, and
 system integration": clipboard text and images, native file and message dialogs, cursors, IME and

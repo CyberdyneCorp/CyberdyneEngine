@@ -23,6 +23,25 @@
 
 namespace cy {
 
+/// SDL's event subsystem alone: no video, no window, no display. What a host that feeds its input
+/// through SDL but draws nothing brings up — a headless run of a game a person would play in a
+/// window, driven by `Sdl3EventInjector`. A host with a window has the display server bring SDL up
+/// instead, and needs none of this.
+class Sdl3EventSystem {
+public:
+    Sdl3EventSystem() = default;
+    ~Sdl3EventSystem() { stop(); }
+
+    Sdl3EventSystem(const Sdl3EventSystem&) = delete;
+    Sdl3EventSystem& operator=(const Sdl3EventSystem&) = delete;
+
+    [[nodiscard]] Status start() noexcept;
+    void stop() noexcept;
+
+private:
+    bool started_ = false;
+};
+
 class Sdl3EventInjector {
 public:
     Sdl3EventInjector() = default;
@@ -38,6 +57,11 @@ public:
     [[nodiscard]] Status mouse_motion(f32 dx, f32 dy, f32 x, f32 y) noexcept;
     /// A mouse button (`Left` to `Extra2`) going down or up at (`x`, `y`).
     [[nodiscard]] Status mouse_button(input::MouseControl button, bool down, f32 x, f32 y) noexcept;
+    /// The wheel turned `notches` away from the player (SDL's +y) with the pointer at (`x`, `y`).
+    [[nodiscard]] Status mouse_wheel(f32 notches, f32 x, f32 y) noexcept;
+    /// Empty SDL's queue: what a host with no display server pumping calls once a frame, or the
+    /// queue fills. The input source saw every event as it was pushed.
+    static void drain() noexcept;
     /// The window SDL numbers `native_window` gaining or losing the keyboard's focus.
     [[nodiscard]] Status window_focus(u32 native_window, bool gained) noexcept;
 
