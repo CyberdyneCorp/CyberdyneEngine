@@ -1874,6 +1874,7 @@ typedef struct CyDecalStatus {
     uint64_t spawned;  /* since the budget was bound */
     uint64_t evicted;  /* by a full budget, the spawned one included */
 } CyDecalStatus;
+
 /* --- 1.16: combat in the lockstep path -----------------------------------------------------------
  *
  * openspec/changes/add-rts-combat-and-minimap. ABI 1.8's lockstep session learns to FIGHT: a unit
@@ -3098,6 +3099,10 @@ CY_ABI_STATIC_ASSERT(sizeof(CyLockstepCombatant) == 48, "CyLockstepCombatant is 
 CY_ABI_STATIC_ASSERT(sizeof(CyLockstepStructure) == 48, "CyLockstepStructure is 48 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyLockstepEvent) == 80, "CyLockstepEvent is 80 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyLockstepProjectile) == 80, "CyLockstepProjectile is 80 bytes");
+/* 1.17 */
+CY_ABI_STATIC_ASSERT(sizeof(CyInputRebind) == 116, "CyInputRebind is 116 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyVideoSettings) == 24, "CyVideoSettings is 24 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyVideoMode) == 8, "CyVideoMode is 8 bytes");
 
 #ifdef __cplusplus
 }

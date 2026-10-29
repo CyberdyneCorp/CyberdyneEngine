@@ -440,6 +440,16 @@ evicted the new mark; `Decal.status` reads the budget. Playing and spawning are 
 eviction and the refusals through `FakeEngine`; `samples/15-first-person/game/Player.swift` plays
 them end to end, and docs/guides/first-person-demo.md is the guide.
 
+## Menus (ABI 1.17)
+
+`Menus.swift` is the face of the thirteen menu entries: `InputAction.rebind(scheme:slot:conflict:user:)`,
+`Rebinding.poll()` and `cancel()`, and `InputAction.binding(scheme:slot:)` drive the input system's
+rebinding flow; `InputProfile.save()`, `load(_:)` and `reset()` keep the player's overrides as text;
+`Video.settings`, `Video.apply(_:)` and `Video.modes` take a `VideoSettings`; `UserData` writes and
+reads the player's files; `Widget.setTooltip(_:)` gives a widget a tooltip. Every call is refused
+from `onFixedUpdate`. `MenusTests.swift` checks them through `FakeEngine`; `samples/16-menus` is the
+worked example, and [the Swift guide](../../docs/guides/swift.md) has the walkthrough.
+
 ## What is thinner than `swift-scripting` asks for
 
 Recorded here rather than only in a report, because these are the places a reader will look:

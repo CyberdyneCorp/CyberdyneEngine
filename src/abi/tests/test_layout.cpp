@@ -598,3 +598,22 @@ CY_TEST_CASE("the 1.16 structs have the offsets the description generator comput
     CY_CHECK_EQ(offsetof(CyLockstepProjectile, origin), 32U);
     CY_CHECK_EQ(offsetof(CyLockstepProjectile, aim), 64U);
 }
+
+CY_TEST_CASE("the 1.17 structs have the offsets the description generator computes") {
+    CY_CHECK_EQ(sizeof(CyInputRebind), 116U);
+    CY_CHECK_EQ(offsetof(CyInputRebind, status), 4U);
+    CY_CHECK_EQ(offsetof(CyInputRebind, action), 8U);
+    CY_CHECK_EQ(offsetof(CyInputRebind, scheme), 12U);
+    CY_CHECK_EQ(offsetof(CyInputRebind, slot), 16U);
+    CY_CHECK_EQ(offsetof(CyInputRebind, control), 20U);
+    CY_CHECK_EQ(offsetof(CyInputRebind, conflict), 52U);
+
+    CY_CHECK_EQ(sizeof(CyVideoSettings), 24U);
+    CY_CHECK_EQ(offsetof(CyVideoSettings, width), 4U);
+    CY_CHECK_EQ(offsetof(CyVideoSettings, quality), 12U);
+    CY_CHECK_EQ(offsetof(CyVideoSettings, upscale), 16U);
+    CY_CHECK_EQ(offsetof(CyVideoSettings, flags), 20U);
+
+    CY_CHECK_EQ(sizeof(CyVideoMode), 8U);
+    CY_CHECK_EQ(offsetof(CyVideoMode, height), 4U);
+}

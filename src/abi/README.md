@@ -435,6 +435,28 @@ a flight, a homing shot, a splash, a building, the two orders, two peers, the hi
 `determinism.cross_leg` (`detmath-battle-digest`). samples/13-rts-api's `--battle` fights one from
 Swift; [the guide](../../docs/guides/rts-combat.md).
 
+## What ABI 1.17 adds, and why
+
+What a game's menus need beyond the 1.12 toolkit: a settings screen that rebinds an action, changes
+the display and keeps the player's choices. Thirteen entries, every one [N U] — menus, display and
+files are not the simulation's. Each reaches a backend the embedder binds and answers UNAVAILABLE
+without one, or with a backend written against 1.16 (the input and interface backends gain
+non-pure virtuals with that default).
+
+| Entries | Behind them | Notes |
+|---|---|---|
+| `input_rebind_begin`, `input_rebind_poll`, `input_rebind_cancel` | the 1.3 `InputBackend`, implemented by `cy::game_backend::InputAdapter` over `cy::input::RebindOperation` | the ENGINE listens for the next control on `CyInputScheme` and settles a conflict by `CyInputConflict`; `CyInputRebind` says where it is (`CY_INPUT_REBIND_*`) |
+| `input_binding`, `input_profile_save`, `input_profile_load`, `input_profile_reset` | as above | the control in effect, and the player's overrides as text, over the authored bindings, which stay immutable. Sized reads: a null buffer asks the size |
+| `video_get_settings`, `video_set_settings`, `video_modes` | `cy::abi::game::VideoBackend` (`include/cy/abi/game/menus.h`), implemented by `cy::game_backend::VideoSettingsAdapter` | `CyVideoSettings`: resolution, `CyVideoQuality`, `CyVideoUpscale`, `CY_VIDEO_FULLSCREEN`, `CY_VIDEO_VSYNC`. NOT_FOUND for a resolution `video_modes` does not list |
+| `user_data_write`, `user_data_read` | `cy::abi::game::UserDataBackend`, implemented by `cy::game_backend::UserDataDirectory` | one plain file name, written whole and atomically; a sized read |
+| `ui_widget_set_tooltip` | the 1.6 `UiBackend`, through the toolkit | null or empty removes it |
+
+Tests: `unit.abi` (`test_game_menus.cpp` against fake backends: the phase rule, UNAVAILABLE with no
+backend or a 1.16 one, every range and sized read; `test_layout.cpp`: the 1.17 layouts; the 1.17
+table shape) and `integration.game_backend_menu` (rebinding through a real input server, the
+profile, the display settings and the player's files). `samples/16-menus` drives all of it from
+Swift; [the UI guide](../../docs/guides/ui.md) has the walkthrough.
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved

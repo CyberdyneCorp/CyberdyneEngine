@@ -13,15 +13,15 @@
 //                      system mounted on the project — so a document the editor saves is reloaded
 //   navigation         the `UI.*` actions on a keyboard and a gamepad, through `UiInputBridge`; the
 //                      interface keeps the input while a widget has the focus
-//   rebinding          `InputAdapter` (ABI 1.3 and 1.13) over the input server, whose `Game`
+//   rebinding          `InputAdapter` (ABI 1.3 and 1.15) over the input server, whose `Game`
 //   context
 //                      holds Jump, Interact, Inventory, Sprint and Pause
-//   display settings   `VideoSettingsAdapter` (ABI 1.13): what the renderer (render.h) draws at
+//   display settings   `VideoSettingsAdapter` (ABI 1.15): what the renderer (render.h) draws at
 //   audio volumes      an audio server's four buses — Master, Music, SFX, Voice — through
 //                      `AudioAdapter` (ABI 1.3), and the same buses as the settings document's
 //                      `bind=volume.*`, two-way: a slider is the bus
 //   global illum.      the RTS sample's level lit by CyberGI (ABI 1.9), whose quality the settings
-//   set player files       `UserDataDirectory` (ABI 1.13) over `--user-data <dir>`
+//   set player files       `UserDataDirectory` (ABI 1.15) over `--user-data <dir>`
 //
 // ================================================================================================
 // ONE FRAME, IN ORDER
