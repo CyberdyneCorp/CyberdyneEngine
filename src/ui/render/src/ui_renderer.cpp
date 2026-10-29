@@ -117,7 +117,7 @@ void read_sampled_groups(rendering::PassBuilder& builder, Span<const UiDraw> dra
 
 }  // namespace
 
-UiRenderer::UiRenderer(Allocator& allocator) noexcept : allocator_(&allocator), list_(allocator) {}
+UiRenderer::UiRenderer(Allocator& allocator) noexcept : list_(allocator) {}
 
 UiRenderer::~UiRenderer() {
     destroy();
