@@ -318,6 +318,14 @@ struct PlayFlags {
     return true;
 }
 
+/// What only a played run has: the magazine, and the targets the game stood back up. A line of
+/// its own, so the scripted run's report is the one it always was.
+void print_played(FpsHost& host) noexcept {
+    const Observation::Game game = host.observe().game;
+    std::printf("fps played   ammo=%.0f reloads=%.0f dry_fires=%.0f respawns=%.0f\n",
+                wide(game.ammo), wide(game.reloads), wide(game.dry_fires), wide(game.respawns));
+}
+
 /// Each captured frame as `<dir>/frame-<n>.png`.
 [[nodiscard]] cy::Status write_capture(const std::string& directory, cy::u64 frame,
                                        cy::Span<const cy::u32> pixels, cy::u32 width,
@@ -368,8 +376,12 @@ struct PlayFlags {
     }
     cy::play::PlayHost play(cy::system_allocator(cy::MemoryDomain::Engine));
     if (cy::Status opened = play.open(flags.play.options); !opened) {
-        std::fprintf(stderr, "first-person: --play: %s\n", opened.error().message);
-        return opened.error().code == cy::ErrorCode::Unavailable ? 0 : 1;
+        // NO DISPLAY OR NO DEVICE is a machine that cannot play, said so and skipped, as `--render`
+        // skips; anything else is a failure.
+        const bool absent = opened.error().code == cy::ErrorCode::Unavailable;
+        std::printf("first-person: --play: %s%s\n", absent ? "skipped: " : "",
+                    opened.error().message);
+        return absent ? 0 : 1;
     }
     sample::fps::HostOptions options;
     options.module_library = CY_FIRST_PERSON_MODULE_LIBRARY;
@@ -403,6 +415,7 @@ struct PlayFlags {
         const cy::Expected<cy::play::PlayReport, cy::Error> report = play.run();
         if (report) {
             print_report(host, sample::fps::ScriptFindings{});
+            print_played(host);
             cy::play::print_play_report(*report);
         } else {
             std::fprintf(stderr, "first-person: --play: %s\n", report.error().message);

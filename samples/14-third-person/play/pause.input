@@ -1,0 +1,9 @@
+# W held; Esc pauses — the hero stops where it is and the mouse turns nothing — and Esc resumes.
+10 key w down
+40 key escape down
+41 key escape up
+50 mouse move 400 0
+80 key escape down
+81 key escape up
+110 key w up
+120 quit

@@ -1,0 +1,8 @@
+# The camera orbited a quarter round to the left, then W with Shift: the hero runs the way the
+# camera looks — west, along the courtyard's south wall — and stops when the keys come up.
+10 mouse move -628 0
+20 key w down
+20 key leftShift down
+140 key w up
+140 key leftShift up
+200 quit

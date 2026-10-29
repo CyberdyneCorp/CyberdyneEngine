@@ -124,6 +124,7 @@ CY_TEST_CASE("sdl3 injector: a virtual gamepad's stick and trigger arrive as a p
     CY_CHECK(stick->value > 0.99F);
     CY_CHECK(trigger->value > 0.99F);
     CY_CHECK_FALSE(stick->device.is_null());
-    inject.detach_gamepad();
+    // The source closes its pad first; the injector then detaches the device under it.
     fixture.source.detach();
+    inject.detach_gamepad();
 }

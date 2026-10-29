@@ -95,12 +95,18 @@ struct PlayOptions {
     i32 window_height = 720;
     bool fullscreen = false;
     bool vsync = true;
-    /// False opens a window and drives the game with no device: the play loop's own test, on a
-    /// machine with no GPU and under SDL's dummy video driver.
+    /// False opens a window and drives the game with no device.
     bool draw = true;
+    /// SDL's dummy video driver: a window with no display behind it, so the play loop — the
+    /// platform's input, the focus events, the pause, the interface — runs on a machine with no
+    /// display and no GPU, as CI is. Implies no drawing.
+    bool headless = false;
     bool validation = false;
     /// One step a frame whatever the wall says: what a capture and a test want.
     bool fixed_clock = false;
+    /// The window losing the focus pauses the game. A capture or a timed test on a shared desktop
+    /// turns it off, so another window taking the focus does not stop the film.
+    bool pause_on_focus_loss = true;
     /// Stop after this many frames; zero runs until the window closes or the game quits.
     u64 frame_limit = 0;
     /// Platform events at given frames (input_script.h).
@@ -140,8 +146,9 @@ struct PlayReport {
     bool relative_mouse = false;
     bool quit_by_menu = false;
     bool closed = false;
-    /// The whole frame's CPU time, the present (and any v-sync wait) included, and the frame's
-    /// work alone: the ticks, the game's frame and its draw, without the present.
+    /// The whole frame's wall time, the present (and any v-sync wait) included, and the frame's
+    /// work alone: the ticks, the game's frame and its draw — the device's time for it included —
+    /// without the present.
     FrameTimes frame;
     FrameTimes work;
     u64 validation_errors = 0;
@@ -185,7 +192,8 @@ private:
     void assign_gamepads() noexcept;
     void hold_mouse() noexcept;
     [[nodiscard]] Status simulate(const StepPlan& plan, Nanoseconds now) noexcept;
-    [[nodiscard]] Status present_frame() noexcept;
+    /// The game's picture presented; `waited_ms` is the presenter's share, v-sync included.
+    [[nodiscard]] Status present_frame(f64& waited_ms) noexcept;
     void record_time(f64 frame_ms, f64 work_ms) noexcept;
     [[nodiscard]] Vec2 viewport() const noexcept;
 

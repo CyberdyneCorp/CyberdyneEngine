@@ -178,8 +178,10 @@ struct Presenter::State {
             rhi::Extent2D{static_cast<u32>(extent.width), static_cast<u32>(extent.height)};
         // UNORM, because the picture holds encoded bytes; an sRGB answer is handled by decoding.
         swapchain_description.preferred_format = rhi::Format::Bgra8Unorm;
+        // V-SYNC OFF PRESENTS AT ONCE, tearing allowed: the frame's own cost is what is measured,
+        // never the display's interval. FIFO is the fallback every implementation has.
         swapchain_description.present_mode =
-            options.vsync ? rhi::PresentMode::Fifo : rhi::PresentMode::Mailbox;
+            options.vsync ? rhi::PresentMode::Fifo : rhi::PresentMode::Immediate;
         Expected<rhi::SwapchainHandle, Error> chain =
             device->create_swapchain(swapchain_description);
         if (!chain) {
@@ -275,10 +277,10 @@ struct Presenter::State {
 
     /// The interface renderer at the swapchain's extent, and the text's pages on it.
     [[nodiscard]] Status create_interface() noexcept {
-        if (ui == nullptr) {
-            return ok();
-        }
         interface.destroy();
+        if (ui == nullptr || info.extent.width == 0U || info.extent.height == 0U) {
+            return ok();  // no window to draw it in yet: made when the window has a size
+        }
         ui::render::UiRendererDescription description;
         description.width = info.extent.width;
         description.height = info.extent.height;
@@ -293,7 +295,7 @@ struct Presenter::State {
 
     [[nodiscard]] Status create_readback() noexcept {
         const u64 size = u64{info.extent.width} * info.extent.height * 4U;
-        if (size == readback_size) {
+        if (size == readback_size || size == 0U) {
             return ok();
         }
         if (!readback.is_null()) {
@@ -533,6 +535,20 @@ Expected<PresentResult, Error> Presenter::present(const PresentSource& source,
     State& state = *state_;
     PresentResult result;
     state.source = source;
+    if (state.info.extent.width == 0U || state.info.extent.height == 0U) {
+        // A window that had no size when the swapchain was made — a fullscreen one before the
+        // window manager placed it — is asked again; a minimised one presents nothing.
+        const Expected<Extent, Error> size = state.display->window_size(state.window);
+        if (!size) {
+            return make_unexpected(size.error());
+        }
+        if (Status resized = resize(*size); !resized) {
+            return make_unexpected(resized.error());
+        }
+        if (state.info.extent.width == 0U || state.info.extent.height == 0U) {
+            return result;
+        }
+    }
     if (Status atlases = state.refresh_atlases(); !atlases) {
         return make_unexpected(atlases.error());
     }

@@ -354,8 +354,12 @@ struct PlayFlags {
     }
     cy::play::PlayHost play(allocator);
     if (cy::Status opened = play.open(flags.play.options); !opened) {
-        std::fprintf(stderr, "cy_sample_third-person: --play: %s\n", opened.error().message);
-        return opened.error().code == cy::ErrorCode::Unavailable ? 0 : 1;
+        // NO DISPLAY OR NO DEVICE is a machine that cannot play, said so and skipped, as `--render`
+        // skips; anything else is a failure.
+        const bool absent = opened.error().code == cy::ErrorCode::Unavailable;
+        std::printf("cy_sample_third-person: --play: %s%s\n", absent ? "skipped: " : "",
+                    opened.error().message);
+        return absent ? 0 : 1;
     }
     const int code = play_game(play, content, flags);
     play.close();

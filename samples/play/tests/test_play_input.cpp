@@ -140,10 +140,11 @@ CY_TEST_CASE("an input script reads every verb and refuses a line it does not kn
                           "60 pad attach\n"
                           "61 pad axis leftStickY 1\n"
                           "62 pad button south down\n"
+                          "55 window 1600 900\n"
                           "10 key space up\n"
                           "900 quit\n")
                    .has_value());
-    CY_CHECK_EQ(script.size(), 11U);
+    CY_CHECK_EQ(script.size(), 12U);
     // Without the platform it can still say when the run ends, and refuses to push anything.
     const auto early = script.run(9, cy::play::ScriptTarget{});
     CY_REQUIRE(early.has_value());

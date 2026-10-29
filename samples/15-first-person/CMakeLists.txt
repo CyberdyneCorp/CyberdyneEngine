@@ -172,6 +172,22 @@ if(CY_BUILD_TESTS)
                                PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke")
     add_dependencies(cy_test_integration_first_person_sample cy_sample_first-person)
 
+    # integration.first_person_play: the game PLAYED under the desktop play host, headless — SDL's
+    # dummy video driver, no device — its hands scripts pushed through the platform (play/).
+    if(TARGET cy::sample-play)
+        cy_add_test(
+            NAME first_person_play
+            KIND integration
+            SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_first_person_play.cpp"
+            DEFINITIONS
+                CY_SAMPLE_FIRST_PERSON="$<TARGET_FILE:cy_sample_first-person>"
+                CY_FIRST_PERSON_PLAY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/play")
+        target_include_directories(cy_test_integration_first_person_play
+                                   PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke"
+                                           "${CMAKE_SOURCE_DIR}/samples/play/tests")
+        add_dependencies(cy_test_integration_first_person_play cy_sample_first-person)
+    endif()
+
     # smoke.first_person_render: the session drawn on a device — the game untouched by the picture,
     # its marks and sparks where its raycasts hit, a golden still, and what a frame costs at 1080p.
     # A smoke suite, because it draws the session five times; RUN_SERIAL, because its last run is
@@ -201,5 +217,25 @@ if(CY_BUILD_TESTS)
         set_tests_properties(smoke.first_person_render PROPERTIES
                              SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine"
                              RUN_SERIAL TRUE)
+
+        # smoke.first_person_play: PLAYED and drawn — a window, the device, the shooting script —
+        # every frame presented without a validation error, the game the headless play run's, and
+        # a frame's work at 1080p under 16.7 ms. Skipped where there is no display or no device.
+        if(TARGET cy::sample-play)
+            cy_add_test(
+                NAME first_person_play
+                KIND smoke
+                SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_first_person_play_render.cpp"
+                DEFINITIONS
+                    CY_SAMPLE_FIRST_PERSON="$<TARGET_FILE:cy_sample_first-person>"
+                    CY_FIRST_PERSON_PLAY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/play")
+            target_include_directories(cy_test_smoke_first_person_play
+                                       PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke"
+                                               "${CMAKE_SOURCE_DIR}/samples/play/tests")
+            add_dependencies(cy_test_smoke_first_person_play cy_sample_first-person)
+            set_tests_properties(smoke.first_person_play PROPERTIES
+                                 SKIP_REGULAR_EXPRESSION "--play: skipped:"
+                                 RUN_SERIAL TRUE)
+        endif()
     endif()
 endif()

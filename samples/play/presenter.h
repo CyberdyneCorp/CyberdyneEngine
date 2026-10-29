@@ -21,8 +21,8 @@
 //          "present"   the image handed back to the presentation engine
 //   execute, waiting on the acquire and signalling the present; present; wait for the device
 //
-// V-SYNC is the presentation mode: FIFO with it, mailbox without — and the swapchain reports what
-// it got, which `info()` passes on.
+// V-SYNC is the presentation mode: FIFO with it, immediate without — and the swapchain reports
+// what it got, which `info()` passes on.
 //
 // Vulkan only: Metal and D3D12 compile the shader (`just build-shaders --strict`) and have no
 // surface in this host yet. Without a device, `start` answers Unavailable naming the machine, as

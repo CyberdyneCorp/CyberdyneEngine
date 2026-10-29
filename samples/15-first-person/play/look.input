@@ -1,0 +1,5 @@
+# A mouse moved and nothing else: 200 counts right, then 50 pushed away. The camera turns by the
+# first-person camera's one sensitivity — 0.0022 radians a count — and by nothing else.
+10 mouse move 200 0
+20 mouse move 0 -50
+40 quit

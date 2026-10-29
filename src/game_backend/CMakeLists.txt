@@ -127,8 +127,15 @@ if(CY_BUILD_TESTS)
         set(extra_bodies cy::physics-reference)
         set(extra_character cy::physics-reference)
         set(extra_camera_collision cy::physics-reference)
-        foreach(service IN ITEMS input camera physics navigation audio spawn graph bodies
-                                 character scene camera_collision menu)
+        # THE INPUT ADAPTER'S SUITE BY NAME, so `tools/roadmap/requirements-coverage.toml` can name
+        # it: the pointer's motion in a frame is answered there, and the map reads literal names.
+        cy_add_test(
+            NAME game_backend_input
+            KIND integration
+            SOURCES "${tests_dir}/test_input_backend.cpp"
+            DEPENDENCIES cy::game-backend)
+        foreach(service IN ITEMS camera physics navigation audio spawn graph bodies character
+                                 scene camera_collision menu)
             if(EXISTS "${tests_dir}/test_${service}_backend.cpp")
                 cy_add_test(
                     NAME game_backend_${service}

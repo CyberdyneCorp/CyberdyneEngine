@@ -1,0 +1,10 @@
+# A pad, through SDL's own virtual joystick: the left stick walks, the right stick turns at the
+# game's look rate, the right trigger fires.
+2 pad attach
+10 pad axis leftStickY 1
+70 pad axis leftStickY 0
+80 pad axis rightStickX 1
+110 pad axis rightStickX 0
+120 pad axis rightTrigger 1
+125 pad axis rightTrigger 0
+140 quit

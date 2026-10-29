@@ -37,6 +37,10 @@ namespace {
         options.vsync = false;
     } else if (std::strcmp(flag, "--no-draw") == 0) {
         options.draw = false;
+    } else if (std::strcmp(flag, "--headless") == 0) {
+        options.headless = true;
+    } else if (std::strcmp(flag, "--no-focus-pause") == 0) {
+        options.pause_on_focus_loss = false;
     } else if (std::strcmp(flag, "--fixed-clock") == 0) {
         options.fixed_clock = true;
     } else if (std::strcmp(flag, "--validation") == 0) {

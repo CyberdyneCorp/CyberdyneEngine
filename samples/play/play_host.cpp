@@ -93,6 +93,15 @@ Status PlayHost::open(const PlayOptions& options) noexcept {
         return started;
     }
     platform.process_up = true;
+    if (options.headless) {
+        // Read by SDL when its video starts, below: the dummy driver's windows are real to SDL and
+        // to everything above it, and draw nowhere.
+        if (Status chosen = platform.process.set_environment_variable("SDL_VIDEODRIVER", "dummy");
+            !chosen) {
+            return chosen;
+        }
+        options_.draw = false;
+    }
     if (Status started = platform.display.initialise(); !started) {
         return started;
     }
@@ -118,7 +127,7 @@ Status PlayHost::open(const PlayOptions& options) noexcept {
         }
     }
     open_ = true;
-    if (!options.draw) {
+    if (!options_.draw) {
         return ok();
     }
 #if defined(CY_PLAY_PRESENTER)
@@ -201,7 +210,9 @@ Status PlayHost::window_events() noexcept {
                 platform.process.request_exit(0);
                 break;
             case WindowEventType::FocusLost:
-                pause_.focus_lost();
+                if (options_.pause_on_focus_loss) {
+                    pause_.focus_lost();
+                }
                 break;
             case WindowEventType::FocusGained:
                 pause_.focus_gained();
@@ -260,7 +271,8 @@ Status PlayHost::simulate(const StepPlan& plan, Nanoseconds now) noexcept {
     return ok();
 }
 
-Status PlayHost::present_frame() noexcept {
+Status PlayHost::present_frame(f64& waited_ms) noexcept {
+    waited_ms = 0.0;
 #if defined(CY_PLAY_PRESENTER)
     Platform& platform = *platform_;
     if (platform.presenter == nullptr) {
@@ -276,6 +288,7 @@ Status PlayHost::present_frame() noexcept {
         return make_unexpected(shown.error());
     }
     report_.presented += shown->presented ? 1U : 0U;
+    waited_ms = shown->present_ms;
     if (capture && shown->presented && on_capture) {
         const Presenter& presenter = *platform.presenter;
         const std::vector<u32>& pixels = presenter.captured();
@@ -301,9 +314,12 @@ void PlayHost::record_time(f64 frame_ms, f64 work_ms) noexcept {
 Status PlayHost::frame() noexcept {
     Platform& platform = *platform_;
     const auto started = std::chrono::steady_clock::now();
-    const Expected<bool, Error> scripted =
-        platform.script.run(frame_, ScriptTarget{&platform.inject,
-                                                 platform.display.native_window_id(platform.window)});
+    ScriptTarget target;
+    target.inject = &platform.inject;
+    target.native_window = platform.display.native_window_id(platform.window);
+    target.display = &platform.display;
+    target.window = static_cast<u32>(platform.window);
+    const Expected<bool, Error> scripted = platform.script.run(frame_, target);
     if (!scripted) {
         return make_unexpected(scripted.error());
     }
@@ -340,11 +356,12 @@ Status PlayHost::frame() noexcept {
         report_.quit_by_menu = true;
         platform.process.request_exit(0);
     }
-    const f64 work = since_ms(started);
-    if (Status shown = present_frame(); !shown) {
+    f64 presenting = 0.0;
+    if (Status shown = present_frame(presenting); !shown) {
         return shown;
     }
-    record_time(since_ms(started), work);
+    const f64 whole = since_ms(started);
+    record_time(whole, whole - presenting);
     ++frame_;
     if (*scripted) {
         platform.process.request_exit(0);
@@ -392,8 +409,11 @@ void PlayHost::close() noexcept {
         return;
     }
     Platform& platform = *platform_;
-    platform.inject.detach_gamepad();
+    // The input source closes the pads it opened BEFORE the injector detaches its virtual one:
+    // SDL frees a virtual joystick's device when it is detached, and a gamepad still open on it
+    // would then be closed through freed memory.
     platform.source.detach();
+    platform.inject.detach_gamepad();
 #if defined(CY_PLAY_PRESENTER)
     platform.presenter.reset();
 #endif

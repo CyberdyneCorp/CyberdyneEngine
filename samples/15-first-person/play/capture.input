@@ -1,0 +1,133 @@
+# The film's hands (just capture-play-fps): turn onto T2 and shoot it down, the hit marker
+# white and the last one red; reload; turn north-west past the beam, walk, sprint and jump;
+# open the pause menu, drag the look's sensitivity up and resume; look round with it; quit.
+# One step a frame.
+20 mouse move -349 16
+40 mouse left down
+42 mouse left up
+52 mouse left down
+54 mouse left up
+64 mouse left down
+66 mouse left up
+76 mouse left down
+78 mouse left up
+88 mouse left down
+90 mouse left up
+100 mouse left down
+102 mouse left up
+112 mouse left down
+114 mouse left up
+124 mouse left down
+126 mouse left up
+136 mouse left down
+138 mouse left up
+148 mouse left down
+150 mouse left up
+160 mouse left down
+162 mouse left up
+172 mouse left down
+174 mouse left up
+184 mouse left down
+186 mouse left up
+250 key r down
+252 key r up
+300 mouse move 7.2 -0.8
+302 mouse move 7.2 -0.8
+304 mouse move 7.2 -0.8
+306 mouse move 7.2 -0.8
+308 mouse move 7.2 -0.8
+310 mouse move 7.2 -0.8
+312 mouse move 7.2 -0.8
+314 mouse move 7.2 -0.8
+316 mouse move 7.2 -0.8
+318 mouse move 7.2 -0.8
+320 mouse move 7.2 -0.8
+322 mouse move 7.2 -0.8
+324 mouse move 7.2 -0.8
+326 mouse move 7.2 -0.8
+328 mouse move 7.2 -0.8
+330 mouse move 7.2 -0.8
+332 mouse move 7.2 -0.8
+334 mouse move 7.2 -0.8
+336 mouse move 7.2 -0.8
+338 mouse move 7.2 -0.8
+350 key w down
+380 key leftShift down
+430 key leftShift up
+440 key space down
+442 key space up
+500 key w up
+540 key escape down
+541 key escape up
+570 mouse to 532 334
+575 mouse left down
+576 mouse to 545 334
+578 mouse to 560 334
+580 mouse to 575 334
+582 mouse to 590 334
+584 mouse to 605 334
+590 mouse left up
+610 mouse to 491 416
+615 mouse left down
+616 mouse left up
+630 mouse move 12 0
+632 mouse move 12 0
+634 mouse move 12 0
+636 mouse move 12 0
+638 mouse move 12 0
+640 mouse move 12 0
+642 mouse move 12 0
+644 mouse move 12 0
+646 mouse move 12 0
+648 mouse move 12 0
+650 mouse move 12 0
+652 mouse move 12 0
+654 mouse move 12 0
+656 mouse move 12 0
+658 mouse move 12 0
+660 mouse move 12 0
+662 mouse move 12 0
+664 mouse move 12 0
+666 mouse move 12 0
+668 mouse move 12 0
+670 mouse move 12 0
+672 mouse move 12 0
+674 mouse move 12 0
+676 mouse move 12 0
+678 mouse move 12 0
+680 mouse move 12 0
+682 mouse move 12 0
+684 mouse move 12 0
+686 mouse move 12 0
+688 mouse move 12 0
+690 mouse move -12 1
+692 mouse move -12 1
+694 mouse move -12 1
+696 mouse move -12 1
+698 mouse move -12 1
+700 mouse move -12 1
+702 mouse move -12 1
+704 mouse move -12 1
+706 mouse move -12 1
+708 mouse move -12 1
+710 mouse move -12 1
+712 mouse move -12 1
+714 mouse move -12 1
+716 mouse move -12 1
+718 mouse move -12 1
+720 mouse move -12 1
+722 mouse move -12 1
+724 mouse move -12 1
+726 mouse move -12 1
+728 mouse move -12 1
+730 mouse move -12 1
+732 mouse move -12 1
+734 mouse move -12 1
+736 mouse move -12 1
+738 mouse move -12 1
+740 mouse move -12 1
+742 mouse move -12 1
+744 mouse move -12 1
+746 mouse move -12 1
+748 mouse move -12 1
+780 quit

@@ -1,0 +1,13 @@
+# Esc, the menu's Resume clicked; Esc again, and its Quit: the run ends at the click, long before
+# the script would end it.
+10 key escape down
+11 key escape up
+20 mouse to 491 416
+21 mouse left down
+22 mouse left up
+40 key escape down
+41 key escape up
+50 mouse to 550 416
+51 mouse left down
+52 mouse left up
+300 quit

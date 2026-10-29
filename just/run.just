@@ -1909,6 +1909,76 @@ capture-rts-map *args:
     echo "    ${images}/rts-map-{game,overview,before-after,features}.png"
     echo "    docs/design/videos/rts-map.mp4"
 
+# THE PLAYED SAMPLES. `--play` opens a window through the desktop play host (samples/play): the
+# mouse looks, the keys and a pad play, Esc pauses and its menu sets the look's sensitivity and
+# quits. The picture needs the Vulkan renderer (configure with -D CY_RENDERER_VULKAN=ON); a build
+# without it says so, and `--no-draw` plays with no picture. Everything after the profile is the
+# sample's: `--window 1920x1080`, `--fullscreen`, `--no-vsync`, `--bindings <file>`.
+
+# Play the first-person arena in a window. Usage: just play-fps [--profile <p>] [--window <w>x<h>] [--fullscreen] [--no-vsync] [--bindings <file>]
+play-fps *args:
+    @just _play 15-first-person cy_sample_first-person {{args}}
+
+# Play the third-person hillside in a window. Usage: just play-tps [--profile <p>] [--window <w>x<h>] [--fullscreen] [--no-vsync] [--bindings <file>]
+play-tps *args:
+    @just _play 14-third-person cy_sample_third-person {{args}}
+
+_play directory binary *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+    just build-engine --profile "${profile}"
+    sample="${CY_BUILD_DIR:-build/${profile}}/samples/{{directory}}/{{binary}}"
+    if [ ! -x "${sample}" ]; then
+        echo "play: ${sample} was not built (it needs Swift and CY_UI)." >&2
+        exit 1
+    fi
+    exec "${sample}" --play ${rest}
+
+# The played samples filmed: each played with an input script for hands (play/capture.input),
+# pushed through the platform one step a frame, every second presented frame — the HUD and the
+# pause menu on it — kept at 1280x720, and encoded with its stills into docs/design/. Needs a
+# graphics device, a display, Swift and ffmpeg.
+# Film the first-person game played. Usage: just capture-play-fps [--profile <p>]
+capture-play-fps *args:
+    @just _capture-play 15-first-person cy_sample_first-person first-person-play "100=hit 280=reload 460=jump 580=menu" {{args}}
+
+# Film the third-person game played. Usage: just capture-play-tps [--profile <p>]
+capture-play-tps *args:
+    @just _capture-play 14-third-person cy_sample_third-person third-person-play "100=orbit 250=stairs 550=hill 800=menu" {{args}}
+
+_capture-play directory binary name stills *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/{{directory}}/{{binary}}"
+    if [ ! -x "${sample}" ]; then
+        echo "capture-play: ${sample} was not built (it needs Swift and CY_UI)." >&2
+        exit 1
+    fi
+    # In the build tree, not mkdir -t: the engine's PNG writer stores rather than deflates, and a
+    # few hundred 1280x720 frames do not fit every /tmp. Deleted when the recipe finishes.
+    work="${build_dir}/{{name}}-capture"
+    rm -rf "${work}"
+    mkdir -p "${work}"
+    trap 'rm -rf "${work}"' EXIT
+    echo "==> play        {{directory}}, its hands samples/{{directory}}/play/capture.input"
+    "${sample}" --play --fixed-clock --no-focus-pause --window 1280x720 \
+        --input-script "samples/{{directory}}/play/capture.input" \
+        --capture "${work}" --capture-every 2 ${rest} | grep "^play"
+    stills=()
+    for still in {{stills}}; do
+        stills+=(--still "${still}")
+    done
+    echo "==> encode      {{name}}"
+    python3 tools/docs/collect_play.py "${work}" --name "{{name}}" --fps 30 "${stills[@]}"
+
 # samples/14-third-person's artefacts: the run's stills at 1920x1080 composed into
 # docs/design/images/third-person-run.png, the frame's features off and on at the stairs
 # (third-person-features.png), the frame at frame 630 (third-person-wall.png), and the run filmed

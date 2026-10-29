@@ -912,6 +912,10 @@ void FpsHost::read_report(Observation& seen) const noexcept {
     game.impulses = value("impulses");
     game.aimed = value("aimed");
     game.refused = value("refused");
+    game.ammo = value("ammo");
+    game.reloads = value("reloads");
+    game.dry_fires = value("dryFires");
+    game.respawns = value("respawns");
 }
 
 Observation FpsHost::observe() noexcept {

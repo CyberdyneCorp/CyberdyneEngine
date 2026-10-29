@@ -24,9 +24,11 @@ task 3.2.4. A fourth desktop platform is a fourth file and one branch in `CMakeL
 | `include/cy/platform/sdl3_platform.h` | `Sdl3Platform` — the `Platform` implementation |
 | `include/cy/platform/sdl3_display_server.h` | `Sdl3DisplayServer` — the `DisplayServer` implementation |
 | `include/cy/platform/sdl3_input_source.h` | `Sdl3InputSource` — SDL events as `cy::input::DeviceEvent`s (M4) |
+| `include/cy/platform/sdl3_event_injector.h` | `Sdl3EventInjector` — synthetic input as REAL SDL events on SDL's own queue: keys, the mouse, a window's focus, and a virtual gamepad through SDL's virtual joystick. What a played game's tests and captures push their hands through (`samples/play`) |
 | `src/sdl3_platform.cpp` | every SDL call for the process services |
 | `src/sdl3_display_server.cpp` | every SDL call for windows, screens and events |
 | `src/sdl3_input_source.cpp` | every SDL call for keyboards, mice and gamepads |
+| `src/sdl3_event_injector.cpp` | the injector: the input source's translations run backwards (`src/sdl3_controls.h`), so an injected key is the scancode a person's press of it carries |
 | `src/host/host.h` | the four host services SDL3 has no API for |
 | `src/host/host_linux.cpp` | `/proc/self/exe`, `/proc/meminfo`, the X11 and Wayland handles |
 | `src/host/host_macos.cpp` | `_NSGetExecutablePath`, mach memory statistics, the `NSWindow` — **unverified** |
@@ -37,6 +39,15 @@ task 3.2.4. A fourth desktop platform is a fourth file and one branch in `CMakeL
 Linux was verified by running: a real X11 window opens, the native handles come back, the clocks are
 independent sources, subprocesses and dynamic libraries work. Windows and macOS were written against
 the documented APIs and reviewed; the first CI job on each (task 2.4.1) is what makes them facts.
+
+## Holding the mouse
+
+`set_window_relative_mouse` — `Feature::RelativeMouse` — is `SDL_SetWindowRelativeMouseMode`: the
+cursor hidden and held in the window, its motion delivered as raw counts with no system acceleration
+(SDL3's default unless `SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE` asks for it). A first-person look and
+an orbiting camera read those counts. The dummy and offscreen drivers have no pointer to hold and
+answer false. `DisplayServer`'s default refuses it, so the native and stub ports say so without
+restating it.
 
 ## Where the abstraction degrades
 

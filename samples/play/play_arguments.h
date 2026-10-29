@@ -8,8 +8,10 @@
 //   --fullscreen                 borderless, at the desktop's resolution
 //   --no-vsync                   present the newest frame without waiting for the display
 //   --no-draw                    a window and no device: the play loop driven with no picture
+//   --headless                   SDL's dummy video driver: no display either (what CI runs)
 //   --frames <n>                 stop after n frames
 //   --fixed-clock                one step a frame whatever the wall says: reproducible runs
+//   --no-focus-pause             another window taking the focus does not pause (a film, a timing)
 //   --input-script <file>        platform events at given frames (input_script.h)
 //   --bindings <file>            a player's rebinding (bindings_file.h)
 //   --capture <dir>              every --capture-every <n>-th presented frame as a PNG there

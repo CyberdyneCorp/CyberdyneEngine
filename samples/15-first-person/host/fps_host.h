@@ -148,6 +148,12 @@ struct Observation {
         cy::f32 impulses = 0.0F;
         cy::f32 aimed = 0.0F;
         cy::f32 refused = 0.0F;
+        /// The played game's magazine: rounds left, reloads finished, pulls on an empty one, and
+        /// the targets it stood back up.
+        cy::f32 ammo = 0.0F;
+        cy::f32 reloads = 0.0F;
+        cy::f32 dry_fires = 0.0F;
+        cy::f32 respawns = 0.0F;
     };
     Game game;
     /// The player's character, from the character adapter.

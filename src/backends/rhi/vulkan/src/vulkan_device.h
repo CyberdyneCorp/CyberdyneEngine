@@ -615,6 +615,12 @@ private:
             : textures(allocator), views(allocator) {}
     };
     HandlePool<SwapchainRecord, SwapchainTag> swapchains_;
+    /// A swapchain for `desc` built into `out` — the VkSwapchainKHR, its images wrapped as
+    /// textures and their views — handing `previous` to the driver as the one it replaces.
+    [[nodiscard]] Status build_swapchain(const SwapchainDescription& desc,
+                                         VkSwapchainKHR previous, SwapchainRecord& out);
+    /// A record's image views and texture handles released, and its VkSwapchainKHR destroyed.
+    void release_swapchain(SwapchainRecord& record) noexcept;
 
     /// acquire_command_buffer() is called from job workers during parallel recording, so the
     /// bookkeeping around it — the lazily created pools and the live-buffer list — is guarded. It

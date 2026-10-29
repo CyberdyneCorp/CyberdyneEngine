@@ -10,12 +10,47 @@ on the floor, a scorch mark and the sounds. **The targets are the engine's AI.**
 the arena, binds the ABI's adapters and decides nothing about the player.
 
 ```
+just play-fps                                   PLAY IT: the arena in a window (below)
 just run-sample first-person                    720 frames of scripted play, headless, then the report
 just run-sample first-person --no-behaviours    the negative control: the same host with no game
 cy_sample_first-person --render <dir>           the session drawn every frame at 1080p
 just capture-first-person                       the video and the stills in docs/design/
-ctest -R first_person                           the two suites below
+just capture-play-fps                           the played film and its stills in docs/design/
+ctest -R first_person                           the suites below
 ```
+
+## Playing it
+
+`just play-fps` opens the arena in a window through the desktop play host
+([`samples/play`](../play/README.md)): the mouse looks, the keys walk, the trigger is yours. The
+picture needs the Vulkan renderer (`-D CY_RENDERER_VULKAN=ON`); `--window 1920x1080`,
+`--fullscreen`, `--no-vsync` and `--bindings <file>` are the play host's.
+
+| | Keyboard and mouse | Pad |
+|---|---|---|
+| move | W A S D | left stick |
+| look | the mouse (raw counts, relative mode) | right stick |
+| sprint | left Shift | left stick pressed |
+| jump | Space | south (A, Cross) |
+| crouch | C or left Ctrl | east (B, Circle) |
+| fire | left button | right trigger |
+| aim down the sights | right button | left trigger |
+| reload | R | west (X, Square) |
+| pause | Esc | Start |
+
+Thirty rounds a magazine; an empty one clicks and reloads itself. The HUD is the Swift game's
+(`game/Hud.swift`): the crosshair where every shot goes, a hit marker that reddens on the shot that
+puts a target down, the magazine, and what has been hit. A target shot down lies ten seconds and
+gets back up — the game gives it its health back and the engine's AI stands it up. Esc, or the
+window losing the focus, pauses: the menu sets the look's sensitivity and inverts its Y — applied
+once, in the first-person camera's own sensitivity — and resumes or quits.
+
+[Video: the arena played](../../docs/design/videos/first-person-play.mp4), its hands a script pushed
+through the platform (`play/capture.input`).
+
+| Reloading | A jump | The pause menu |
+|---|---|---|
+| ![](../../docs/design/images/first-person-play-reload.png) | ![](../../docs/design/images/first-person-play-jump.png) | ![](../../docs/design/images/first-person-play-menu.png) |
 
 [Video: the whole session](../../docs/design/videos/first-person-demo.mp4) — twelve seconds at 1280x720.
 
@@ -107,6 +142,17 @@ frame 450 at 480x270 equals `tests/references/fps_450.png`; and at 1080p the tot
 Each of their key cases was proved red by a mutation:
 `openspec/changes/add-first-person-demo/evidence/falsification.txt`.
 
+`integration.first_person_play` (headless: SDL's dummy video driver, no device) plays the game with
+hands written down in `play/*.input` and pushed through the platform, never into the game: a mouse
+count turns the camera by the camera's 0.0022 radians, W walks four metres a second the way it
+faces, the trigger hits a target the host's own raycast confirms, a lost focus pauses until Esc, the
+menu's Resume fires nothing and its Quit ends the run, a pad walks, turns and fires through SDL's
+own virtual joystick, a rebinding moves jump to F, thirty rounds and a click empty the magazine, and
+a target shot down gets back up. `smoke.first_person_play` draws it in a window: every frame
+presented without a validation error, the game the headless play run's, a window resized twice still
+presenting, and a 1080p frame's work under 16.7 ms
+(`openspec/changes/add-playable-fps-tps/evidence/falsification.txt`).
+
 ## What is not here
 
 - **Particle collision is the floor, authored in the effect.** The sparks bounce on a plane whose
@@ -117,4 +163,7 @@ Each of their key cases was proved red by a mutation:
 - **Drawn on Vulkan only.** `--render` asks for a Vulkan device, as samples/13-rts-api's does, and is
   declared only with the Vulkan renderer. The sample adds no shader: the frame's Metal and D3D12 builds
   are what they were. It has been drawn on an RTX 5060.
-- **No HUD and no crosshair.** The shots go where the screen's centre is, which the marks show.
+- **No HUD in the scripted session.** The HUD and the menu are the interface the play host gives
+  the game; the scripted session has none, and the stills above are drawn without them.
+- **No sound device when played.** The game's sounds are mixed into the null backend, as the
+  scripted session's are; the play host opens no audio device yet.

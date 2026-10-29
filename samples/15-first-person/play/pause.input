@@ -1,0 +1,10 @@
+# W held; the window loses the focus — the game pauses, the mouse turns nothing, W walks nowhere
+# — and gets it back, still paused, until Esc resumes it.
+10 key w down
+30 focus lost
+40 mouse move 300 0
+50 focus gained
+60 key escape down
+61 key escape up
+90 key w up
+100 quit

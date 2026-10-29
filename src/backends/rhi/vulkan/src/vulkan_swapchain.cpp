@@ -27,6 +27,16 @@ u32 clamp_to(u32 value, u32 low, u32 high) noexcept {
 }  // namespace
 
 Expected<SwapchainHandle, Error> VulkanDevice::create_swapchain(const SwapchainDescription& desc) {
+    SwapchainRecord record(*allocator_);
+    if (Status built = build_swapchain(desc, VK_NULL_HANDLE, record); !built) {
+        release_swapchain(record);
+        return make_unexpected(built.error());
+    }
+    return swapchains_.create(std::move(record));
+}
+
+Status VulkanDevice::build_swapchain(const SwapchainDescription& desc, VkSwapchainKHR previous,
+                                     SwapchainRecord& record) {
     if (desc.native_surface == nullptr) {
         return fail(ErrorCode::InvalidArgument,
                     "a swapchain needs the VkSurfaceKHR DisplayServer::create_surface() produced "
@@ -136,8 +146,8 @@ Expected<SwapchainHandle, Error> VulkanDevice::create_swapchain(const SwapchainD
     info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     info.presentMode = present;
     info.clipped = VK_TRUE;
+    info.oldSwapchain = previous;
 
-    SwapchainRecord record(*allocator_);
     record.surface = surface;
     record.requested = desc.present_mode;
     CY_VK_TRY(vkCreateSwapchainKHR(device_, &info, nullptr, &record.swapchain),
@@ -206,7 +216,27 @@ Expected<SwapchainHandle, Error> VulkanDevice::create_swapchain(const SwapchainD
     }
 
     name_object(reinterpret_cast<u64>(record.swapchain), VK_OBJECT_TYPE_SWAPCHAIN_KHR, desc.name);
-    return swapchains_.create(std::move(record));
+    return ok();
+}
+
+void VulkanDevice::release_swapchain(SwapchainRecord& record) noexcept {
+    for (const TextureViewHandle view : record.views) {
+        if (VulkanTextureView* stored = views_.resolve(view); stored != nullptr) {
+            vkDestroyImageView(device_, stored->view, nullptr);
+            (void)views_.destroy(view);
+        }
+    }
+    for (const TextureHandle texture : record.textures) {
+        // The VkImage belongs to the presentation engine; only the handle is ours to release.
+        (void)textures_.destroy(texture);
+    }
+    record.views.clear();
+    record.textures.clear();
+    if (record.swapchain != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR(device_, record.swapchain, nullptr);
+        record.swapchain = VK_NULL_HANDLE;
+    }
+    // The VkSurfaceKHR is NOT destroyed here: DisplayServer created it and DisplayServer owns it.
 }
 
 void VulkanDevice::destroy_swapchain(SwapchainHandle handle) noexcept {
@@ -215,18 +245,7 @@ void VulkanDevice::destroy_swapchain(SwapchainHandle handle) noexcept {
         return;
     }
     (void)vkDeviceWaitIdle(device_);
-    for (const TextureViewHandle view : record->views) {
-        if (VulkanTextureView* stored = views_.resolve(view); stored != nullptr) {
-            vkDestroyImageView(device_, stored->view, nullptr);
-            (void)views_.destroy(view);
-        }
-    }
-    for (const TextureHandle texture : record->textures) {
-        // The VkImage belongs to the presentation engine; only the handle is ours to release.
-        (void)textures_.destroy(texture);
-    }
-    vkDestroySwapchainKHR(device_, record->swapchain, nullptr);
-    // The VkSurfaceKHR is NOT destroyed here: DisplayServer created it and DisplayServer owns it.
+    release_swapchain(*record);
     (void)swapchains_.destroy(handle);
 }
 
@@ -249,11 +268,21 @@ Status VulkanDevice::resize_swapchain(SwapchainHandle handle, Extent2D extent) {
 
     // Recreate rather than patch: a swapchain's images, views and extent are one object as far as
     // the driver is concerned, and rebuilding is the only correct response to an out-of-date one.
-    destroy_swapchain(handle);
-    Expected<SwapchainHandle, Error> rebuilt = create_swapchain(description);
-    if (!rebuilt) {
-        return make_unexpected(rebuilt.error());
+    //
+    // REBUILT IN THE RECORD THE CALLER'S HANDLE NAMES. Until the play host resized its window this
+    // destroyed the swapchain and created another under a NEW handle it never returned, so the
+    // caller's handle was stale from the first resize and the second failed — the null and D3D12
+    // devices kept it, and `Device::resize_swapchain` promises the same handle. The new one is built
+    // first, the old one handed to the driver as the swapchain it replaces, and only then released:
+    // a rebuild that fails leaves the old swapchain as it was.
+    (void)vkDeviceWaitIdle(device_);
+    SwapchainRecord rebuilt(*allocator_);
+    if (Status built = build_swapchain(description, record->swapchain, rebuilt); !built) {
+        release_swapchain(rebuilt);
+        return built;
     }
+    release_swapchain(*record);
+    *record = std::move(rebuilt);
     return ok();
 }
 

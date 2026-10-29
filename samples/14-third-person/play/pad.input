@@ -1,0 +1,8 @@
+# A pad, through SDL's own virtual joystick: the right stick orbits the camera at the game's look
+# rate and the left stick walks the hero the way it looks.
+2 pad attach
+10 pad axis rightStickX 1
+40 pad axis rightStickX 0
+50 pad axis leftStickY 1
+110 pad axis leftStickY 0
+130 quit

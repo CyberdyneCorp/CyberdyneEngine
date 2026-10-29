@@ -11,6 +11,7 @@ engine's adapters and draws the frame.
 stone and on grass, the jumps and landings, the wind and the birds.
 
 ```
+just play-tps                                  PLAY IT: the hillside in a window (below)
 just run-sample third-person                   1200 frames of scripted play, headless, then the report
 just run-sample third-person --no-behaviours   the negative control: the same host with no game
 cy_sample_third-person --render <dir>          the run drawn at 1920x1080: seven stills
@@ -18,8 +19,38 @@ cy_sample_third-person --render <dir>          the run drawn at 1920x1080: seven
     --upscale native|quality|balanced|performance   --no-upscale   --no-gi   --no-ao
     --no-shadows   --no-validation   --stills <every n>   --trace <every n>   --frames <n>
 just capture-third-person                      the images and the video below
-ctest -R third_person                          the run, its digest, the golden, the budget
+just capture-play-tps                          the played film and its stills
+ctest -R third_person                          the run, its digest, the golden, the budget, the play
 ```
+
+## Playing it
+
+`just play-tps` opens the hillside in a window through the desktop play host
+([`samples/play`](../play/README.md)), and the hero is yours to run anywhere on it — walls a metre in
+from the terrain's edge, not drawn, keep it on the map. The picture needs the Vulkan renderer
+(`-D CY_RENDERER_VULKAN=ON`); `--window`, `--fullscreen`, `--no-vsync` and `--bindings <file>` are
+the play host's.
+
+| | Keyboard and mouse | Pad |
+|---|---|---|
+| move | W A S D, in the camera's frame | left stick |
+| orbit the camera | the mouse (raw counts, relative mode), or the arrow keys | right stick |
+| run | left Shift | left stick pressed, or east (B, Circle) |
+| jump | Space | south (A, Cross) |
+| pause | Esc | Start |
+
+The mouse orbits the camera at the director's 0.0025 radians a count, scaled by the sensitivity the
+pause menu sets — applied once, there — and the camera's collision rig keeps it off the walls as it
+does in the scripted run; when the look rests and the hero moves, the camera swings back in behind
+it. Esc, or the window losing the focus, pauses: the menu sets the sensitivity, inverts the look's Y,
+and resumes or quits.
+
+[Video: the hillside played](../../docs/design/videos/third-person-play.mp4), its hands a script
+pushed through the platform (`play/capture.input`).
+
+| The camera orbited | Up the stairs | On the hill | The pause menu |
+|---|---|---|---|
+| ![](../../docs/design/images/third-person-play-orbit.png) | ![](../../docs/design/images/third-person-play-stairs.png) | ![](../../docs/design/images/third-person-play-hill.png) | ![](../../docs/design/images/third-person-play-menu.png) |
 
 `samples/04-character` is the same kind of game at ABI 1.0 — a capsule, headless, its every value
 carried across components by its host. This one is what the ABI has grown into: the game calls the
@@ -77,6 +108,13 @@ it closer than it asked for. Two runs print the same report and the same **diges
 hero placement, camera position and skinning matrices folded together. With `--no-behaviours`
 every line of C++ runs and nothing moves, sounds or collides.
 
+`integration.third_person_play` plays the game headless with hands written down in `play/*.input`
+and pushed through the platform: a mouse count orbits the camera by the director's 0.0025 radians,
+W and Shift run the hero the way the camera looks at the game's run speed, Esc pauses the hero and
+the camera until Esc again, and a pad orbits and walks. `smoke.third_person_play` draws it in a
+window: every frame presented without a validation error, the game the headless play run's, and a
+1080p frame's work under 16.7 ms.
+
 `smoke.third_person_render` draws the run three ways — headless, at 480x270 with the validation
 layer, at 1920x1080 without — and holds the drawn run's gameplay to the headless one's, frame 880 to
 `tests/references/third_person_0880.png` texel for texel, and the 1080p frame to 16.7 ms.
@@ -104,7 +142,9 @@ layer, at 1920x1080 without — and holds the drawn run's gameplay to the headle
   railing in the RTS kit, and the GI holds the ramp as the box round it.
 * The hero is built from primitives and skinned rigidly — one joint a vertex — so its elbows and
   knees fold as segments. Its clips are authored in code.
-* No mouse look: the camera turns with the arrow keys. `--render` draws offscreen and writes images;
-  it does not open a window, and there is no device-input mode.
+* The scripted run has no mouse: its camera turns with the arrow keys. `--play` is the mouse, the
+  pad, the window and the pause menu; `--render` still draws offscreen and writes images.
+* No sound device when played: the mix goes to the null backend, as the scripted run's does unless
+  `--audio` writes it to a file.
 * Linux and Vulkan only were run. The frame's shaders compile for Metal and D3D12; the sample needs
   Swift, `CY_ANIMATION` and `CY_PHYSICS`, and declares nothing without them.

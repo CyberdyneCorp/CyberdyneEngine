@@ -167,6 +167,22 @@ if(CY_BUILD_TESTS)
                                PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke")
     add_dependencies(cy_test_integration_third_person_sample cy_sample_third-person)
 
+    # integration.third_person_play: the game PLAYED under the desktop play host, headless — SDL's
+    # dummy video driver, no device — its hands scripts pushed through the platform (play/).
+    if(TARGET cy::sample-play)
+        cy_add_test(
+            NAME third_person_play
+            KIND integration
+            SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_third_person_play.cpp"
+            DEFINITIONS
+                CY_SAMPLE_THIRD_PERSON="$<TARGET_FILE:cy_sample_third-person>"
+                CY_THIRD_PERSON_PLAY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/play")
+        target_include_directories(cy_test_integration_third_person_play
+                                   PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke"
+                                           "${CMAKE_SOURCE_DIR}/samples/play/tests")
+        add_dependencies(cy_test_integration_third_person_play cy_sample_third-person)
+    endif()
+
     # smoke.third_person_render: the run drawn — gameplay held to the headless run's, a golden
     # still, and the frame's cost at 1080p. A smoke suite, because it draws 1200 frames twice;
     # RUN_SERIAL, because the last run is timed and nothing should share the device with it.
@@ -195,5 +211,25 @@ if(CY_BUILD_TESTS)
         set_tests_properties(smoke.third_person_render PROPERTIES
                              SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine"
                              RUN_SERIAL TRUE)
+
+        # smoke.third_person_play: PLAYED and drawn — a window, the device, the running script —
+        # every frame presented without a validation error, the game the headless play run's, and
+        # a frame's work at 1080p under 16.7 ms. Skipped where there is no display or no device.
+        if(TARGET cy::sample-play)
+            cy_add_test(
+                NAME third_person_play
+                KIND smoke
+                SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_third_person_play_render.cpp"
+                DEFINITIONS
+                    CY_SAMPLE_THIRD_PERSON="$<TARGET_FILE:cy_sample_third-person>"
+                    CY_THIRD_PERSON_PLAY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/play")
+            target_include_directories(cy_test_smoke_third_person_play
+                                       PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke"
+                                               "${CMAKE_SOURCE_DIR}/samples/play/tests")
+            add_dependencies(cy_test_smoke_third_person_play cy_sample_third-person)
+            set_tests_properties(smoke.third_person_play PROPERTIES
+                                 SKIP_REGULAR_EXPRESSION "--play: skipped:"
+                                 RUN_SERIAL TRUE)
+        endif()
     endif()
 endif()

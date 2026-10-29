@@ -3,6 +3,7 @@
 
 #include "input_script.h"
 
+#include <cy/core/platform/display_server.h>
 #include <cy/platform/sdl3_event_injector.h>
 
 #include <algorithm>
@@ -102,6 +103,12 @@ namespace {
     if (verb == "pad") {
         return parse_pad(w, event);
     }
+    if (verb == "window" && w.size() == 4) {
+        event.verb = ScriptVerb::Window;
+        event.x = number(w[2]);
+        event.y = number(w[3]);
+        return event.x >= 1.0F && event.y >= 1.0F;
+    }
     if (verb == "quit" && w.size() == 2) {
         event.verb = ScriptVerb::Quit;
         return true;
@@ -185,6 +192,13 @@ Status InputScript::push(const ScriptEvent& event, const ScriptTarget& target) n
         case ScriptVerb::PadButton:
             return inject.gamepad_button(static_cast<input::GamepadControl>(event.control.code),
                                          event.down);
+        case ScriptVerb::Window:
+            if (target.display == nullptr) {
+                return fail(ErrorCode::Unavailable, "a window line needs the display server");
+            }
+            return target.display->set_window_size(
+                static_cast<WindowId>(target.window),
+                Extent{static_cast<i32>(event.x), static_cast<i32>(event.y)});
         case ScriptVerb::Quit:
             break;
     }

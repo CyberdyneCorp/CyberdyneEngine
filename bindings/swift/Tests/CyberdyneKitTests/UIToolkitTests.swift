@@ -48,6 +48,7 @@ private enum Kit {
     nonisolated(unsafe) static var finds: [(scope: CyUiElement, id: String)] = []
     nonisolated(unsafe) static var actions: [UInt32] = []
     nonisolated(unsafe) static var writes = 0
+    nonisolated(unsafe) static var visibility: [CyUiElement: UInt32] = [:]
 
     static func handle(_ index: Int) -> CyUiElement { 0x2_0000_0000 | CyUiElement(index + 1) }
 
@@ -66,6 +67,7 @@ private enum Kit {
         finds = []
         actions = []
         writes = 0
+        visibility = [:]
     }
 
     static func known(_ widget: CyUiElement) -> CyResult {
@@ -148,6 +150,10 @@ private enum Kit {
             return Kit.known(widget)
         }
         table.ui_destroy = { _, widget in Kit.known(widget) }
+        table.ui_set_visibility = { _, element, visibility in
+            Kit.visibility[element] = visibility
+            return CY_RESULT_OK
+        }
         table.ui_navigate = { _, action, consumed in
             Kit.actions.append(action)
             consumed?.pointee = action == CY_UI_ACTION_CANCEL.rawValue ? 0 : 1
@@ -505,6 +511,52 @@ final class UIToolkitTests: XCTestCase {
         menu.forgetHandlers(of: title)
         vtable.ui_event?(raw, &open, vtable.user_data)
         XCTAssertEqual(opened, 1)
+        vtable.destroy?(raw, vtable.user_data)
+    }
+
+    // --- The pause menu a desktop play host's game shows ---------------------------------------
+
+    func testThePauseMenuNamesTheHostsTwoButtonsAndHandsItsSettingsToTheGame() throws {
+        let (vtable, raw, behaviour) = try create()
+        // The document's two controls, as the fake toolkit finds them by id.
+        let slider = try UI.createWidget(UIWidgetDesc(.slider, id: "play-sensitivity"))
+        let invert = try UI.createWidget(UIWidgetDesc(.checkbox, id: "play-invert"))
+        var seen: [PlaySettings] = []
+        let menu = try PauseMenu(
+            for: behaviour, title: "Held", settings: PlaySettings(lookSensitivity: 1.5)
+        ) { seen.append($0) }
+
+        // ONE DOCUMENT, OWNED BY THE GAME: the host's two ids, the game's title and settings.
+        let text = try XCTUnwrap(Kit.documents.last?.text)
+        XCTAssertEqual(Kit.documents.last?.owner, 7)
+        XCTAssertTrue(text.contains("button #\(PauseMenu.resumeId) "))
+        XCTAssertTrue(text.contains("button #\(PauseMenu.quitId) "))
+        XCTAssertEqual(PauseMenu.resumeId, "play-resume")
+        XCTAssertEqual(PauseMenu.quitId, "play-quit")
+        XCTAssertTrue(text.contains("text=\"Held\""))
+        XCTAssertTrue(text.contains("value=1.5"))
+
+        // Hidden until the game is paused, and hidden again when it is not.
+        let root: CyUiElement = 0x2_0000_0100
+        XCTAssertEqual(Kit.visibility[root], UIVisibility.collapsed.rawValue)
+        try menu.update(paused: true)
+        XCTAssertTrue(menu.isShown)
+        XCTAssertEqual(Kit.visibility[root], UIVisibility.visible.rawValue)
+        try menu.update(paused: false)
+        XCTAssertEqual(Kit.visibility[root], UIVisibility.collapsed.rawValue)
+
+        // THE PLAYER'S CHANGES ARE THE GAME'S, through the closure, and nothing else.
+        var drag = event(CY_UI_EVENT_CHANGED, slider, value: 2.25)
+        vtable.ui_event?(raw, &drag, vtable.user_data)
+        var tick = event(CY_UI_EVENT_CHANGED, invert, value: 1)
+        vtable.ui_event?(raw, &tick, vtable.user_data)
+        XCTAssertEqual(
+            seen,
+            [
+                PlaySettings(lookSensitivity: 2.25, invertY: false),
+                PlaySettings(lookSensitivity: 2.25, invertY: true),
+            ])
+        XCTAssertEqual(menu.settings, PlaySettings(lookSensitivity: 2.25, invertY: true))
         vtable.destroy?(raw, vtable.user_data)
     }
 }

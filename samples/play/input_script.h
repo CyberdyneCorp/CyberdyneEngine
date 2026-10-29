@@ -14,6 +14,7 @@
 //     31       mouse to 640 360        the cursor to a point (a pause menu's button)
 //     40       mouse left down         a button: left, right, middle, extra1, extra2
 //     50       focus lost              the window loses, or gains, the keyboard's focus
+//     55       window 1600 900         the window resized, as a person dragging its corner would
 //     60       pad attach              a virtual gamepad, then its axes and buttons by the input
 //     61       pad axis leftStickY 1   layer's names, in the engine's convention (stick +y up)
 //     62       pad button south down
@@ -31,6 +32,7 @@
 #include <vector>
 
 namespace cy {
+class DisplayServer;
 class Sdl3EventInjector;
 }
 
@@ -45,6 +47,7 @@ enum class ScriptVerb : u8 {
     PadAttach,
     PadAxis,
     PadButton,
+    Window,
     Quit,
 };
 
@@ -63,6 +66,9 @@ struct ScriptTarget {
     Sdl3EventInjector* inject = nullptr;
     /// SDL's id for the window a focus line addresses.
     u32 native_window = 0;
+    /// The display server and the window a `window` line resizes.
+    DisplayServer* display = nullptr;
+    u32 window = 0;
 };
 
 class InputScript {
