@@ -75,8 +75,8 @@ recording to readback on an RTX 5060 (Vulkan), within the 16.7 ms budget `smoke.
 |:---:|:---:|
 | ![The same frame with no features, with shadows, with AO and GI, and with fog and HUD](docs/design/images/rts-map-features.png) | ![The overview camera over the level, with the fog of war and the HUD](docs/design/images/rts-map-overview.png) |
 | **Feature by feature** — none, shadows, AO and GI, then fog and HUD | **Overview** — the video's camera; [watch the 7 s orbit](docs/design/videos/rts-map.mp4) with the workers and the company walking |
-| ![The battle at frames 180, 330, 960 and 1150: the armies closing, the melee with arrows and catapult shot, the watchtower's fall, the barracks burning](docs/design/images/rts-battle.png) | ![The topographic minimap at frame 1150: hillshading, contours, the lake, roads, the fog and the battle's icons](docs/design/images/rts-battle-minimap.png) |
-| **Battle** — forty units fought in fixed point in the lockstep path, the same digest on all four CI legs; [watch it](docs/design/videos/rts-battle.mp4) | **Topographic minimap** — hillshading, contours, water and roads under blue's fog, the units it sees as icons |
+
+The map's [battle](#strategy-battle) is under Game demos.
 
 → [**RTS map guide**](docs/guides/rts-map.md) · [RTS combat guide](docs/guides/rts-combat.md) · [fog of war guide](docs/guides/fog-of-war.md)
 
@@ -84,9 +84,31 @@ recording to readback on an RTX 5060 (Vulkan), within the 16.7 ms budget `smoke.
 
 ## Game demos
 
-Two small games written in Swift against the C ABI, each drawn by the engine's own frame with
-shadows, ambient occlusion, the device GI and the temporal upscaler. The game decides everything;
-the C++ host builds the level, binds the engine's adapters and draws.
+Three small games written in Swift against the C ABI, each drawn by the engine's own frame with
+shadows, ambient occlusion and the device GI. The game decides everything; the C++ host builds the
+level, binds the engine's adapters and draws.
+
+### Strategy battle
+
+**`samples/13-rts-api --battle`** fights forty units on The Frontier entirely in the lockstep path.
+The Swift game gives attack-move and attack orders, and the simulation resolves melee, arrows and
+catapult shot in fixed point, with the same digest on all four CI legs. The game plays the effects,
+lights, deaths and sounds only where blue can see, and the HUD carries a topographic minimap.
+
+![The battle at frames 180, 330, 960 and 1150: the armies closing, the melee with arrows and catapult shot, the watchtower's fall, the barracks burning](docs/design/images/rts-battle.png)
+
+*The battle at frames 180, 330, 960 and 1150: the armies closing, the melee with arrows and catapult
+shot, the watchtower's fall and the barracks burning. 11.95 ms a frame on average over 1,186 frames
+at 1920x1080 on an RTX 5060 (Vulkan), 8.6 ms of it on the device, within the 16.7 ms
+`smoke.rts_api_map` asserts. [Watch the battle](docs/design/videos/rts-battle.mp4) from the
+player's camera.*
+
+| | |
+|:---:|:---:|
+| ![The minimap at frame 1150: the battlefield explored and seen under blue's fog, blue's soldiers and red's buildings as icons](docs/design/images/rts-battle-minimap.png) | ![The Frontier's minimap as baked: painted layers, hillshading, contour lines, the lakes and the roads](docs/design/images/rts-topographic-minimap.png) |
+| **Minimap in the battle** — blue's fog over the baked map, blue's units, and red's only where blue sees them | **Topographic minimap** — painted layers, hillshading, contours, water by depth and roads, baked once in 2.6 ms |
+
+→ [**RTS combat guide**](docs/guides/rts-combat.md) · [RTS map guide](docs/guides/rts-map.md) · [fog of war guide](docs/guides/fog-of-war.md)
 
 ### First person
 
@@ -579,6 +601,7 @@ the hero image above and `just run-ship` packages and launches `samples/11-ship`
 | [UI guide](docs/guides/ui.md) | CyberUI: the element store, layout, the interface pass, the developer console, a HUD from game code, the widget toolkit, documents and style sheets, opacity groups and HDR, the toolkit from Swift |
 | [RTS map guide](docs/guides/rts-map.md) | The Frontier: its source, the cook, drawing it under the Swift RTS, what holds it |
 | [Fog of war guide](docs/guides/fog-of-war.md) | The deterministic grid, the frame stage, the minimap, turning it on in a game |
+| [RTS combat guide](docs/guides/rts-combat.md) | The battle in the lockstep path: arms, structures, orders, events, the topographic minimap, what holds it |
 | [Navigation guide](docs/guides/navigation.md) | Baking and checking a navmesh from the editor or over MCP |
 | [Physics guide](docs/guides/physics.md) | Physics and Jolt: components, the bridge, stepping, queries from C++ and Swift, determinism |
 | [Building and running](docs/guides/building.md) | Toolchains, Linux, macOS editor, iOS, CI targets |
