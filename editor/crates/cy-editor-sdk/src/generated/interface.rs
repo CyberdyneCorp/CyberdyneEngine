@@ -5392,4 +5392,161 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// Resolve a streamed track the host registered, by name.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn audio_find_track(
+        &self,
+        engine: ffi::CyEngine,
+        name: *const ::std::ffi::c_char,
+        into: *mut ffi::CyAudioTrack,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .audio_find_track
+            .ok_or(CallError::Missing("audio_find_track"))?;
+        let raw = unsafe { entry(engine, name, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Stream a track, optionally crossfading from another stream.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn audio_stream_play(
+        &self,
+        engine: ffi::CyEngine,
+        play: *const ffi::CyAudioStreamPlay,
+        stream: *mut ffi::CyAudioStream,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .audio_stream_play
+            .ok_or(CallError::Missing("audio_stream_play"))?;
+        let raw = unsafe { entry(engine, play, stream) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Stop a stream, optionally fading out.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn audio_stream_stop(
+        &self,
+        engine: ffi::CyEngine,
+        stream: ffi::CyAudioStream,
+        fade_out: f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .audio_stream_stop
+            .ok_or(CallError::Missing("audio_stream_stop"))?;
+        let raw = unsafe { entry(engine, stream, fade_out) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Jump a stream to a position in its track.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn audio_stream_seek(
+        &self,
+        engine: ffi::CyEngine,
+        stream: ffi::CyAudioStream,
+        seconds: f64,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .audio_stream_seek
+            .ok_or(CallError::Missing("audio_stream_seek"))?;
+        let raw = unsafe { entry(engine, stream, seconds) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Ramp a stream's linear gain.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn audio_stream_set_volume(
+        &self,
+        engine: ffi::CyEngine,
+        stream: ffi::CyAudioStream,
+        volume: f32,
+        fade: f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .audio_stream_set_volume
+            .ok_or(CallError::Missing("audio_stream_set_volume"))?;
+        let raw = unsafe { entry(engine, stream, volume, fade) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A stream's position, length, gain and underruns.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn audio_stream_state(
+        &self,
+        engine: ffi::CyEngine,
+        stream: ffi::CyAudioStream,
+        into: *mut ffi::CyAudioStreamState,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .audio_stream_state
+            .ok_or(CallError::Missing("audio_stream_state"))?;
+        let raw = unsafe { entry(engine, stream, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

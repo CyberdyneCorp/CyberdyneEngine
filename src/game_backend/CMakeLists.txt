@@ -47,6 +47,7 @@ cy_add_module(
         cy::servers-physics
         cy::navigation
         cy::servers-audio
+        cy::audio-streaming
         cy::scene
         cy::scene-serialization)
 
@@ -147,6 +148,13 @@ if(CY_BUILD_TESTS)
                                "(tests/test_${service}_backend.cpp)")
             endif()
         endforeach()
+        # Issue #87: ABI 1.17's streamed tracks over a real stream player. Declared by name rather
+        # than through the loop above, so the requirements map can find the suite it cites.
+        cy_add_test(
+            NAME game_backend_audio_streams
+            KIND integration
+            SOURCES "${tests_dir}/test_audio_streams.cpp"
+            DEPENDENCIES cy::game-backend)
         # The interface adapter is behind CY_UI with CyberUI itself.
         if(TARGET cy_game_backend_ui)
             cy_add_test(

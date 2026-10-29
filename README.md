@@ -17,7 +17,7 @@ editor's node-graph canvas, compiled by the material compiler and bound as BC7 a
 > [M11.e · Ship](docs/ROADMAP.md#m11e--ship) and 1.0, then [M12 · The Game](docs/ROADMAP.md#m12--the-game),
 > an RTS written in Swift that proves the engine by using it; its [test map](#rts-showcase) already runs.
 
-[`openspec/specs/`](openspec/specs/README.md) holds **76 capabilities, 1,261 requirements and 2,834
+[`openspec/specs/`](openspec/specs/README.md) holds **76 capabilities, 1,262 requirements and 2,844
 scenarios** — the contract the implementation must satisfy. Today 17 are Complete, 55 Working, 3
 Seed and 1 not started ([`status.yaml`](docs/roadmap/status.yaml), reported by `just roadmap-status`).
 
@@ -112,7 +112,8 @@ through ABI 1.15's effects and decals. 6.19 ms a frame at 1080p with the Quality
 
 **`samples/14-third-person`** is a hero on a cooked hillside: locomotion through a synchronised blend
 space with its feet placed on the ground the physics world reports, stairs, slopes and jumps, a
-camera rig whose collision node keeps it in front of walls, and footsteps heard on stone and grass.
+camera rig whose collision node keeps it in front of walls, footsteps heard on stone and grass, and
+the hillside's wind streamed from a cooked Ogg Vorbis track, started from Swift through ABI 1.18.
 
 ![The run: on the stairs, a jump on the platform, the camera pulled in by the north wall, down the ramp, a jump onto the hill, and the view back down](docs/design/images/third-person-run.png)
 
@@ -126,7 +127,7 @@ down the ramp, a jump onto the hill and the view back down. 7.9 ms a frame on av
 | ![The stairs with no features, with shadows, with AO and GI, and with the upscaler](docs/design/images/third-person-features.png) | ![The camera pulled in by the north wall](docs/design/images/third-person-wall.png) | ![Down the ramp towards the hill](docs/design/images/third-person-ramp.png) |
 | **Feature by feature** — none, shadows, AO and GI, then the upscaler | **Camera collision** — the rig pulled in by a wall | **Slopes** — down the ramp, feet on the ground |
 
-→ [**Third-person demo guide**](docs/guides/third-person-demo.md) · [`content/third-person/`](content/third-person/README.md)
+→ [**Third-person demo guide**](docs/guides/third-person-demo.md) · [`content/third-person/`](content/third-person/README.md) · [audio import and streaming guide](docs/guides/audio-streaming.md)
 
 ---
 
@@ -190,7 +191,7 @@ every requirement is. The table groups what is in the tree now.
 | **Effects** | Volumetric fog, depth of field, motion blur, decals, selection outlines, GPU particles and trails | [`fog/`](src/rendering/fog/README.md) · [`particles/`](src/rendering/particles/README.md) · [`src/vfx/`](src/vfx/) |
 | **Scale** | Virtual geometry clusters, virtual texturing (Complete), virtual shadows, one residency policy (Complete) | [`virtual_geometry/`](src/rendering/virtual_geometry/) · [`virtual-geometry`](openspec/specs/virtual-geometry/spec.md) |
 | **Environment** | Physical sky and atmosphere, terrain, water, foliage, weather and wind over one field substrate; procedural generation | [`src/environment/`](src/environment/README.md) · [`src/pcg/`](src/pcg/README.md) |
-| **Simulation** | Animation with GPU skinning, drawn in the engine's frame and driven from Swift; deterministic fixed-point math and a fixed-point mover for lockstep units; AI, navigation, physics (Jolt), audio (miniaudio), abilities, cameras, cinematics | [`src/animation/`](src/animation/README.md) · [`src/core/detmath/`](src/core/detmath/README.md) · [`src/movement/`](src/movement/README.md) · [`src/physics/`](src/physics/README.md) |
+| **Simulation** | Animation with GPU skinning, drawn in the engine's frame and driven from Swift; deterministic fixed-point math and a fixed-point mover for lockstep units; AI, navigation, physics (Jolt), audio (miniaudio; WAV, Ogg Vorbis, FLAC and MP3 import, streamed music and ambience), abilities, cameras, cinematics | [`src/animation/`](src/animation/README.md) · [`src/core/detmath/`](src/core/detmath/README.md) · [`src/movement/`](src/movement/README.md) · [`src/physics/`](src/physics/README.md) |
 | **Integrity** | Deterministic simulation, replay and rollback, networking and replication, saves; a deterministic fog of war grid with shared vision and ghosts | [`src/replay/`](src/replay/) · [`src/networking/`](src/networking/README.md) · [`src/save/`](src/save/) · [fog of war guide](docs/guides/fog-of-war.md) |
 | **Gameplay** | Swift behaviours and systems over a versioned C ABI, now 1.17 (game services, the interface, animation with blend spaces and foot placement, fixed-point math, GI, fog of war, lights for a moment, the widget toolkit, the first-person camera, effects and decals, combat in the lockstep path, and what a game's menus need), with hot reload; visual scripting compiled by the engine, with a breakpoint debugger and reload during Play; the gameplay framework (Complete) | [`bindings/swift/`](bindings/swift/README.md) · [`src/abi/`](src/abi/README.md) · [visual scripting](docs/guides/visual-scripting.md) |
 | **Editor** | Rust application: documents and transactions, live viewport and gizmos, FBX import; material, VFX and gameplay graphs; terrain, physics, navigation, lighting and lightmap, audio and animation tools; an MCP agent interface | [`editor/`](editor/README.md) · [`editor-agent-interface`](openspec/specs/editor-agent-interface/spec.md) |

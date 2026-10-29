@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // `integration.game_backend_audio`: ABI 1.3's `audio_*` entries over a real `AudioServer`, through
-// the interface table, with the `AudioAdapter` bound on a host. `add-swift-game-api`.
+// the interface table, with the `AudioAdapter` bound on a host. `add-swift-game-api`. ABI 1.18's
+// streamed tracks are integration.game_backend_audio_streams (test_audio_streams.cpp).
 //
 // OWNER: implementer C. Every case runs over the server's null backend, which is driven — a case
 // mixes exactly the frames it names — so "has the voice ended" is a fact the case controls rather

@@ -350,7 +350,26 @@ CY_TEST_CASE("the 1.17 table appends what a game's menus need after every 1.16 e
     for (const bool set : entries) {
         CY_CHECK(set);
     }
-    CY_CHECK_EQ(offsetof(CyInterface, ui_widget_set_tooltip) + sizeof(void*), sizeof(CyInterface));
+    CY_CHECK_EQ(offsetof(CyInterface, ui_widget_set_tooltip) + sizeof(void*),
+                offsetof(CyInterface, audio_find_track));
+}
+
+CY_TEST_CASE("the 1.18 table appends streamed tracks after every 1.17 entry") {
+    const CyInterface& iface = table();
+    CY_CHECK_GE(iface.header.abi_minor, 18U);
+    CY_CHECK_EQ(iface.header.table_size, sizeof(CyInterface));
+    const bool entries[] = {
+        iface.audio_find_track != nullptr,        iface.audio_stream_play != nullptr,
+        iface.audio_stream_stop != nullptr,       iface.audio_stream_seek != nullptr,
+        iface.audio_stream_set_volume != nullptr, iface.audio_stream_state != nullptr,
+    };
+    CY_CHECK_EQ(sizeof(entries) / sizeof(entries[0]), 6U);
+    for (const bool set : entries) {
+        CY_CHECK(set);
+    }
+    CY_CHECK_EQ(offsetof(CyInterface, audio_find_track) + sizeof(void*),
+                offsetof(CyInterface, audio_stream_play));
+    CY_CHECK_EQ(offsetof(CyInterface, audio_stream_state) + sizeof(void*), sizeof(CyInterface));
 }
 
 CY_TEST_CASE("each scheduler stage runs in the phase cy_abi.h states") {

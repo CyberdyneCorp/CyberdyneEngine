@@ -104,10 +104,25 @@ Steam Audio being present: it SHALL improve audio quality, never enable or gate 
 
 | file | requirement |
 |---|---|
+| `streaming.h` (target `cy::audio-streaming`) | "Audio assets and streaming": the stream player, its refill executors and `FileByteSource` (issue #87; see below) |
 | `acoustics.h` | "Steam Audio as the spatial acoustics backend", "Acoustic geometry and materials", "Asynchronous acoustic simulation" |
 | `tiers.h` | "Audio importance and simulation tiers", "Voice virtualisation" |
 | `effects.h` | "Effects" |
 | `interactive.h` | "Interactive and adaptive audio", and the scheduling half of "Timing and synchronisation" |
+
+## The stream player (issue #87)
+
+`cy::audio::StreamPlayer` streams cooked tracks into an `AudioServer`: `play`, `stop`, `crossfade`,
+`seek` and `set_volume` on the game thread, `pump()` once a frame, refills as jobs through a
+`RefillExecutor` (`JobRefillExecutor` sends storage reads to the async service), and a
+`StreamDiagnostic` for every underrun and error. It is its own target, `cy::audio-streaming`, not part
+of `cy_audio`, because of a defect it does not fix: `tiers.h` and `effects.h` declare
+`cy::audio::SimulationTier`, `TierBudgets` and `EffectKind`, and the server declares DIFFERENT types
+of the same names in the same namespace. No binary linked both halves until the player, which needs
+the server, joined this directory — and the editor's suites then failed to link on two definitions of
+`effect_kind_name(EffectKind)`. Reconciling the acoustics half's copies with the server's is a change
+of its own; until then, nothing should link `cy_audio` and `cy_servers_audio` into one binary. See
+[`docs/guides/audio-streaming.md`](../../docs/guides/audio-streaming.md).
 
 ## Three decisions worth knowing
 
@@ -138,6 +153,12 @@ is a greyed-out control in a mixer window.
   and samples-played and output-latency belong to the device backend.
 
 ## Testing
+
+`integration.audio_streaming` — the stream player over the null backend and procedurally generated
+PCM tracks: refills starved for just under the ring's length never underrun; starved past it, the
+stream plays silence, says so and recovers; a seek lands on its frame; a loop is crossed with no frame
+lost; a crossfade is equal-power with both ramps on one frame; a ten-minute track streams in the
+memory a one-minute one needs; refills run as jobs with no blocking violation.
 
 `unit.audio_acoustics` — 27 cases: the geometry cache's static caching and dynamic updates, the
 fallback's completeness and its refusal to claim capabilities, the build/runtime Steam Audio

@@ -67,7 +67,27 @@ declared.
 | `voice.h` | clips, the three halves of a voice, the tiers, and the importance score |
 | `spatial.h` | attenuation models, cones, constant-power panning, Doppler, filter-based occlusion |
 | `commands.h` | the lock-free command ring |
-| `server.h` | the server: lifecycle, playback, `update()` on the game thread, `render()` on the audio thread |
+| `server.h` | the server: lifecycle, playback, `update()` on the game thread, `render()` on the audio thread; streams (`create_stream`, `start_stream`, `fade_stream`, `flush_stream`, `stream_status`) |
+| `cooked_audio.h` | issue #87: the cooked track — codec, load mode, played range, loop and measured loudness in an 80-byte header |
+| `decoder.h` | issue #87: `AudioByteSource`, `AudioDecoder`, `AudioCodecs` (a backend capability) and the built-in PCM codec; source-format sniffing |
+| `resampler.h` | issue #87: the windowed-sinc rate conversion streams and the importer share; channel conversion |
+| `loudness.h` | issue #87: ITU-R BS.1770-4 integrated loudness and sample peak |
+| `stream.h` | issue #87: `StreamRing` (SPSC frames between a refill job and the mixer), `StreamSource` (decode, convert, loop) and the fade curves |
+| `buffer.h` | issue #87: an exactly sized buffer, so a stream's reported footprint is its real one |
+
+## Streams (issue #87)
+
+A stream is a ring someone else fills and `render()` drains, with a gain envelope evaluated per
+frame. The audio thread does four things with one: waits for the ring to hold `prime_frames` (silence,
+not an underrun), plays it through the envelope (a crossfade is two `fade_stream` calls whose ramps
+start in the same block), fades out over one block and drops the ring on a flush (a seek's first
+half), and plays silence for whatever a short ring lacks — counting it, which `update()` turns into
+`AudioStatistics::stream_underruns` and an `audio.stream.underrun` log line. A ring whose producer
+marked its end and ran dry is a finished track, not an underrun.
+
+Everything above the ring — decoding, conversion, scheduling refills, seeking the decoder — is the
+stream player's (`src/audio`, `cy::audio-streaming`). See
+[`docs/guides/audio-streaming.md`](../../../docs/guides/audio-streaming.md).
 
 ## Three decisions worth knowing before changing anything
 
@@ -95,8 +115,11 @@ mixing with per-block gain ramps; five attenuation models, cones, panning, Doppl
 occlusion; the importance score, the four tiers, their budgets, hysteresis and virtualisation; the
 audio clock; the lock-free queue and the double-buffered mix state; the diagnostics.
 
-**Absent, deliberately, and named so nobody mistakes it for more**: decoding and streaming (the
-engine plays float PCM the asset system owns); the sixteen effects beyond the four in `bus.h`;
+**Since issue #87**: the cooked track format, decoding through `AudioCodecs`, streams with priming,
+underrun accounting, per-frame envelopes and flushes, rate conversion and loudness measurement.
+
+**Absent, deliberately, and named so nobody mistakes it for more**: Opus and ADPCM decoding; the
+sixteen effects beyond the four in `bus.h`;
 `AcousticsBackend`, HRTF, propagation, reflections and acoustic geometry (M8 — and the fallback path
 here is what `audio` requires to exist without them); interactive music and playlists; the middleware
 plugin backends. None is stubbed: a stub that returns a plausible value is worse than an absent

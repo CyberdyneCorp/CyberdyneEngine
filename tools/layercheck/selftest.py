@@ -57,11 +57,12 @@ CASES = (
          why="a file above src/backends/ includes <vulkan/vulkan.h>",
          expect=("src/rendering/graph/pass.cpp", "gpuapi:", "vulkan/vulkan.h", "src/backends/")),
     Case("thirdparty-above-backends", "check", False, checks=("thirdparty",),
-         why="files above the backends that own them include a Jolt header, miniaudio.h, and "
-             "HarfBuzz and ICU headers",
+         why="files above the backends that own them include a Jolt header, miniaudio.h, "
+             "stb_vorbis, and HarfBuzz and ICU headers",
          expect=("src/servers/physics/body.cpp", "thirdparty:", "Jolt/Physics/Body/Body.h",
                  "src/backends/physics-jolt/",
                  "src/servers/audio/server.cpp", "miniaudio.h",
+                 "src/servers/audio/stream.cpp", "stb_vorbis.c",
                  "src/backends/audio-miniaudio/",
                  "src/servers/text/server.cpp", "hb.h", "unicode/ubidi.h",
                  "src/backends/text-complete/")),

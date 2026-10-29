@@ -34,6 +34,7 @@ whole table.
 | [slang](https://github.com/shader-slang/slang) | 2026.9.2 | Apache-2.0 WITH LLVM-exception | `CY_SHADER_SLANG` is on | the editor and the cooker only |
 | [jolt](https://github.com/jrouwe/JoltPhysics) | 5.6.0 | MIT | `CY_PHYSICS` is on | a shipped game |
 | [miniaudio](https://github.com/mackron/miniaudio) | 0.11.24 | MIT-0 | `CY_AUDIO` is on | a shipped game |
+| [stb_vorbis](https://github.com/nothings/stb) | 1.22 | MIT | `CY_AUDIO` is on | a shipped game |
 | [ufbx](https://github.com/ufbx/ufbx) | 0.20.0 | MIT | always | the editor and the cooker only |
 | [xatlas](https://github.com/jpcy/xatlas) | 2022.07.26 | MIT | always | the editor and the cooker only |
 | [recast](https://github.com/recastnavigation/recastnavigation) | 1.6.0 | Zlib | `CY_NAVIGATION` is on | a shipped game |
@@ -207,6 +208,18 @@ regeneration needs them, and `just generate-check` is what notices.
 - **Included when**: `CY_AUDIO` is on
 - **Linked into**: a shipped game
 - **Why integrated rather than built**: Device I/O, sample-rate and channel conversion, decoding and streaming across every platform this engine targets, in one permissively licensed file. `audio` names it as the default backend and bounds what it is used for: the engine's own bus graph, voice management and spatialisation policy sit above it, and miniaudio's node graph, high-level engine API and 3D spatialisation are deliberately not used. Offered as public domain or MIT-0 and taken under MIT-0.
+
+### stb_vorbis 1.22
+
+- **Upstream**: https://github.com/nothings/stb
+- **Pinned at**: `003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5` (`master@003501f`)
+- **Licence**: MIT
+- **Licence text**: [`LICENSE`](https://github.com/nothings/stb/blob/003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5/LICENSE), and
+  `LICENSE` at the root of the fetched source in any configured build tree
+- **Behind**: cy::audio::AudioCodecs in src/servers/audio/, implemented by src/backends/audio-miniaudio/, whose src/vorbis_decoder.cpp is the only translation unit that names an stb_vorbis symbol
+- **Included when**: `CY_AUDIO` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: Ogg Vorbis is the compressed format `audio` names for streamed music, and decoding it is the one codec miniaudio leaves to a library it does not build. stb_vorbis is the decoder miniaudio's own Vorbis support is built on: a single file, no dependencies, no allocation outside the arena it is handed — which is what lets a stream's decoder memory be bounded and counted. Offered as MIT or public domain and taken under MIT.
 
 ### ufbx 0.20.0
 
@@ -886,6 +899,7 @@ which is why no entry appears above for any of it.
 | One scene | `content/beauty/shot.cyshot` | the camera, the sun, the grade and thirty-one placements |
 | The RTS test map's source | `content/rts/frontier.cymap` | written by hand in this repository; cooked by `cy_rts_map_cook` into a package whose terrain, painting and forest the engine computes from it, whose meshes `samples/13-rts-api/map/map_meshes.cpp` builds from primitives, and whose textures are the three `content/beauty` albedo images and a baked terrain albedo — [the record](content/rts/PROVENANCE.md) |
 | The third-person demo's level | `content/third-person/hillside.cymap` | written by hand in this repository; cooked by `cy_rts_map_cook` like the RTS test map, its meshes the same kit's, its textures the same three `content/beauty` images and a baked terrain albedo; the demo's hero and its sounds are built at run time by `samples/14-third-person` from primitives and a fixed sequence — [the record](content/third-person/PROVENANCE.md) |
+| Audio fixtures, a music loop and an ambience bed | `content/audio/` | synthesised from integer arithmetic and fixed seeds by `tools/content/make_audio.py` and encoded with ffmpeg: three encodings of the audio suites' reference signal (FLAC, Ogg Vorbis, MP3), the RTS theme and the third-person demo's streamed wind (issue #87) — [the record](content/audio/PROVENANCE.md) |
 
 **The rule this establishes, for whoever adds the next asset**: a file under `content/` carries a
 `PROVENANCE.md` beside it naming its licence and either the generator and seed that produce it or the

@@ -953,6 +953,30 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyVideoMode>.offset(of: \CyVideoMode.height), 4, "CyVideoMode.height offset")
     }
 
+    func testAudioStreamPlayLayout() {
+        XCTAssertEqual(MemoryLayout<CyAudioStreamPlay>.size, 48, "CyAudioStreamPlay size")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamPlay>.alignment, 8, "CyAudioStreamPlay alignment")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamPlay>.offset(of: \CyAudioStreamPlay.struct_size), 0, "CyAudioStreamPlay.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamPlay>.offset(of: \CyAudioStreamPlay.flags), 4, "CyAudioStreamPlay.flags offset")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamPlay>.offset(of: \CyAudioStreamPlay.track), 8, "CyAudioStreamPlay.track offset")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamPlay>.offset(of: \CyAudioStreamPlay.bus), 16, "CyAudioStreamPlay.bus offset")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamPlay>.offset(of: \CyAudioStreamPlay.crossfade_from), 24, "CyAudioStreamPlay.crossfade_from offset")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamPlay>.offset(of: \CyAudioStreamPlay.volume), 32, "CyAudioStreamPlay.volume offset")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamPlay>.offset(of: \CyAudioStreamPlay.fade_seconds), 36, "CyAudioStreamPlay.fade_seconds offset")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamPlay>.offset(of: \CyAudioStreamPlay.start_seconds), 40, "CyAudioStreamPlay.start_seconds offset")
+    }
+
+    func testAudioStreamStateLayout() {
+        XCTAssertEqual(MemoryLayout<CyAudioStreamState>.size, 32, "CyAudioStreamState size")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamState>.alignment, 8, "CyAudioStreamState alignment")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamState>.offset(of: \CyAudioStreamState.struct_size), 0, "CyAudioStreamState.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamState>.offset(of: \CyAudioStreamState.flags), 4, "CyAudioStreamState.flags offset")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamState>.offset(of: \CyAudioStreamState.position_seconds), 8, "CyAudioStreamState.position_seconds offset")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamState>.offset(of: \CyAudioStreamState.duration_seconds), 16, "CyAudioStreamState.duration_seconds offset")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamState>.offset(of: \CyAudioStreamState.gain), 24, "CyAudioStreamState.gain offset")
+        XCTAssertEqual(MemoryLayout<CyAudioStreamState>.offset(of: \CyAudioStreamState.underruns), 28, "CyAudioStreamState.underruns offset")
+    }
+
     func testInterfaceHeaderLayout() {
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.size, 16, "CyInterfaceHeader size")
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.alignment, 4, "CyInterfaceHeader alignment")
@@ -963,7 +987,7 @@ final class GeneratedLayoutTests: XCTestCase {
     }
 
     func testInterfaceLayout() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1720, "CyInterface size")
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1768, "CyInterface size")
         XCTAssertEqual(MemoryLayout<CyInterface>.alignment, 8, "CyInterface alignment")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.header), 0, "CyInterface.header offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.log), 16, "CyInterface.log offset")
@@ -1179,6 +1203,12 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.user_data_write), 1696, "CyInterface.user_data_write offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.user_data_read), 1704, "CyInterface.user_data_read offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_widget_set_tooltip), 1712, "CyInterface.ui_widget_set_tooltip offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.audio_find_track), 1720, "CyInterface.audio_find_track offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.audio_stream_play), 1728, "CyInterface.audio_stream_play offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.audio_stream_stop), 1736, "CyInterface.audio_stream_stop offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.audio_stream_seek), 1744, "CyInterface.audio_stream_seek offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.audio_stream_set_volume), 1752, "CyInterface.audio_stream_set_volume offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.audio_stream_state), 1760, "CyInterface.audio_stream_state offset")
     }
 
     func testModuleInitLayout() {
@@ -1196,7 +1226,7 @@ final class GeneratedLayoutTests: XCTestCase {
     /// The table itself. `Interface` reads entries by name through the imported struct, so if Swift
     /// laid `CyInterface` out differently from the engine, every call would go to the wrong entry.
     func testInterfaceTableSize() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1720,
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1768,
                        "CyInterface size")
         XCTAssertEqual(Int(ABI.interfaceTableSize), MemoryLayout<CyInterface>.size,
                        "the generated table size and the imported one")
@@ -1242,8 +1272,8 @@ final class GeneratedLayoutTests: XCTestCase {
     /// this is the same claim from Swift's side, and it is what makes `ABI.entryNames` — which a
     /// diagnostic uses to say *which* entry a short table stops at — worth trusting.
     func testEntryNameCount() {
-        XCTAssertEqual(ABI.entryNames.count, 213)
+        XCTAssertEqual(ABI.entryNames.count, 219)
         XCTAssertEqual(ABI.entryNames.first, "log")
-        XCTAssertEqual(ABI.entryNames.last, "ui_widget_set_tooltip")
+        XCTAssertEqual(ABI.entryNames.last, "audio_stream_state")
     }
 }

@@ -115,6 +115,11 @@ public:
 
     void shutdown() noexcept;
 
+    /// The job system and async service the rig loads through, which the host's streamed
+    /// ambience refills on too: a process has one job system. Valid after `load`.
+    [[nodiscard]] cy::jobs::JobSystem& jobs() noexcept { return workers_; }
+    [[nodiscard]] cy::jobs::AsyncService& async() noexcept { return async_; }
+
 private:
     [[nodiscard]] cy::Status cook() noexcept;
     [[nodiscard]] cy::Status store(cy::AssetId id, const cy::Array<cy::u8>& bytes) noexcept;

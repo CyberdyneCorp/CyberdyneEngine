@@ -29,6 +29,30 @@ function(cy_miniaudio_declare_tests)
         KIND integration
         SOURCES "${tests_dir}/test_miniaudio.cpp"
         DEPENDENCIES cy::backends-audio-miniaudio cy::servers-audio)
+
+    # Issue #87: the decoders over the fixtures in content/audio/, and a ten-minute stream. The
+    # fixtures' directory is a definition, as the text backend's fonts are.
+    cy_add_test(
+        NAME audio_codecs
+        KIND integration
+        SOURCES "${tests_dir}/test_codecs.cpp"
+        DEPENDENCIES cy::backends-audio-miniaudio cy::servers-audio)
+    target_compile_definitions(cy_test_integration_audio_codecs PRIVATE
+        CY_AUDIO_CONTENT_DIR="${CMAKE_SOURCE_DIR}/content/audio")
+
+    get_directory_property(smoke_budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_BUDGET_smoke)
+    get_directory_property(smoke_timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_TIMEOUT_smoke)
+    set(CY_TEST_BUDGET_smoke "${smoke_budget}")
+    set(CY_TEST_TIMEOUT_smoke "${smoke_timeout}")
+    cy_add_test(
+        NAME audio_stream_long
+        KIND smoke
+        SOURCES "${tests_dir}/test_stream_long.cpp"
+        DEPENDENCIES cy::backends-audio-miniaudio cy::servers-audio cy::audio-streaming)
+    target_compile_definitions(cy_test_smoke_audio_stream_long PRIVATE
+        CY_AUDIO_CONTENT_DIR="${CMAKE_SOURCE_DIR}/content/audio")
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_miniaudio_declare_tests)

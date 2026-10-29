@@ -2933,6 +2933,80 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
+    size_of::<ffi::CyAudioStreamPlay>() == 48,
+    "CyAudioStreamPlay is not 48 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyAudioStreamPlay>() == 8,
+    "CyAudioStreamPlay is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAudioStreamPlay, struct_size) == 0,
+    "CyAudioStreamPlay::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAudioStreamPlay, flags) == 4,
+    "CyAudioStreamPlay::flags is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAudioStreamPlay, track) == 8,
+    "CyAudioStreamPlay::track is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAudioStreamPlay, bus) == 16,
+    "CyAudioStreamPlay::bus is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAudioStreamPlay, crossfade_from) == 24,
+    "CyAudioStreamPlay::crossfade_from is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAudioStreamPlay, volume) == 32,
+    "CyAudioStreamPlay::volume is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAudioStreamPlay, fade_seconds) == 36,
+    "CyAudioStreamPlay::fade_seconds is not at byte 36"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAudioStreamPlay, start_seconds) == 40,
+    "CyAudioStreamPlay::start_seconds is not at byte 40"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyAudioStreamState>() == 32,
+    "CyAudioStreamState is not 32 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyAudioStreamState>() == 8,
+    "CyAudioStreamState is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAudioStreamState, struct_size) == 0,
+    "CyAudioStreamState::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAudioStreamState, flags) == 4,
+    "CyAudioStreamState::flags is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAudioStreamState, position_seconds) == 8,
+    "CyAudioStreamState::position_seconds is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAudioStreamState, duration_seconds) == 16,
+    "CyAudioStreamState::duration_seconds is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAudioStreamState, gain) == 24,
+    "CyAudioStreamState::gain is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAudioStreamState, underruns) == 28,
+    "CyAudioStreamState::underruns is not at byte 28"
+);
+
+const _: () = assert!(
     size_of::<ffi::CyInterfaceHeader>() == 16,
     "CyInterfaceHeader is not 16 bytes; the ABI description and rustc disagree"
 );
@@ -2958,8 +3032,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 1720,
-    "CyInterface is not 1720 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 1768,
+    "CyInterface is not 1768 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -3821,6 +3895,30 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, ui_widget_set_tooltip) == 1712,
     "CyInterface::ui_widget_set_tooltip is not at byte 1712"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, audio_find_track) == 1720,
+    "CyInterface::audio_find_track is not at byte 1720"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, audio_stream_play) == 1728,
+    "CyInterface::audio_stream_play is not at byte 1728"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, audio_stream_stop) == 1736,
+    "CyInterface::audio_stream_stop is not at byte 1736"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, audio_stream_seek) == 1744,
+    "CyInterface::audio_stream_seek is not at byte 1744"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, audio_stream_set_volume) == 1752,
+    "CyInterface::audio_stream_set_volume is not at byte 1752"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, audio_stream_state) == 1760,
+    "CyInterface::audio_stream_state is not at byte 1760"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -3867,7 +3965,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        213,
+        219,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }

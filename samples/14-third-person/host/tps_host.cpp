@@ -3,6 +3,10 @@
 
 #include "tps_host.h"
 
+#if defined(CY_THIRD_PERSON_STREAM_CODECS)
+#    include <cy/backends/audio/miniaudio_codecs.h>
+#endif
+
 #include <cy/backends/physics/jolt/server.h>
 #include <cy/core/math/quat.h>
 #include <cy/core/math/scalar.h>
@@ -214,6 +218,7 @@ cy::Status ThirdPersonHost::start(const char** detail) noexcept {
         {"level", &ThirdPersonHost::start_level},
         {"audio", &ThirdPersonHost::start_audio},
         {"animation", &ThirdPersonHost::start_animation},
+        {"streams", &ThirdPersonHost::start_streams},
         {"illumination", &ThirdPersonHost::start_illumination},
     };
     for (const auto& step : steps) {
@@ -530,6 +535,38 @@ cy::Status ThirdPersonHost::start_audio() noexcept {
     return cy::ok();
 }
 
+cy::Status ThirdPersonHost::start_streams() noexcept {
+    // ISSUE #87: the hillside's wind as a STREAMED track — a 24-second Ogg Vorbis bed cooked by
+    // cy_audio_cook, read from disk a chunk at a time on the async service, decoded on the rig's
+    // job system and drained by the mixer from a half-second ring. Optional: without the file (a
+    // build with CY_AUDIO off cooks none) the game plays its in-memory wind loop instead.
+    if (options_.ambience == nullptr || options_.ambience[0] == '\0') {
+        return cy::ok();
+    }
+    if (cy::Status opened = ambience_file_.open(options_.ambience); !opened) {
+        std::fprintf(stderr, "tps: no streamed ambience (%s): %s\n", options_.ambience,
+                     opened.error().message);
+        return cy::ok();
+    }
+    const auto track = cy::audio::track_from_cooked(ambience_file_);
+    if (!track) {
+        return cy::make_unexpected(track.error());
+    }
+    stream_executor_ =
+        std::make_unique<cy::audio::JobRefillExecutor>(hero_rig_.jobs(), hero_rig_.async());
+    streams_ = std::make_unique<cy::audio::StreamPlayer>(audio_, *stream_executor_, allocator_);
+    cy::audio::StreamPlayerConfig config;
+    config.capacity = 2;
+#if defined(CY_THIRD_PERSON_STREAM_CODECS)
+    config.codecs = &cy::audio::miniaudio_audio_codecs();
+#endif
+    if (cy::Status configured = streams_->configure(config); !configured) {
+        return configured;
+    }
+    audio_adapter_.bind_streams(streams_.get());
+    return audio_adapter_.add_track(cy::Name::intern("ambience.hillside"), *track);
+}
+
 cy::Status ThirdPersonHost::start_animation() noexcept {
     // THE RIG ARRIVES THROUGH THE ASSET SYSTEM: cooked into a memory mount and loaded back by id.
     if (cy::Status loaded = hero_rig_.load(); !loaded) {
@@ -839,6 +876,13 @@ void ThirdPersonHost::place_hero() noexcept {
 
 void ThirdPersonHost::update_audio(f32 seconds) noexcept {
     audio_adapter_.update(seconds);
+    // THE NULL DEVICE RUNS FASTER THAN REAL TIME. A device would take this frame's buffer 16 ms
+    // from now, by when the refills the pump just scheduled are long done; the null device takes
+    // it at once. So the host waits for them here, which is what keeps the recorded mix free of
+    // underruns that only a faster-than-real-time clock could cause.
+    while (streams_ != nullptr && streams_->refills_in_flight() != 0) {
+        hero_rig_.jobs().wait_for_idle();
+    }
     audio_.update(seconds);
     const u32 mixed = audio_device_.advance(mix_scratch_.data(), kFramesPerTick);
     if (options_.mix != nullptr) {
@@ -888,6 +932,14 @@ void ThirdPersonHost::shutdown() noexcept {
     started_ = false;
     host_.game = cy::abi::game::GameServices{};
     host_.bind_world(nullptr);
+    // The streams before the rig: a refill runs on the rig's job system, and the player's
+    // destructor needs none in flight.
+    while (streams_ != nullptr && streams_->refills_in_flight() != 0) {
+        hero_rig_.jobs().wait_for_idle();
+    }
+    audio_adapter_.bind_streams(nullptr);
+    streams_.reset();
+    stream_executor_.reset();
     animation_adapter_.reset();
     animation_.reset();
     hero_rig_.shutdown();
