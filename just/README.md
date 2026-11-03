@@ -16,7 +16,7 @@ which `just` modules would not do. See `design.md` §10.
 | `diagnose.just` | Diagnose | Trace inspection, crash artefacts, log collection |
 | `roadmap.just` | Roadmap | Capability status, milestone exit criteria |
 | `maintenance.just` | Maintenance | Clean, caches, dependency update |
-| `release.just` | Release | Version, changelog, artefacts, publication |
+| `release.just` | Release | Version, changelog, artefacts, publication; `package` and `release-games` for distributable games |
 
 Import, rather than one large file, gives every category a single owner.
 
