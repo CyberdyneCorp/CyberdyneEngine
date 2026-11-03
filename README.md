@@ -76,21 +76,7 @@ recording to readback on an RTX 5060 (Vulkan), within the 16.7 ms budget `smoke.
 | ![The same frame with no features, with shadows, with AO and GI, and with fog and HUD](docs/design/images/rts-map-features.png) | ![The overview camera over the level, with the fog of war and the HUD](docs/design/images/rts-map-overview.png) |
 | **Feature by feature** — none, shadows, AO and GI, then fog and HUD | **Overview** — the video's camera; [watch the 7 s orbit](docs/design/videos/rts-map.mp4) with the workers and the company walking |
 
-The map's [battle](#strategy-battle) is under Game demos.
-
-**Play it.** `just play-rts` opens a window on the battle with your mouse and keyboard on blue's
-army — box and click selection with outlines, control groups, right-click attack, move and
-attack-move as lockstep commands, an RTS camera, a minimap, pause, an Esc menu, an opponent on red
-and a result screen — every decision the Swift game's. A played session's command log replays to
-the same digest.
-
-![A skirmish played through SDL's input: a box round the swordsmen, the army on red's line, the melee before the barracks, the watchtower falling](docs/design/images/rts-play.png)
-
-*A whole skirmish played to victory by a written hand pushed through SDL's event queue —
-[watch it](docs/design/videos/rts-play.mp4). The frame 10.7 ms on average at 1920x1080 on an RTX
-5060 (Vulkan), presenting it 3.6 ms more, within the 16.7 ms `smoke.rts_api_play` asserts.*
-
-→ [**Playing the RTS**](docs/guides/playing-the-rts.md) · [**RTS map guide**](docs/guides/rts-map.md) · [RTS combat guide](docs/guides/rts-combat.md) · [fog of war guide](docs/guides/fog-of-war.md)
+The map's [battle](#strategy-battle), and playing it in a window, are under Game demos.
 
 ---
 
@@ -120,7 +106,19 @@ player's camera.*
 | ![The minimap at frame 1150: the battlefield explored and seen under blue's fog, blue's soldiers and red's buildings as icons](docs/design/images/rts-battle-minimap.png) | ![The Frontier's minimap as baked: painted layers, hillshading, contour lines, the lakes and the roads](docs/design/images/rts-topographic-minimap.png) |
 | **Minimap in the battle** — blue's fog over the baked map, blue's units, and red's only where blue sees them | **Topographic minimap** — painted layers, hillshading, contours, water by depth and roads, baked once in 2.6 ms |
 
-→ [**RTS combat guide**](docs/guides/rts-combat.md) · [RTS map guide](docs/guides/rts-map.md) · [fog of war guide](docs/guides/fog-of-war.md)
+**Play it.** `just play-rts` opens a window on the battle with your mouse and keyboard on blue's
+army — box and click selection with outlines, control groups, right-click attack, move and
+attack-move as lockstep commands, an RTS camera, a minimap, pause, an Esc menu, an opponent on red
+and a result screen — every decision the Swift game's. A played session's command log replays to
+the same digest.
+
+![A skirmish played through SDL's input: a box round the swordsmen, the army on red's line, the melee before the barracks, the watchtower falling](docs/design/images/rts-play.png)
+
+*A whole skirmish played to victory by a written hand pushed through SDL's event queue —
+[watch it](docs/design/videos/rts-play.mp4). The frame 10.7 ms on average at 1920x1080 on an RTX
+5060 (Vulkan), presenting it 3.6 ms more, within the 16.7 ms `smoke.rts_api_play` asserts.*
+
+→ [**Playing the RTS**](docs/guides/playing-the-rts.md) · [**RTS combat guide**](docs/guides/rts-combat.md) · [RTS map guide](docs/guides/rts-map.md) · [fog of war guide](docs/guides/fog-of-war.md)
 
 ### First person
 
@@ -617,6 +615,7 @@ download and play ([shipping guide](docs/guides/shipping.md)).
 | [RTS map guide](docs/guides/rts-map.md) | The Frontier: its source, the cook, drawing it under the Swift RTS, what holds it |
 | [Fog of war guide](docs/guides/fog-of-war.md) | The deterministic grid, the frame stage, the minimap, turning it on in a game |
 | [RTS combat guide](docs/guides/rts-combat.md) | The battle in the lockstep path: arms, structures, orders, events, the topographic minimap, what holds it |
+| [Playing the RTS](docs/guides/playing-the-rts.md) | The battle played in a window: the desktop loop, where each decision lives, replaying a session, testing it without a person, what it costs |
 | [Navigation guide](docs/guides/navigation.md) | Baking and checking a navmesh from the editor or over MCP |
 | [Physics guide](docs/guides/physics.md) | Physics and Jolt: components, the bridge, stepping, queries from C++ and Swift, determinism |
 | [Building and running](docs/guides/building.md) | Toolchains, Linux, macOS editor, iOS, CI targets |
