@@ -35,6 +35,7 @@
 
 #include <cy/core/math/shapes.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/ship/launch.h>
 
 #include <cstdlib>
 #include <memory>
@@ -346,20 +347,38 @@ void print_report(RtsHost& host, const Findings& seen) noexcept {
     print_battle(now);
 }
 
+/// `just package rts`: a packaged RTS opens a window on the map when started with no arguments,
+/// and its settings file holds the frame's width, v-sync and the validation layer.
+constexpr cy::ship::Setting kShipSettings[] = {
+    {"vsync", "on", cy::ship::SettingKind::Switch, nullptr, "--no-vsync",
+     "Wait for the display between frames: on or off."},
+    {"width", "1920", cy::ship::SettingKind::Count, "--width", nullptr,
+     "The frame's width in pixels; its height follows at 16:9 and the window letterboxes it."},
+    {"validation", "off", cy::ship::SettingKind::Switch, "--validation", nullptr,
+     "The Vulkan validation layer, for reporting a rendering problem: on or off."},
+};
+constexpr const char* kShipDefaults[] = {"--play"};
+
+[[nodiscard]] cy::ship::LaunchSpec ship_spec() noexcept {
+    cy::ship::LaunchSpec spec{"rts", "CyberdyneRTS"};
+    spec.settings = kShipSettings;
+    spec.setting_count = sizeof(kShipSettings) / sizeof(kShipSettings[0]);
+    spec.settings_when = "--play";
+    spec.default_arguments = kShipDefaults;
+    spec.default_argument_count = 1;
+    return spec;
+}
+
 /// `--play`'s host options, its recorded log read when it replays one, and the map it draws on by
 /// default. False, having said why, when the log cannot be read.
 bool configure_play(const PlayFlags& play, sample::rts::HostOptions& options, MapFlags& map,
-                    sample::rts::ReplayLog& replay_log) noexcept {
+                    const char* default_map, sample::rts::ReplayLog& replay_log) noexcept {
     options.battle = true;
     options.skirmish = true;
     options.platform_input = true;
-#if defined(CY_RTS_API_MAP)
     if (!play.headless && map.package == nullptr) {
-        map.package = CY_RTS_API_MAP_PACKAGE;
+        map.package = default_map;
     }
-#else
-    (void)map;
-#endif
     if (play.replay == nullptr) {
         return true;
     }
@@ -410,10 +429,23 @@ int play_session(RtsHost& host, const PlayFlags& flags, const MapFlags& map,
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int main(int process_argc, char** process_argv) {
+    // A packaged RTS verifies its installation before anything else, and refuses to start when it
+    // does not hold (tools/ship/include/cy/ship/launch.h). Out of a build tree this is a no-op.
+    cy::ship::Launch launch;
+    if (!cy::ship::start(process_argc, process_argv, ship_spec(), launch)) {
+        return cy::ship::kRefusedExit;
+    }
+    const int argc = launch.argc();
+    char** argv = launch.argv();
     sample::rts::HostOptions options;
-    options.module_library = CY_RTS_API_MODULE_LIBRARY;
-    options.module_manifest = CY_RTS_API_MODULE_MANIFEST;
+    options.module_library = launch.library(CY_RTS_API_MODULE_LIBRARY, "libCyGame_g0.so");
+    options.module_manifest = launch.content(CY_RTS_API_MODULE_MANIFEST, "module.toml");
+#if defined(CY_RTS_API_MAP)
+    const char* default_map = launch.content(CY_RTS_API_MAP_PACKAGE, "frontier.cypak");
+#else
+    const char* default_map = nullptr;
+#endif
     const char* render_directory = nullptr;
     bool render_gi = true;
     bool render_fog = false;
@@ -444,8 +476,12 @@ int main(int argc, char** argv) {
     // `--play`: the battle, a person's hand on blue, the platform's devices, and — with
     // `--replay` — the recorded orders in place of anyone's.
     sample::rts::ReplayLog replay_log;
-    if (play.play && !configure_play(play, options, map, replay_log)) {
+    if (play.play && !configure_play(play, options, map, default_map, replay_log)) {
         return 1;
+    }
+    // Packaged, the map is the game's own: every run is on it unless `--map` names another.
+    if (launch.packaged() && map.package == nullptr) {
+        map.package = default_map;
     }
 
 #if defined(CY_RTS_API_MAP)

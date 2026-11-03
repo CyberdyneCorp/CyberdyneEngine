@@ -44,6 +44,7 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/core/platform/platform.h>
 #include <cy/platform/sdl3_platform.h>
+#include <cy/ship/launch.h>
 #ifdef CY_SHIP_HAS_NATIVE_PLATFORM
 #    include <cy/platform/linux_platform.h>
 #endif
@@ -204,10 +205,26 @@ void print_coverage(std::FILE* out, const std::vector<CoverageLine>& lines,
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int main(int process_argc, char** process_argv) {
+    // `just package ship`: packaged, the card's installation is the artefact's content, verified
+    // against the signed manifest before this program reads a byte of it (tools/ship/). Started
+    // with no arguments, it shows the card in a window.
+    static constexpr const char* kShipDefaults[] = {"--platform", "auto"};
+    cy::ship::LaunchSpec spec{"ship", "CyberdyneShip"};
+    spec.default_arguments = kShipDefaults;
+    spec.default_argument_count = 2;
+    cy::ship::Launch launch;
+    if (!cy::ship::start(process_argc, process_argv, spec, launch)) {
+        return cy::ship::kRefusedExit;
+    }
+    const int argc = launch.argc();
+    char** argv = launch.argv();
     Options options;
     if (!parse_options(argc, argv, options)) {
         return 2;
+    }
+    if (options.install.empty() && launch.packaged()) {
+        options.install = launch.content("", "install");
     }
     if (options.install.empty()) {
         std::fprintf(stderr, "%s: --install <dir> is required\n\n", kTag);

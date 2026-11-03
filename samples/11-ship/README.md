@@ -40,6 +40,14 @@ install, a provenance record and a launch that reproduces from it.
 
 ---
 
+## Shipping it
+
+`just package ship <linux|windows|macos|host>` packages the card as a self-contained artefact — the
+executable, its Swift module, its cooked content cut into chunks under a signed manifest, the
+licences and the changelog. Unpacked anywhere, `./bin/cyberdyne-ship` verifies every file before it
+starts and plays with no arguments; its settings file, crash reports and unpacked content live in the
+user's directories. It is still not a game. [`docs/guides/shipping.md`](../../docs/guides/shipping.md) is the guide.
+
 ## What it covers, and what it does not
 
 **The artefact states its own coverage on its own face** — the window carries this table, `--coverage

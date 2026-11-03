@@ -52,6 +52,9 @@ struct RenderOptions {
     bool flashes = true;
     /// The graphics API's validation layer, on unless a run measures what a frame costs.
     bool validation = true;
+    /// The directory `content/beauty/textures/` is under: the source tree, or a packaged game's
+    /// materialised content (tools/ship/).
+    std::string content_root = CY_FIRST_PERSON_CONTENT_ROOT;
     /// PLAYED: draw on this device — the play host's, whose swapchain presents the picture — and
     /// leave each frame's output sampled for it, writing no stills. The renderer does not own it.
     cy::rhi::Device* device = nullptr;

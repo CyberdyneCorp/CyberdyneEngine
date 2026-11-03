@@ -104,6 +104,14 @@ if(NOT Python3_Interpreter_FOUND)
     return()
 endif()
 
+# A packaged RTS starts by verifying its installation against the signed manifest (issue #87,
+# tools/ship/), so the game is not declared without that check.
+if(NOT TARGET cy::ship)
+    message(STATUS "samples/13-rts-api: tools/ship is absent (CY_BUILD_TOOLS=OFF), and the game's "
+                   "launch is its check; the sample is not built")
+    return()
+endif()
+
 set(CY_RTS_API_DRIVER "${CMAKE_SOURCE_DIR}/bindings/swift/tools/cy_swift_module.py")
 execute_process(COMMAND "${Python3_EXECUTABLE}" "${CY_RTS_API_DRIVER}" --probe
                 RESULT_VARIABLE rts_api_swift_result
@@ -139,6 +147,7 @@ add_custom_command(
     COMMAND "${Python3_EXECUTABLE}" "${CY_RTS_API_DRIVER}"
             --work "${CY_RTS_API_MODULE_WORK}" --out "${CY_RTS_API_MODULE_DIR}"
             --configuration "${CY_RTS_API_SWIFT_CONFIGURATION}"
+            ${CY_SWIFT_MODULE_SHIPPING_ARGUMENTS}
             --generation "0=${CMAKE_CURRENT_SOURCE_DIR}/game"
     DEPENDS "${CY_RTS_API_DRIVER}" "${CMAKE_SOURCE_DIR}/bindings/swift/Package.swift"
             ${CY_RTS_API_GAME_SOURCES} ${CY_RTS_API_KIT_SOURCES}
@@ -190,6 +199,8 @@ cy_add_module(
         cy::servers-audio
         cy::servers-camera
         cy::servers-physics
+        # The launch: a packaged game's installation verified before it starts (tools/ship/).
+        cy::ship
         # `--play`: the platform's keyboard, mouse and window, the selection outlines' component the
         # game marks what the player picked with, and the widget toolkit its menus are made with.
         cy::platform-desktop-sdl3

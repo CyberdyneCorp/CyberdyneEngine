@@ -312,6 +312,14 @@ keeps the caller's handle (`samples/play`'s change, #149, which found the same d
 first- and third-person games); the skirmish's run is a second regression test of it, and it is red
 on the code before that fix (`openspec/changes/add-playable-rts/evidence/`).
 
+## Shipping it
+
+`just package rts <linux|windows|macos|host>` packages the RTS as a self-contained artefact — the
+executable, its Swift module, its cooked content cut into chunks under a signed manifest, the
+licences and the changelog. Unpacked anywhere, `./bin/cyberdyne-rts` verifies every file before it
+starts and plays with no arguments; its settings file, crash reports and unpacked content live in the
+user's directories. Its settings are `vsync`, `width` and `validation`. [`docs/guides/shipping.md`](../../docs/guides/shipping.md) is the guide.
+
 ## What is here
 
 | | |

@@ -19,6 +19,16 @@ endif()
 # re-runs contradicted. `artefact.Report.exit_code` is derived from the gaps and
 # `artefact.Report.headline` refuses a maximum, so neither can happen again without deleting the
 # module. M7 tasks 5b.5 and 5b.5b.
+# A SHIPPED GAME CARRIES ITS SWIFT RUNTIME INSIDE ITS MODULE (issue #87). In the Shipping
+# configuration on Linux, the games' Swift modules are built with `--static-stdlib`
+# (bindings/swift/tools/cy_swift_module.py says why that is for shipping only), so `just package`
+# copies no libswiftCore.so beside them. Elsewhere this is empty: Darwin's Swift runtime is the
+# operating system's, and a development module stays dynamic for hot reload.
+set(CY_SWIFT_MODULE_SHIPPING_ARGUMENTS "")
+if(CMAKE_BUILD_TYPE STREQUAL "Shipping" AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(CY_SWIFT_MODULE_SHIPPING_ARGUMENTS --static-stdlib)
+endif()
+
 add_subdirectory(harness)
 add_subdirectory(00-empty)
 add_subdirectory(01-headless-host)

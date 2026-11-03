@@ -397,7 +397,7 @@ struct FpsRenderer::State {
         std::vector<pipeline::TextureUpload> uploads;
         for (u32 detail = 1; detail < static_cast<u32>(Detail::Count); ++detail) {
             cy::Expected<DetailTexture, cy::Error> texture =
-                load_detail(static_cast<Detail>(detail), CY_FIRST_PERSON_CONTENT_ROOT);
+                load_detail(static_cast<Detail>(detail), options.content_root.c_str());
             if (!texture) {
                 // No importer: the flat colours are the picture.
                 return texture.error().code == cy::ErrorCode::Unsupported
