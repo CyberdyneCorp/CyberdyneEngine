@@ -345,7 +345,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
+          sudo apt-get install -y ninja-build patchelf strace libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       - name: Install the generator
         if: runner.os == 'macOS'
         run: brew install ninja
@@ -433,6 +433,77 @@ jobs:
           path: build/dev/samples/11-ship/run/reproduce
           include-hidden-files: true
           if-no-files-found: ${{ job.status == 'success' && 'error' || 'warn' }}
+
+  # --- The games, packaged for each desktop target (issue #87) ----------------------------------
+  #
+  # `just package all host` on each desktop leg, from the tree that leg's build job built: the RTS,
+  # the first- and third-person games and samples/11-ship's card, each signed, chunked and
+  # archived (tools/ship/package.py), uploaded as `games-<label>`. PACKAGE ONLY: the tree is the
+  # build job's, unpacked at this commit, so `just build-engine` inside the recipe is a no-op and
+  # the job's time is the packing. The artefacts are the dev profile's — the manifest's `profile`
+  # line says so; `just release-games` is the release. windows-x86_64 has no Swift toolchain (the
+  # `build` matrix's note), so its artefact is the card alone. smoke.ship_games, which `test` runs,
+  # unpacks and launches what this produces.
+  package:
+    name: package ${{ matrix.label }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: linux-x86_64, os: ubuntu-24.04, swift: action }
+          - { label: macos-arm64, os: macos-14, swift: action }
+          - { label: windows-x86_64, os: windows-2022, msvc: x64, swift: none }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
+      - if: matrix.msvc != ''
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc }}
+      - if: matrix.swift == 'action' && runner.os == 'Linux'
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
+      - if: matrix.swift == 'action' && runner.os == 'macOS'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.2'
+      - name: Install the window-system headers SDL3 builds against, and patchelf
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build patchelf libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
+      - name: Install the generator
+        if: runner.os == 'macOS'
+        run: brew install ninja
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-${{ matrix.label }}
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - name: The archive, fetched again
+        if: steps.build-tree.outputs.intact != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just ci-build-tree-fetch build-tree-${{ matrix.label }}
+      - name: The tree the build job built, at this commit
+        run: just ci-build-tree-unpack
+      - name: Every game this leg built, packaged
+        run: just package all host --profile dev --out dist/packages
+      - uses: actions/upload-artifact@v5
+        with:
+          name: games-${{ matrix.label }}
+          path: dist/packages
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
 
   # --- The concurrency suites under a data-race detector, and the job system's throughput ---------
   #
