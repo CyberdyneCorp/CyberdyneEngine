@@ -62,6 +62,12 @@ ci-jobs:
 # image preinstalls and nothing here uses — Android, .NET, Haskell, CodeQL, the image's own Docker
 # images — and prints `df` before and after, so the next full disk is a number in the log.
 #
+# EVERY LINUX JOB THAT BUILDS OR UNPACKS A TREE RUNS IT TOO, since 2026-11-03. That afternoon about
+# one hosted ubuntu job in seven died with `No space left on device` (the runner's own log write
+# failing, so the job's log was lost), mostly while `ci-build-tree-unpack` held the 6.6 GB archive
+# and the ~20 GB tree it expands to at once. The same commit passed on other runners, so the space
+# a runner starts with varies. Freeing ~30 GB first costs a few minutes and removes that variance.
+#
 # CI only: it deletes system directories with sudo, and refuses to run anywhere GITHUB_ACTIONS is
 # not `true`.
 #
