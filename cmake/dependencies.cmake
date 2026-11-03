@@ -25,6 +25,7 @@
 
 include_guard(GLOBAL)
 include(FetchContent)
+include("${CMAKE_CURRENT_LIST_DIR}/dependency_fetch.cmake")
 
 set(CY_DEPS_MANIFEST "${CMAKE_CURRENT_LIST_DIR}/../deps/manifest.toml"
     CACHE FILEPATH "The dependency manifest that drives the fetch")
@@ -845,18 +846,11 @@ foreach(_cy_id IN LISTS CY_DEPENDENCIES)
         set(CY_DEP_${_cy_id}_cmake_target "${CY_DEP_${_cy_id}_system_target}")
         message(STATUS "dependency ${_cy_id}: system copy, target ${CY_DEP_${_cy_id}_cmake_target}")
     else()
-        # A shallow fetch of an arbitrary commit needs a server that allows it — git's
-        # `uploadpack.allowReachableSHA1InWant`. GitHub does, and it is the difference between a few
-        # megabytes and several hundred for SDL and zstd.
-        #
-        # GITLAB DOES NOT, and M8.c is where that stopped being a footnote. The Eigen entry is
-        # pinned at a commit on gitlab.com and a shallow fetch of it fails with "Failed to checkout
-        # tag", which reads like a bad pin rather than a server policy. The host decides, so the
-        # host is what this reads, rather than a list of names somebody has to remember to extend.
-        set(_cy_shallow TRUE)
-        if(NOT CY_DEP_${_cy_id}_repository MATCHES "^https://github\\.com/")
-            set(_cy_shallow FALSE)
-        endif()
+        # Shallow where a depth-one clone is certain to hold the pinned commit, which is the
+        # difference between a few megabytes and several hundred for SDL and zstd. A pin with no
+        # upstream tag, or on a host other than GitHub, is fetched in full; the module says why.
+        cy_dependency_fetch_is_shallow(_cy_shallow "${CY_DEP_${_cy_id}_repository}"
+                                       "${CY_DEP_${_cy_id}_tag}")
         FetchContent_Declare(${_cy_id}
             GIT_REPOSITORY "${CY_DEP_${_cy_id}_repository}"
             GIT_TAG "${CY_DEP_${_cy_id}_commit}"

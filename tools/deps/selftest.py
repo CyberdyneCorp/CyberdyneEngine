@@ -17,6 +17,8 @@ Run directly, or through `just maintenance-deps-check`.
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -185,6 +187,77 @@ def test_record_rules(root: Path) -> None:
               "does not exist" in str(error))
 
 
+# --- Which pins are fetched shallowly ----------------------------------------------------------
+
+SHALLOW_PROBE = """\
+include("${MODULE}")
+foreach(entry IN LISTS ENTRIES)
+    string(REPLACE "|" ";" fields "${entry}")
+    list(GET fields 0 name)
+    list(GET fields 1 repository)
+    list(GET fields 2 tag)
+    cy_dependency_fetch_is_shallow(shallow "${repository}" "${tag}")
+    message(STATUS "shallow ${name}=${shallow}")
+endforeach()
+"""
+
+
+def shallow_decisions(root: Path, entries: list[tuple[str, str, str]]) -> dict[str, bool]:
+    """Ask cmake/dependency_fetch.cmake itself, in script mode, rather than a copy of its rule."""
+    probe = root / "shallow_probe.cmake"
+    probe.write_text(SHALLOW_PROBE, encoding="utf-8")
+    module = manifest_module.REPO_ROOT / "cmake" / "dependency_fetch.cmake"
+    listed = ";".join("|".join(entry) for entry in entries)
+    result = subprocess.run(
+        ["cmake", f"-DMODULE={module.as_posix()}", f"-DENTRIES={listed}", "-P", str(probe)],
+        capture_output=True, text=True, check=False)
+    decisions: dict[str, bool] = {}
+    for line in (result.stdout + result.stderr).splitlines():
+        if "shallow " in line and "=" in line:
+            name, _, value = line.split("shallow ", 1)[1].partition("=")
+            decisions[name] = value.strip() == "TRUE"
+    return decisions
+
+
+def test_shallow_fetch(root: Path) -> None:
+    """A shallow clone holds branch tips and tags, so a pin with no upstream tag is fetched in full.
+
+    THE FAILURE THAT HAPPENED: stb_vorbis is pinned at a commit on nothings/stb's master with no
+    tag (`master@003501f`). The pin was master's tip when it was taken, so the shallow clone held
+    it; master moved on 2026-11-01 and every configure without a populated cache, CI's included,
+    failed with "Failed to checkout tag".
+    """
+    if shutil.which("cmake") is None:
+        check("cmake is on PATH to ask cmake/dependency_fetch.cmake", False,
+              "the shallow-fetch rule lives in CMake and cannot be checked without it")
+        return
+    fixtures = [
+        ("fixture_branch_pin", "https://github.com/example/branch", "master@0123456"),
+        ("fixture_unreleased", "https://github.com/example/unreleased", "unreleased-0123abcd"),
+        ("fixture_release", "https://github.com/example/release", "v1.2.3"),
+        ("fixture_gitlab", "https://gitlab.com/example/release", "v1.2.3"),
+    ]
+    pins = [(entry.name, entry.repository, entry.tag) for entry in manifest_module.load()]
+    decided = shallow_decisions(root, fixtures + pins)
+    check("the CMake rule answered for every pin and fixture",
+          len(decided) == len(fixtures) + len(pins),
+          f"answered {len(decided)} of {len(fixtures) + len(pins)}")
+    check("stb_vorbis, pinned at an untagged master commit, is fetched in full",
+          decided.get("stb_vorbis") is False, f"decided: {decided.get('stb_vorbis')}")
+    check("a `<branch>@<abbrev>` pin is fetched in full", decided.get("fixture_branch_pin") is False)
+    check("an `unreleased-<abbrev>` pin is fetched in full",
+          decided.get("fixture_unreleased") is False)
+    check("a pin at a release tag on GitHub is still fetched shallowly",
+          decided.get("fixture_release") is True and decided.get("sdl3") is True,
+          f"fixture: {decided.get('fixture_release')}, sdl3: {decided.get('sdl3')}")
+    check("a pin on a host other than GitHub is fetched in full",
+          decided.get("fixture_gitlab") is False and decided.get("eigen") is False)
+    untagged = [name for name, _, tag in pins if "@" in tag or tag.startswith("unreleased-")]
+    check("every manifest pin with no upstream tag is fetched in full",
+          not [name for name in untagged if decided.get(name) is not False],
+          f"untagged: {', '.join(untagged)}")
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="cy-deps-selftest-") as directory:
         test_lockfile_agreement()
@@ -192,6 +265,7 @@ def main() -> int:
         test_licence_expressions()
         test_this_repository()
         test_record_rules(Path(directory))
+        test_shallow_fetch(Path(directory))
     passed = len(_cases) - len(_failures)
     print(f"\ndeps selftest: {passed}/{len(_cases)} passed")
     return 1 if _failures else 0

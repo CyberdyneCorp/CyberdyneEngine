@@ -59,8 +59,14 @@ to share one download cache between build trees; set `FETCHCONTENT_FULLY_DISCONN
 would-be download into a configure error, which is how the offline claim is tested rather than
 assumed.
 
-The fetch is a shallow clone of the pinned commit. That needs a server willing to serve an arbitrary
-commit, which GitHub is; a mirror that is not will fail loudly, and the fix is `GIT_SHALLOW FALSE`.
+The fetch is a shallow clone where one is certain to hold the pinned commit, and a full clone
+otherwise. FetchContent's shallow clone fetches branch tips and tags and then checks the commit out,
+so it holds a pin at a release tag, and holds an untagged pin only while that pin is its branch's
+tip. A pin with no upstream tag, written `<branch>@<abbrev>` or `unreleased-<abbrev>` in `tag`, is
+therefore cloned in full, as is anything not hosted on GitHub. `cmake/dependency_fetch.cmake` holds
+the rule, and `tools/deps/selftest.py` asks it about every pin. The stb_vorbis pin is why: upstream
+master moved past it on 2026-11-01, and every configure without a populated cache failed with
+"Failed to checkout tag".
 
 ## Vendoring
 
