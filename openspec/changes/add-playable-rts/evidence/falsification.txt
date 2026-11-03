@@ -64,3 +64,17 @@
    TEST CASE:  rts api play: the recorded command log replays to the same digest, and only it
    samples/13-rts-api/tests/test_rts_api_play.cpp:263: ERROR: CHECK_EQ( number_after(line_with(moved.output, "rts replay"), "match="), 0.0 ) is NOT correct!
 restored and rebuilt: ok
+
+== F1 (rebase onto #148) a branch-pinned dependency is cloned shallow, as before this change
+   The bug: stb_vorbis is pinned at `master@003501f`, master's tip when #148 pinned it. Upstream
+   pushed three commits on 2026-11-01, and from then on every fresh configure failed:
+     fatal: reference is not a tree: 003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5
+     CMake Error ... Failed to checkout tag: '003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5'
+   because FetchContent's `clone --depth 1 --no-single-branch` holds branch tips and tagged
+   commits only. Mutation: cy_dependency_fetch_shallow without its tag rule (GitHub alone decides).
+   cmake -P tools/deps/test_fetch_depth.cmake: RED
+   CMake Warning: https://github.com/nothings/stb at `master@003501f`: shallow=TRUE, expected FALSE
+   CMake Warning: https://github.com/jpcy/xatlas at `master@f700c77`: shallow=TRUE, expected FALSE
+   CMake Warning: https://github.com/microsoft/PixEvents at `unreleased-b0caa735`: shallow=TRUE, expected FALSE
+   fetch-depth: 3 case(s) failed
+restored: fetch-depth: every case passed; a fresh build/dev/_deps/stb_vorbis-src configures

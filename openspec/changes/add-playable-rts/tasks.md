@@ -6,4 +6,5 @@
 - [x] `integration.rts_api_play` and `smoke.rts_api_play`; the scripted run's digests unchanged.
 - [x] `just play-rts` and `just capture-rts-play`; the images and the video.
 - [x] Prove the new cases red by mutation, and record it in `evidence/`.
+- [x] Clone branch-pinned dependencies in full (`cmake/dependency_fetch.cmake`, `tools/deps/test_fetch_depth.cmake`): stb_vorbis stopped configuring when its branch moved.
 - [x] The READMEs, `docs/guides/playing-the-rts.md`, the requirements map and the specifications.

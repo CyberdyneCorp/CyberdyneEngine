@@ -70,8 +70,8 @@ name = "the fetched third-party dependencies"
 outputs = ["_deps/**", "include/glslang/**"]
 reason = "FetchContent checks out the commit deps/manifest.toml pins for each dependency, and the dependency's own CMake — in that checkout — writes its configure-time files (SDL's build config and Wayland protocols, PCH stubs, glslang's build_info.h at the top of the tree) with the options cmake/ sets. No repository file is patched into a checkout"
 sources = ["deps/manifest.toml"]
-generated_by = ["cmake/dependencies.cmake"]
-digest = "c65a7220b51608d4"
+generated_by = ["cmake/dependencies.cmake", "cmake/dependency_fetch.cmake"]
+digest = "f9d96f5e018ad5f7"
 
 # Build-tree files a build edge DOES produce, from MORE than the edge declares.
 #
