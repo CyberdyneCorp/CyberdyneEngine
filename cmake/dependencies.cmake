@@ -562,6 +562,16 @@ function(cy__provide_ufbx source_dir)
     set_target_properties(ufbx PROPERTIES C_STANDARD 11 POSITION_INDEPENDENT_CODE ON)
 endfunction()
 
+# stb_vorbis (issue #87). STB_VORBIS_NO_STDIO is PUBLIC because the header half that
+# src/backends/audio-miniaudio/src/vorbis_decoder.cpp includes must declare exactly what this unit
+# defines: the engine streams through its own byte sources and never hands the decoder a FILE*.
+function(cy__provide_stb_vorbis source_dir)
+    add_library(stb_vorbis STATIC "${source_dir}/stb_vorbis.c")
+    target_include_directories(stb_vorbis SYSTEM PUBLIC "${source_dir}")
+    target_compile_definitions(stb_vorbis PUBLIC STB_VORBIS_NO_STDIO)
+    set_target_properties(stb_vorbis PROPERTIES C_STANDARD 11 POSITION_INDEPENDENT_CODE ON)
+endfunction()
+
 function(cy__provide_xatlas source_dir)
     add_library(xatlas STATIC "${source_dir}/source/xatlas/xatlas.cpp")
     target_include_directories(xatlas SYSTEM PUBLIC "${source_dir}/source/xatlas")

@@ -56,6 +56,29 @@ add_custom_command(
     VERBATIM)
 add_custom_target(cy_third_person_package ALL DEPENDS "${CY_THIRD_PERSON_PACKAGE}")
 
+# ISSUE #87: the hillside's wind, streamed. content/audio/ambience/hillside_wind.ogg is cooked by
+# cy_audio_cook into a bare cooked track the host streams from disk — its Vorbis bitstream kept, its
+# loop comments carried, and a playback gain to -20 LUFS written beside them. Only with the
+# miniaudio backend's decoders (CY_AUDIO); without them the game plays its in-memory wind loop.
+set(cy_third_person_ambience_definitions "")
+set(cy_third_person_ambience_dependencies "")
+if(TARGET cy_audio_cook AND TARGET cy::backends-audio-miniaudio)
+    set(CY_THIRD_PERSON_AMBIENCE_SOURCE "${CMAKE_SOURCE_DIR}/content/audio/ambience/hillside_wind.ogg")
+    set(CY_THIRD_PERSON_AMBIENCE "${CMAKE_CURRENT_BINARY_DIR}/hillside_wind.cyaudio")
+    add_custom_command(
+        OUTPUT "${CY_THIRD_PERSON_AMBIENCE}"
+        COMMAND cy_audio_cook --source "${CY_THIRD_PERSON_AMBIENCE_SOURCE}"
+                --out "${CY_THIRD_PERSON_AMBIENCE}" --option mode=streamed
+                --option normalise=loudness --option target-lufs=-20
+        DEPENDS cy_audio_cook "${CY_THIRD_PERSON_AMBIENCE_SOURCE}"
+        COMMENT "Cooking the third-person ambience (content/audio/ambience/hillside_wind.ogg)"
+        VERBATIM)
+    add_custom_target(cy_third_person_ambience ALL DEPENDS "${CY_THIRD_PERSON_AMBIENCE}")
+    set(cy_third_person_ambience_definitions
+        "CY_THIRD_PERSON_AMBIENCE=\"${CY_THIRD_PERSON_AMBIENCE}\"" CY_THIRD_PERSON_STREAM_CODECS=1)
+    set(cy_third_person_ambience_dependencies cy::backends-audio-miniaudio)
+endif()
+
 if(CMAKE_BUILD_TYPE STREQUAL "Profile" OR CMAKE_BUILD_TYPE STREQUAL "Shipping")
     set(CY_THIRD_PERSON_SWIFT_CONFIGURATION release)
 else()
@@ -121,10 +144,16 @@ cy_add_module(
         cy::servers-camera
         cy::servers-input
         cy::servers-physics
-        cy_sample_rts_map)
+        cy::audio-streaming
+        cy_sample_rts_map
+        ${cy_third_person_ambience_dependencies})
 add_dependencies(cy_sample_third-person cy_sample_third-person_game cy_third_person_package)
 # The played game's pad bindings (samples/play/play_bindings.h), header-only.
 target_include_directories(cy_sample_third-person PRIVATE "${CMAKE_SOURCE_DIR}/samples/play")
+if(cy_third_person_ambience_definitions)
+    target_compile_definitions(cy_sample_third-person PRIVATE ${cy_third_person_ambience_definitions})
+    add_dependencies(cy_sample_third-person cy_third_person_ambience)
+endif()
 
 # `--render <dir>`: the run drawn by the engine's frame (host/render.h). Only with the Vulkan
 # renderer; without it the host is the headless one and refuses `--render` by name.

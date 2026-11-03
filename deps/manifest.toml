@@ -329,6 +329,34 @@ interface = "cy::audio::AudioBackend in src/servers/audio/, implemented by src/b
 scope = "runtime"
 justification = "Device I/O, sample-rate and channel conversion, decoding and streaming across every platform this engine targets, in one permissively licensed file. `audio` names it as the default backend and bounds what it is used for: the engine's own bus graph, voice management and spatialisation policy sit above it, and miniaudio's node graph, high-level engine API and 3D spatialisation are deliberately not used. Offered as public domain or MIT-0 and taken under MIT-0."
 
+# --- Issue #87: Ogg Vorbis decoding ---------------------------------------------------------------
+#
+# miniaudio decodes WAV, FLAC and MP3 itself (its bundled dr_libs) but its Vorbis path is a wrapper
+# over stb_vorbis that the `miniaudio` target does not compile. The audio backend drives stb_vorbis's
+# push API directly instead, because a streamed track has to seek by Ogg page over an engine byte
+# source rather than over a `FILE*` or a whole buffer (src/backends/audio-miniaudio/src/
+# vorbis_decoder.cpp says how). Upstream cuts no releases; `tag` records the branch and the
+# abbreviated commit, and `version` the decoder's own version line. One C file, provided by
+# `cy__provide_stb_vorbis` like ufbx, compiled with STB_VORBIS_NO_STDIO: the engine never hands it a
+# file.
+
+[[dependency]]
+name = "stb_vorbis"
+version = "1.22"
+tag = "master@003501f"
+commit = "003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5"
+repository = "https://github.com/nothings/stb"
+licence = "MIT"
+licence_file = "LICENSE"
+optional = true
+feature = "CY_AUDIO"
+system_package = false
+cmake_target = "stb_vorbis"
+source_subdir = ""
+interface = "cy::audio::AudioCodecs in src/servers/audio/, implemented by src/backends/audio-miniaudio/, whose src/vorbis_decoder.cpp is the only translation unit that names an stb_vorbis symbol"
+scope = "runtime"
+justification = "Ogg Vorbis is the compressed format `audio` names for streamed music, and decoding it is the one codec miniaudio leaves to a library it does not build. stb_vorbis is the decoder miniaudio's own Vorbis support is built on: a single file, no dependencies, no allocation outside the arena it is handed — which is what lets a stream's decoder memory be bounded and counted. Offered as MIT or public domain and taken under MIT."
+
 # --- M6: the two source-format libraries `asset-import-pipeline` names -----------------------------
 #
 # Both are single-translation-unit libraries that ship no CMake project of their own — ufbx is

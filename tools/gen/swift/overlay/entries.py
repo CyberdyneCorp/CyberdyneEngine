@@ -305,6 +305,13 @@ ENTRIES: dict[str, Entry] = {
     "user_data_write": Entry(("engine", "name", "bytes", "size"), result="throwing"),
     "user_data_read": Entry(("engine", "name", "buffer", "capacity", "size"), result="throwing"),
     "ui_widget_set_tooltip": Entry(("engine", "widget", "text"), result="throwing"),
+    # 1.18: streamed music and ambience
+    "audio_find_track": Entry(("engine", "name", "into"), result="throwing"),
+    "audio_stream_play": Entry(("engine", "play", "stream"), result="throwing"),
+    "audio_stream_stop": Entry(("engine", "stream", "fadeOut"), result="throwing"),
+    "audio_stream_seek": Entry(("engine", "stream", "seconds"), result="throwing"),
+    "audio_stream_set_volume": Entry(("engine", "stream", "volume", "fade"), result="throwing"),
+    "audio_stream_state": Entry(("engine", "stream", "into"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

@@ -27,9 +27,15 @@ cy_add_module(
     SOURCES
         src/backend.cpp
         src/bus.cpp
+        src/cooked_audio.cpp
+        src/decoder.cpp
         src/format.cpp
+        src/loudness.cpp
+        src/resampler.cpp
         src/server.cpp
+        src/server_streams.cpp
         src/spatial.cpp
+        src/stream.cpp
         src/voice.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::core-values

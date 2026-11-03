@@ -55,6 +55,11 @@ struct Arguments {
     const char* package = CY_THIRD_PERSON_PACKAGE;
     const char* render = nullptr;
     const char* audio = nullptr;
+#if defined(CY_THIRD_PERSON_AMBIENCE)
+    const char* ambience = CY_THIRD_PERSON_AMBIENCE;
+#else
+    const char* ambience = nullptr;
+#endif
     cy::u64 trace = 0;
 #if defined(CY_THIRD_PERSON_RENDER)
     sample::tps::RenderOptions options;
@@ -125,6 +130,8 @@ struct Arguments {
             out.trace = std::strtoull(argv[++index], nullptr, 10);
         } else if (std::strcmp(flag, "--audio") == 0 && valued) {
             out.audio = argv[++index];
+        } else if (std::strcmp(flag, "--ambience") == 0 && valued) {
+            out.ambience = argv[++index];
         } else if (!render_flag(out, argc, argv, index)) {
             std::fprintf(stderr, "cy_sample_third-person: unknown argument '%s'\n", flag);
             out.valid = false;
@@ -412,6 +419,7 @@ int main(int argc, char** argv) {
     options.map = &content;
     options.illumination = arguments.render != nullptr;
     options.mix = arguments.audio != nullptr ? &mix : nullptr;
+    options.ambience = arguments.ambience;
 #if defined(CY_THIRD_PERSON_RENDER)
     options.illumination = arguments.render != nullptr && arguments.options.gi;
 #endif

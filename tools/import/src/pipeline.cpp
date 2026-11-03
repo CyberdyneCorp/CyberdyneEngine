@@ -4,6 +4,7 @@
 #include <cy/core/assets/file.h>
 #include <cy/core/jobs/job_system.h>
 #include <cy/core/jobs/parallel.h>
+#include <cy/import/audio.h>
 #include <cy/import/fbx.h>
 #include <cy/import/font.h>
 #include <cy/import/gltf.h>
@@ -839,6 +840,7 @@ ObjImporter g_obj;
 TextureImporter g_texture;
 HeightfieldImporter g_heightfield;
 FontImporter g_font;
+AudioImporter g_audio;
 PrimitiveImporter g_primitive;
 }  // namespace
 
@@ -874,7 +876,12 @@ Status register_builtin_importers(ImporterRegistry& registry) noexcept {
     }
     // M11.e (issue #86). Registered in every build: with CY_TEXT off it refuses each import naming
     // the option, so a .ttf in a project is a diagnosed failure rather than an unclaimed file.
-    return registry.register_importer(&g_font);
+    if (Status registered = registry.register_importer(&g_font); !registered) {
+        return registered;
+    }
+    // Issue #87, on the same terms with CY_AUDIO: a .wav without the decoders is a diagnosed
+    // failure, not an unclaimed file.
+    return registry.register_importer(&g_audio);
 }
 
 Status encode_import_bundle(const ImportResult& result, Array<u8>& out) noexcept {

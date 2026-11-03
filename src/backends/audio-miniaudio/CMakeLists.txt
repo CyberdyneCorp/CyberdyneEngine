@@ -24,13 +24,15 @@ cy_add_module(
     ALIAS cy::backends-audio-miniaudio
     TYPE STATIC
     SOURCES
+        src/codecs.cpp
         src/miniaudio_backend.cpp
+        src/vorbis_decoder.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-memory cy::servers-audio
     # cy::dep::miniaudio is PRIVATE: it brings miniaudio.h's include directory with it, and a public
     # dependency would put that directory on the include path of everything that links this module —
     # which is precisely the leak the requirement above forbids.
-    PRIVATE_DEPENDENCIES cy::core-diagnostics cy::dep::miniaudio)
+    PRIVATE_DEPENDENCIES cy::core-diagnostics cy::core-math cy::dep::miniaudio cy::dep::stb_vorbis)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

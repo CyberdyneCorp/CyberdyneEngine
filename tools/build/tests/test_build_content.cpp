@@ -22,8 +22,10 @@
 #include <cy/ecs/world.h>
 #include <cy/scene/serialization/document.h>
 #include <cy/scene/serialization/format.h>
+#include <cy/servers/audio/cooked_audio.h>
 #include <cy/test/fixtures.h>
 #include <cy/test/test.h>
+#include <cy_features.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -146,7 +148,7 @@ constexpr const char* kDescription =
 
 class Project {
 public:
-    explicit Project(const char* label) : temp_(label) {
+    explicit Project(const char* label, const char* description = kDescription) : temp_(label) {
         CY_REQUIRE(temp_.valid());
         CY_REQUIRE(assets::fs::create_directories(sources().c_str()).has_value());
         CY_REQUIRE(producers_.add_builtins().has_value());
@@ -154,7 +156,7 @@ public:
         // null registry makes a `cook` node fail by name rather than not exist. See
         // content_producers.h.
         CY_REQUIRE(add_content_producers(producers_, nullptr).has_value());
-        CY_REQUIRE(read_description(kDescription, graph_, &producers_).has_value());
+        CY_REQUIRE(read_description(description, graph_, &producers_).has_value());
     }
 
     [[nodiscard]] std::string sources() const { return temp_.path() + "/project"; }
@@ -312,6 +314,84 @@ CY_TEST_CASE("two cold builds of one import node produce byte-identical bundles"
     CY_CHECK(result_for(*one, "import:quad")->outputs.front().digest ==
              result_for(*two, "import:quad")->outputs.front().digest);
 }
+
+#if defined(CY_AUDIO)
+// Issue #87: the audio importer is a node like every other importer. A WAV becomes a bundle whose
+// one sub-asset is a cooked track, two cold builds agree byte for byte, and a warm one is a hit.
+constexpr const char* kAudioDescription =
+    "cybuild 1\n"
+    "node \"import:chime\" import \"import\" 1\n"
+    "  source \"assets/chime.wav\"\n"
+    "  output \"derived/chime.bundle\"\n"
+    "  option \"variant\" \"desktop\"\n";
+
+[[nodiscard]] std::string chime_wav() {
+    // Half a second of a 440 Hz-ish parabola at 22.05 kHz, mono: small, and it resamples.
+    std::string wav;
+    const auto put32 = [&](u32 value) {
+        for (u32 byte = 0; byte < 4; ++byte) {
+            wav.push_back(static_cast<char>((value >> (8U * byte)) & 0xFFU));
+        }
+    };
+    constexpr u32 kFrames = 11025;
+    wav += "RIFF";
+    put32(36 + (kFrames * 2));
+    wav += "WAVEfmt ";
+    put32(16);
+    append_u16(wav, 1);
+    append_u16(wav, 1);
+    put32(22050);
+    put32(44100);
+    append_u16(wav, 2);
+    append_u16(wav, 16);
+    wav += "data";
+    put32(kFrames * 2);
+    for (u32 frame = 0; frame < kFrames; ++frame) {
+        const i32 phase = static_cast<i32>(frame % 50U);
+        append_u16(wav, static_cast<u16>(static_cast<i16>((phase - 25) * 600)));
+    }
+    return wav;
+}
+
+CY_TEST_CASE("an audio import is a graph node: a cooked track, deterministic and cached") {
+    Project project("content-audio", kAudioDescription);
+    project.write("assets/chime.wav", chime_wav());
+
+    BuildService first;
+    CY_REQUIRE(first.configure(project.config(project.path("a"), project.cache())).has_value());
+    const Expected<BuildReport, Error> one = first.build();
+    CY_REQUIRE(one.has_value());
+    CY_REQUIRE(one->succeeded());
+    const NodeResult* imported = result_for(*one, "import:chime");
+    CY_REQUIRE(imported != nullptr);
+    CY_CHECK(imported->outcome == NodeOutcome::Ran);
+
+    // The bundle holds the cooked track's header: find the magic and read the format from it.
+    const std::string bundle = artefact_of(*one, first.artefacts(), "import:chime");
+    const usize magic = bundle.find("CYAU");
+    CY_REQUIRE(magic != std::string::npos);
+    const Expected<audio::CookedAudioHeader, Error> header = audio::parse_cooked_audio_header(
+        Span<const u8>(reinterpret_cast<const u8*>(bundle.data()) + magic, bundle.size() - magic));
+    CY_REQUIRE(header.has_value());
+    CY_CHECK(header->codec == audio::AudioCodec::Pcm16);
+    CY_CHECK_EQ(header->sample_rate, 48000U);
+    CY_CHECK_EQ(header->channels, 1);
+    CY_CHECK_EQ(header->frame_count, 24000U);
+
+    BuildService second;
+    CY_REQUIRE(second.configure(project.config(project.path("b"), "")).has_value());
+    const Expected<BuildReport, Error> two = second.build();
+    CY_REQUIRE(two.has_value());
+    CY_REQUIRE(two->succeeded());
+    CY_CHECK_EQ(artefact_of(*two, second.artefacts(), "import:chime"), bundle);
+
+    BuildService warm;
+    CY_REQUIRE(warm.configure(project.config(project.path("a"), project.cache())).has_value());
+    const Expected<BuildReport, Error> three = warm.build();
+    CY_REQUIRE(three.has_value());
+    CY_CHECK(result_for(*three, "import:chime")->outcome == NodeOutcome::Cached);
+}
+#endif  // CY_AUDIO
 
 CY_TEST_CASE("the cook runs as a graph node and produces a package") {
     // The other half of M7 task 1.4. The documents are read through `NodeContext::read` into a

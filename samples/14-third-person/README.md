@@ -8,7 +8,10 @@ engine's adapters and draws the frame.
 ![The run: on the stairs, a jump on the platform, the camera pulled in by the north wall, down the ramp, a jump onto the hill, and the view back down](../../docs/design/images/third-person-run.png)
 
 [The video](../../docs/design/videos/third-person.mp4), with the game's own sound: the footfalls on
-stone and on grass, the jumps and landings, the wind and the birds.
+stone and on grass, the jumps and landings, the wind and the birds. The wind is a STREAMED track
+(issue #87): `content/audio/ambience/hillside_wind.ogg`, cooked at build time by `cy_audio_cook` into
+`hillside_wind.cyaudio` beside the binary, read from disk a chunk at a time on the async service and
+decoded on the job system into a half-second ring.
 
 ```
 just play-tps                                  PLAY IT: the hillside in a window (below)
@@ -74,7 +77,7 @@ engine itself, and the engine draws it.
 | reads where its feet were placed | `Animator.footPlacement` | frame |
 | turns the camera with the look stick, swings it in behind a moving hero, pulls it back at speed, and asks for that framing | `Input.action`, `Camera.active`, `Camera.setTarget` | frame |
 | sees how far a wall pulled the camera in | `Camera.view` | frame |
-| starts the wind's loop, and a bird in the woods every few seconds | `Audio.play(options: loop)`, `Audio.play(at:)` | none, then fixed |
+| starts the wind — the host's streamed bed (`Audio.stream`, ABI 1.18) when it registered one, else the in-memory loop — and a bird in the woods every few seconds | `Audio.track`, `Audio.stream(options:)` or `Audio.play(options: loop)`, `Audio.play(at:)` | none, then fixed |
 
 Two components cross the boundary, both from the game to the host (`game/Contract.swift`):
 `HeroPose`, the hero's facing, which the host turns the hero's node by when it moves the node to the
@@ -88,7 +91,7 @@ which the host prints and never acts on.
 | **the hero's legs** | `cy::animation::AnimationSystem` over the `hero` rig the host cooks and loads back by asset id (`host/hero_rig.h`): twenty joints, six clips, and a program whose locomotion state is a one-dimensional **blend space** over idle, walk and run, synchronised by the clips' foot markers, through **foot placement** on both legs. Its ground is the physics world (`animation::PhysicsGroundProbe`), so the feet stand on the stair the capsule climbed and on the slope it runs up |
 | **the stairs and the slope** | `cy::physics::CharacterController` over the Jolt world: the terrain as the triangle mesh the renderer draws, the courtyard's pieces and the map's buildings as boxes. Eight 18 cm risers climbed, a 10-degree ramp, a 20-degree hillside |
 | **the camera** | a third-person rig on the camera server — target, orbit, shoulder offset, **collision**, lens (`host/tps_host.cpp`) — whose batched collision and occlusion queries `cy::game_backend::CameraCollisionResolver` answers against the physics world every frame: a sphere swept from the hero's head toward where the rig wants the camera, the hero's own capsule passed through |
-| **the sound** | the audio server with a listener at the camera, six clips synthesised at start-up (`host/sounds.h`) |
+| **the sound** | the audio server with a listener at the camera, six clips synthesised at start-up (`host/sounds.h`), and a stream player on the hero rig's job system streaming the cooked ambience as the track `ambience.hillside` (`--ambience <file>` names another; a build with `CY_AUDIO` off cooks none and the game plays its loop) |
 | **the frame** | `host/render.h`: the cooked hillside, its foliage and kit, the courtyard's pieces and a sky dome, the hero skinned on the device, the sun's 2048-texel shadow map round the hero, ambient occlusion, the device GI over the courtyard's boxes, and the **temporal upscaler** at Quality — the scene at 1286x724 reconstructed to 1920x1080 |
 
 ## The frame budget, measured

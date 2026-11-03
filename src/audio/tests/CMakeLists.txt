@@ -36,6 +36,20 @@ function(cy_audio_acoustics_declare_tests)
             "${tests_dir}/test_effects.cpp"
             "${tests_dir}/test_interactive.cpp"
         DEPENDENCIES cy::audio-acoustics)
+
+    # Issue #87: the stream player — starvation, underrun, seek, loop, crossfade, memory, and
+    # refills on the job system — over the null backend and procedurally generated PCM tracks.
+    get_directory_property(integration_budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_BUDGET_integration)
+    get_directory_property(integration_timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_TIMEOUT_integration)
+    set(CY_TEST_BUDGET_integration "${integration_budget}")
+    set(CY_TEST_TIMEOUT_integration "${integration_timeout}")
+    cy_add_test(
+        NAME audio_streaming
+        KIND integration
+        SOURCES "${tests_dir}/test_streaming.cpp"
+        DEPENDENCIES cy::audio-streaming cy::servers-audio cy::core-jobs)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_audio_acoustics_declare_tests)

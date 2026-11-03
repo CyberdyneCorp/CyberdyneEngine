@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 17,
+    "minor": 18,
     "patch": 0
   },
   "functions": [
@@ -1092,10 +1092,40 @@
         "index": 213,
         "name": "ui_widget_set_tooltip",
         "type": "CyResult(*)(CyEngine, CyUiElement, const char*)"
+      },
+      {
+        "index": 214,
+        "name": "audio_find_track",
+        "type": "CyResult(*)(CyEngine, const char*, CyAudioTrack*)"
+      },
+      {
+        "index": 215,
+        "name": "audio_stream_play",
+        "type": "CyResult(*)(CyEngine, const CyAudioStreamPlay*, CyAudioStream*)"
+      },
+      {
+        "index": 216,
+        "name": "audio_stream_stop",
+        "type": "CyResult(*)(CyEngine, CyAudioStream, float)"
+      },
+      {
+        "index": 217,
+        "name": "audio_stream_seek",
+        "type": "CyResult(*)(CyEngine, CyAudioStream, double)"
+      },
+      {
+        "index": 218,
+        "name": "audio_stream_set_volume",
+        "type": "CyResult(*)(CyEngine, CyAudioStream, float, float)"
+      },
+      {
+        "index": 219,
+        "name": "audio_stream_state",
+        "type": "CyResult(*)(CyEngine, CyAudioStream, CyAudioStreamState*)"
       }
     ],
     "name": "CyInterface",
-    "size": 1720
+    "size": 1768
   },
   "types": [
     {
@@ -7058,6 +7088,130 @@
       "size": 8
     },
     {
+      "kind": "alias",
+      "name": "CyAudioTrack",
+      "underlying": "uint64_t"
+    },
+    {
+      "kind": "alias",
+      "name": "CyAudioStream",
+      "underlying": "uint64_t"
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "track",
+          "offset": 8,
+          "size": 8,
+          "type": "CyAudioTrack"
+        },
+        {
+          "alignment": 8,
+          "name": "bus",
+          "offset": 16,
+          "size": 8,
+          "type": "CyAudioBus"
+        },
+        {
+          "alignment": 8,
+          "name": "crossfade_from",
+          "offset": 24,
+          "size": 8,
+          "type": "CyAudioStream"
+        },
+        {
+          "alignment": 4,
+          "name": "volume",
+          "offset": 32,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "fade_seconds",
+          "offset": 36,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 8,
+          "name": "start_seconds",
+          "offset": 40,
+          "size": 8,
+          "type": "double"
+        }
+      ],
+      "name": "CyAudioStreamPlay",
+      "size": 48
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "position_seconds",
+          "offset": 8,
+          "size": 8,
+          "type": "double"
+        },
+        {
+          "alignment": 8,
+          "name": "duration_seconds",
+          "offset": 16,
+          "size": 8,
+          "type": "double"
+        },
+        {
+          "alignment": 4,
+          "name": "gain",
+          "offset": 24,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "underruns",
+          "offset": 28,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyAudioStreamState",
+      "size": 32
+    },
+    {
       "alignment": 4,
       "kind": "struct",
       "members": [
@@ -8594,10 +8748,52 @@
           "offset": 1712,
           "size": 8,
           "type": "CyResult(*)(CyEngine, CyUiElement, const char*)"
+        },
+        {
+          "alignment": 8,
+          "name": "audio_find_track",
+          "offset": 1720,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const char*, CyAudioTrack*)"
+        },
+        {
+          "alignment": 8,
+          "name": "audio_stream_play",
+          "offset": 1728,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const CyAudioStreamPlay*, CyAudioStream*)"
+        },
+        {
+          "alignment": 8,
+          "name": "audio_stream_stop",
+          "offset": 1736,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyAudioStream, float)"
+        },
+        {
+          "alignment": 8,
+          "name": "audio_stream_seek",
+          "offset": 1744,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyAudioStream, double)"
+        },
+        {
+          "alignment": 8,
+          "name": "audio_stream_set_volume",
+          "offset": 1752,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyAudioStream, float, float)"
+        },
+        {
+          "alignment": 8,
+          "name": "audio_stream_state",
+          "offset": 1760,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyAudioStream, CyAudioStreamState*)"
         }
       ],
       "name": "CyInterface",
-      "size": 1720
+      "size": 1768
     },
     {
       "kind": "enum",

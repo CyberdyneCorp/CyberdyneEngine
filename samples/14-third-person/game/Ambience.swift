@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Ambience.swift — the hillside's sound: wind under everything, and birds in the trees.
 //
-//   onCreate       (no phase)    the wind's loop, unpositioned, quiet
+//   onCreate       (no phase)    the wind: the host's STREAMED hillside bed when it registered
+//                                one (issue #87, ABI 1.18), else the in-memory wind loop
 //   onFixedUpdate  (fixed step)  a bird call every few seconds, somewhere in the woods round the
 //                                courtyard — where and when from a fixed sequence, so two runs
 //                                hear the same birds
 //
-// The host synthesised both sounds and named them; when and where they play is this file's.
+// The host synthesised the loop and the birds and named them, and cooked the streamed bed; when
+// and where they play is this file's. The bed fades in over two seconds: a stream that starts at
+// full level mid-gust is a click on the first frame.
 
 import CyberdyneKit
 
@@ -32,9 +35,7 @@ final class Ambience: Behaviour {
     override func onCreate() throws {
         guard let world else { throw CyberdyneError.invalidHandle }
         report = try Components.register(HeroReport.self, in: world)
-        if try Audio.play(Content.wind, options: PlayOptions(volume: windVolume, loop: true))
-            != nil
-        {
+        if try startWind() {
             started += 1
         }
     }
@@ -55,6 +56,17 @@ final class Ambience: Behaviour {
         }
         guard let world, let hero, world.has(report, on: hero) else { return }
         try world.setFloat(started, hero, report, field: reportAmbience)
+    }
+
+    /// The streamed bed if the host has one, else the in-memory loop. Either is one ambient sound
+    /// started, which is all the report counts.
+    private func startWind() throws -> Bool {
+        if let bed = try? Audio.track(Content.windBed) {
+            return try Audio.stream(bed, options: StreamOptions(volume: windVolume, fadeIn: 2))
+                != nil
+        }
+        return try Audio.play(Content.wind, options: PlayOptions(volume: windVolume, loop: true))
+            != nil
     }
 
     /// A linear congruential sequence: the same numbers on every machine.

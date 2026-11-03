@@ -4059,8 +4059,9 @@ note = "Simplification keeps UV-seam vertices from collapsing across the seam, w
 [[coverage]]
 row = "asset-import-pipeline"
 requirement = "Audio import"
-evidence = "exempt:m11e"
-note = "THERE IS NO AUDIO IMPORTER. tools/import/src has importers for glTF, FBX, OBJ, textures, primitives and heightfields, and none for audio. importer.h mentions an audio importer only as an example of one with no model steps. Nothing produces cooked audio with use-dependent format, sample-rate conversion, mono downmix for 3D sources, loop points, normalisation or silence trimming. Replacement: a unit.import case that imports a stereo WAV with the 3D-source option and requires a mono cooked payload of the expected sample count, with loop points carried through."
+evidence = "test:integration.import_audio"
+case = "audio: a stereo WAV for a 3D source cooks mono, of the expected length, loop kept"
+note = "Issue #87 (`add-audio-streaming-import`). `cy::import::AudioImporter` reads WAV, Ogg Vorbis, FLAC and MP3 through the miniaudio backend's decoders: a one-second stereo 44.1 kHz WAV with a `smpl` loop, imported for a 3D source at 48 kHz, cooks to exactly 48 000 mono frames whose samples are the channels' average, with the loop converted by the same ratio. The suite's other cases: a 32-second Ogg Vorbis streamed with its bitstream kept byte for byte and its LOOPSTART/LOOPLENGTH loop carried; a short MP3 decoded gaplessly to PCM and a FLAC kept compressed with its comment loop; a 3D stereo source refused its bitstream and cooked to PCM with `audio-downmixed-to-pcm`; BS.1770 loudness measured and a normalisation gain capped at the target peak, the payload untouched; silence trimmed from both ends and never into a loop; two cooks byte-identical; Opus and garbage refused by name, and the registry routing every extension here. `integration.build_content`'s 'an audio import is a graph node' runs it as a build-graph node: two cold builds agree and a warm one is a hit. Not built: Opus and ADPCM decoding. Proved red by mutation (`openspec/changes/add-audio-streaming-import/evidence/falsification.txt`)."
 
 [[coverage]]
 row = "asset-import-pipeline"
@@ -4138,7 +4139,7 @@ row = "audio"
 requirement = "miniaudio as the default low-level backend"
 evidence = "test:integration.audio_miniaudio"
 case = "the mixer runs on the device's own thread and the clock advances"
-note = "AudioServer::render() runs on miniaudio's callback thread and the clock advances with no underruns or dropped commands. src/backends/audio-miniaudio/README.md lists the ma_ symbols used and excludes ma_node_graph, ma_engine and ma_spatializer. Decoding and streaming through miniaudio are not yet used."
+note = "AudioServer::render() runs on miniaudio's callback thread and the clock advances with no underruns or dropped commands. src/backends/audio-miniaudio/README.md lists the ma_ symbols used and excludes ma_node_graph, ma_engine and ma_spatializer. Decoding is used since issue #87: WAV, FLAC and MP3 through `ma_decoder` (integration.audio_codecs); the streaming policy above it is the engine's (`cy::audio::StreamPlayer`), as the requirement's 'Engine owns the policy' asks."
 
 [[coverage]]
 row = "audio"
@@ -4164,8 +4165,9 @@ note = "Stopping a playing voice fades it over the block. unit.audio_graph's com
 [[coverage]]
 row = "audio"
 requirement = "Audio assets and streaming"
-evidence = "exempt:m11e"
-note = "voice.h states the engine plays float PCM in memory only; Vorbis, Opus and ADPCM decoding, the three load modes and decode-ahead ring-buffer streaming are absent. integration.audio_mixer's 'a looping voice wraps without gaining or losing a frame' covers looping of in-memory PCM only. Re-enter with a case that streams a long Vorbis or Opus track with only the ring buffer resident and reports an underrun as silence plus a diagnostic."
+evidence = "test:smoke.audio_stream_long"
+case = "stream player: ten minutes of a looping Vorbis track hold only the ring and decoder"
+note = "Issue #87 (`add-audio-streaming-import`). Ten minutes of a 44.1 kHz Ogg Vorbis track looping over its comment loop, streamed by `cy::audio::StreamPlayer` into a 48 kHz mix: no underrun, over a thousand refills, and the allocator the player was handed peaks at the ring plus the decode side after the first minute and never again (488 KB: a 192 KB ring, the Vorbis decoder's 219 KB, the resampler and staging). `integration.audio_streaming`'s 'starved past the ring, a stream plays silence, says so, and recovers' is the underrun as silence plus a diagnostic naming the track; 'refills starved for just under the ring's length never underrun' the buffer guarantee; the seek, loop, crossfade and job-system cases the rest; 'a ten-minute track streams in the memory a one-minute track needs' the bound for a streamed PCM track from disk. `integration.audio_codecs` decodes WAV and FLAC to the reference exactly, Vorbis and MP3 frame-aligned (MP3 gapless), and seeks every codec sample-accurately against its own decode from the start; `integration.audio_mixer`'s stream cases hold the per-frame equal-power curve. The three load modes are `cy::audio::AudioLoadMode` in the cooked header. Not built: Opus and ADPCM decoding. Proved red by mutation (`openspec/changes/add-audio-streaming-import/evidence/falsification.txt`)."
 
 [[coverage]]
 row = "audio"
@@ -4238,7 +4240,7 @@ row = "audio"
 requirement = "Audio diagnostics"
 evidence = "test:integration.audio_mixer"
 case = "tier budgets demote by importance rather than dropping"
-note = "AudioStatistics reports voices per tier and demoted_by_budget, which is the tier-pressure scenario. 'a bus gain applies, and per-bus levels are reported' covers bus peak and RMS, and underruns are counted. Per-bus and per-effect CPU time and the 3D debug view of sources, geometry and paths do not exist."
+note = "AudioStatistics reports voices per tier and demoted_by_budget, which is the tier-pressure scenario. 'a bus gain applies, and per-bus levels are reported' covers bus peak and RMS, and underruns are counted — a stream's too since issue #87 (`stream_underruns`, `stream_underrun_frames`, and per stream in `stream_status`; integration.audio_mixer 'streams: a ring that runs dry plays silence and counts the underrun'). Per-bus and per-effect CPU time and the 3D debug view of sources, geometry and paths do not exist."
 
 # --- build-and-packaging --------------------------------------------------------------------------
 #
@@ -5041,7 +5043,7 @@ row = "core-memory-and-containers"
 requirement = "Memory diagnostics"
 evidence = "test:integration.memory_diagnostics"
 case = "a pressure transition and a budget violation are on the timeline, not only in a counter"
-note = "Pressure transitions and budget violations land on the shared trace. unit.memory covers leak reports with call sites, red zones and double frees, declared capture modes, ASan routing ('sanitiser build: the allocators route through AddressSanitizer's interface'), attribution by cell and asset, and process-lifetime exclusion. The module README records that no tracking allocator is installed outside tests and that capture is a call site rather than a stack."
+note = "Pressure transitions and budget violations land on the shared trace. unit.memory covers leak reports with call sites, red zones and double frees (and, since issue #87, 'the tracking allocator frees a block whose address the heap handed out again', the regression for a reused address read as a double free), declared capture modes, ASan routing ('sanitiser build: the allocators route through AddressSanitizer's interface'), attribution by cell and asset, and process-lifetime exclusion. The module README records that no tracking allocator is installed outside tests and that capture is a call site rather than a stack."
 
 # --- core-platform-abstraction --------------------------------------------------------------------
 #
@@ -9401,3 +9403,12 @@ requirement = "A resized swapchain keeps its handle"
 evidence = "test:smoke.first_person_play"
 case = "first-person play drawn: a window resized twice keeps presenting every frame"
 note = "The window dragged to 1600x900 and to 1024x576 while the arena plays: every frame presented, no validation error. On the Vulkan device's old resize — destroy, create under a handle it never returned — the presenter's next frame failed on a stale handle (red by mutation). `unit.rhi`'s null-device case already held the contract the Vulkan device broke. Vulkan on Linux only; D3D12's resize keeps its handle by construction and was not run."
+
+# --- add-audio-streaming-import (ABI 1.18) ---------------------------------------------------------
+
+[[coverage]]
+row = "native-abi"
+requirement = "Streamed music and ambience through the ABI"
+evidence = "test:integration.game_backend_audio_streams"
+case = "audio backend: a track streams, crossfades to another, seeks and reports itself"
+note = "ABI 1.18 (`add-audio-streaming-import`): `audio_find_track`, `audio_stream_play` with `crossfade_from`, `audio_stream_seek`, `audio_stream_set_volume`, `audio_stream_state` and `audio_stream_stop` through the table over a real `AudioServer`, `StreamPlayer` and `AudioAdapter`: the crossfaded-out stream ends and answers NOT_FOUND, the seek lands within its prime, the volume reaches the mix. 'audio backend: without a stream player the stream entries answer UNAVAILABLE' is the no-player case; `unit.abi`'s `test_game_audio_streams.cpp` the argument checks, `struct_size` both ways, the resimulation drop and a pre-1.18 backend's UNAVAILABLE, and `test_layout.cpp` the 1.18 layouts; CyberdyneKit's `AudioStreamTests` the Swift face. samples/14-third-person streams its hillside bed from Swift with its digest unchanged. Proved red by mutation (`openspec/changes/add-audio-streaming-import/evidence/falsification.txt`)."

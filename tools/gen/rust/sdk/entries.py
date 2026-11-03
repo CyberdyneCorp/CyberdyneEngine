@@ -486,6 +486,19 @@ ENTRIES: dict[str, Entry] = {
                             doc="Read one of the player's files."),
     "ui_widget_set_tooltip": Entry(("engine", "widget", "text"), result="fallible",
                                    doc="A widget's tooltip."),
+    # 1.18: streamed music and ambience
+    "audio_find_track": Entry(("engine", "name", "into"), result="fallible",
+                              doc="Resolve a streamed track the host registered, by name."),
+    "audio_stream_play": Entry(("engine", "play", "stream"), result="fallible",
+                               doc="Stream a track, optionally crossfading from another stream."),
+    "audio_stream_stop": Entry(("engine", "stream", "fade_out"), result="fallible",
+                               doc="Stop a stream, optionally fading out."),
+    "audio_stream_seek": Entry(("engine", "stream", "seconds"), result="fallible",
+                               doc="Jump a stream to a position in its track."),
+    "audio_stream_set_volume": Entry(("engine", "stream", "volume", "fade"), result="fallible",
+                                     doc="Ramp a stream's linear gain."),
+    "audio_stream_state": Entry(("engine", "stream", "into"), result="fallible",
+                                doc="A stream's position, length, gain and underruns."),
 }
 
 RESULT_KINDS = frozenset({"value", "fallible"})

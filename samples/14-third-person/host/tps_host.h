@@ -58,6 +58,7 @@
 #include <cy/abi/systems.h>
 #include <cy/animation/animation_system.h>
 #include <cy/animation/ground_probes.h>
+#include <cy/audio/streaming.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/determinism/clock.h>
 #include <cy/core/memory/array.h>
@@ -110,6 +111,9 @@ struct HostOptions {
     /// Services an embedder binds on the ABI host before the game starts — the play host's
     /// interface (ABI 1.6 and 1.12), which the game builds its pause menu through.
     std::function<void(cy::abi::Host&)> bind_services;
+    /// The cooked ambience bed (issue #87), streamed as the track "ambience.hillside". Null, or a
+    /// file that is not there, and the game falls back to its in-memory wind loop.
+    const char* ambience = nullptr;
 };
 
 /// One frame's time, as a real-time loop hands it over. The scripted run's is one step.
@@ -241,6 +245,7 @@ private:
     [[nodiscard]] cy::Status start_level() noexcept;
     [[nodiscard]] cy::Status start_audio() noexcept;
     [[nodiscard]] cy::Status start_animation() noexcept;
+    [[nodiscard]] cy::Status start_streams() noexcept;
     [[nodiscard]] cy::Status start_illumination() noexcept;
     [[nodiscard]] cy::Status load_module(const char** detail) noexcept;
     [[nodiscard]] cy::Status attach_behaviours(const char** detail) noexcept;
@@ -285,6 +290,10 @@ private:
     cy::game_backend::InputAdapter input_adapter_;
     cy::game_backend::CameraAdapter camera_adapter_;
     cy::game_backend::AudioAdapter audio_adapter_;
+    // The streamed ambience: its cooked file, the refills on the rig's job system, and the player.
+    cy::audio::FileByteSource ambience_file_;
+    std::unique_ptr<cy::audio::JobRefillExecutor> stream_executor_;
+    std::unique_ptr<cy::audio::StreamPlayer> streams_;
     cy::UniquePtr<cy::game_backend::CharacterAdapter> characters_;
     std::unique_ptr<cy::game_backend::CameraCollisionResolver> camera_collision_;
     std::unique_ptr<cy::animation::PhysicsGroundProbe> ground_;

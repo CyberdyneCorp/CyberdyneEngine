@@ -868,6 +868,36 @@ public struct Engine: @unchecked Sendable {
     public func uiWidgetSetTooltip(widget: CyUiElement, text: UnsafePointer<CChar>?) throws {
         try interface.uiWidgetSetTooltip(engine: raw, widget: widget, text: text)
     }
+
+    @inlinable
+    public func audioFindTrack(name: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyAudioTrack>?) throws {
+        try interface.audioFindTrack(engine: raw, name: name, into: into)
+    }
+
+    @inlinable
+    public func audioStreamPlay(play: UnsafePointer<CyAudioStreamPlay>?, stream: UnsafeMutablePointer<CyAudioStream>?) throws {
+        try interface.audioStreamPlay(engine: raw, play: play, stream: stream)
+    }
+
+    @inlinable
+    public func audioStreamStop(stream: CyAudioStream, fadeOut: Float) throws {
+        try interface.audioStreamStop(engine: raw, stream: stream, fadeOut: fadeOut)
+    }
+
+    @inlinable
+    public func audioStreamSeek(stream: CyAudioStream, seconds: Double) throws {
+        try interface.audioStreamSeek(engine: raw, stream: stream, seconds: seconds)
+    }
+
+    @inlinable
+    public func audioStreamSetVolume(stream: CyAudioStream, volume: Float, fade: Float) throws {
+        try interface.audioStreamSetVolume(engine: raw, stream: stream, volume: volume, fade: fade)
+    }
+
+    @inlinable
+    public func audioStreamState(stream: CyAudioStream, into: UnsafeMutablePointer<CyAudioStreamState>?) throws {
+        try interface.audioStreamState(engine: raw, stream: stream, into: into)
+    }
 }
 
 public struct World: @unchecked Sendable {

@@ -367,7 +367,8 @@ scratch, and pools SHALL cover the allocation patterns that occur per frame.
 Development builds SHALL provide: per-tag and per-domain live bytes, peak bytes and allocation
 counts; leak reporting at shutdown with the allocating call site; optional guard pages or red zones
 around allocations; poisoning of freed and reset memory; double-free and generation validation; and
-integration hooks for ASan, UBSan, and TSan.
+integration hooks for ASan, UBSan, and TSan. Double-free detection SHALL NOT mistake a free of an
+address the heap has handed out again for a second free of the old block.
 
 All builds SHALL provide per-domain live and peak bytes, budget utilisation, pressure level and its
 history, retirement queue depths, and pool and arena utilisation.
@@ -407,3 +408,10 @@ reports distinguish them from defects.
 - **WHEN** memory rises sharply during one frame
 - **THEN** the allocations SHALL appear on the shared timeline alongside the activity that produced
   them
+
+#### Scenario: An address the heap hands out again
+- **WHEN** a tracked block is freed and the upstream allocator returns its address for the next
+  allocation
+- **THEN** freeing that allocation SHALL release its bytes from the live count and SHALL NOT be
+  counted as a double free
+

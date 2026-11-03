@@ -55,16 +55,32 @@ enum class CommandKind : u8 {
     SetPosition,
     SetOcclusion,
     SetBusVolume,
+    /// Issue #87: the streamed-track commands. `stream` names the stream.
+    StreamStart,
+    /// Ramp the stream's gain to `scalar` over `frames` frames along `curve`; stop at the end when
+    /// `flag` is set.
+    StreamFade,
+    /// A seek's first half: fade out over one block, drop what the ring holds, and wait for the
+    /// ring to fill again before sounding.
+    StreamFlush,
+    /// Stop now. A fading stop is a `StreamFade` with `flag` set.
+    StreamStop,
     Count,
 };
 
 [[nodiscard]] const char* command_kind_name(CommandKind kind) noexcept;
 
-/// One command. Trivially copyable, 48 bytes, no pointer.
+/// One command. Trivially copyable, no pointer.
 struct AudioCommand {
     CommandKind kind = CommandKind::None;
+    /// The stream commands' fade shape (a `FadeCurve`) and their stop-when-done flag.
+    u8 curve = 0;
+    u8 flag = 0;
+    /// A stream fade's length.
+    u32 frames = 0;
     VoiceHandle voice;
     BusHandle bus;
+    StreamHandle stream;
     /// Interpretation depends on `kind`: the volume, the pitch, the occlusion, the seek position in
     /// frames. One field rather than a union, because a union of four floats is four floats and the
     /// name would have to be read from the kind either way.

@@ -457,6 +457,32 @@ table shape) and `integration.game_backend_menu` (rebinding through a real input
 profile, the display settings and the player's files). `samples/16-menus` drives all of it from
 Swift; [the UI guide](../../docs/guides/ui.md) has the walkthrough.
 
+## What ABI 1.18 adds, and why
+
+Streamed music and ambience (`add-audio-streaming-import`, issue #87). Up to 1.17 a Swift game could
+play cues — short sounds decoded in memory — and set bus volumes, and could not play a music track at
+all: there was no decoder, no streaming and no verb for it. Six entries over the same
+`cy::abi::game::AudioBackend`, whose six new members default to UNAVAILABLE so a 1.3 backend still
+compiles and says what it lacks; `cy::game_backend::AudioAdapter` answers them over a bound
+`cy::audio::StreamPlayer` (`bind_streams`, `add_track`).
+
+| Entries | Phases | Notes |
+|---|---|---|
+| `audio_find_track` | N F U | a track the host registered by name; NOT_FOUND. `CyAudioTrack` is its place in the adapter's table plus one |
+| `audio_stream_play` | N F U | `CyAudioStreamPlay` (48 bytes): track, bus (zero: Master), `crossfade_from` (a playing stream to fade out over the same length), volume (zero: as authored), fade, start in seconds; `CY_AUDIO_STREAM_RAW_LEVEL` ignores the importer's loudness gain. `CyAudioStream` is the player's `StreamId`, never reused. A null stream during a resimulated tick |
+| `audio_stream_stop` | N F U | fade out and end; idempotent |
+| `audio_stream_seek` | N F U | flush, refill from the new position, ramp in; NOT_FOUND for an ended stream, OUT_OF_RANGE past the end |
+| `audio_stream_set_volume` | N F U | a linear ramp of the stream's gain |
+| `audio_stream_state` | N F U | `CyAudioStreamState` (32 bytes): playing and looping flags, position, one pass's length, gain, underruns; NOT_FOUND once ended |
+
+Like every audio entry, the writes answer OK and do nothing while the tick is a resimulation, and a
+stream handle is not simulation state. Bus volumes stay 1.3's `audio_set_bus_volume`. Tests:
+`unit.abi` (`test_game_audio_streams.cpp`: the argument checks, `struct_size` both ways, the
+resimulation drop, a pre-1.18 backend's UNAVAILABLE; `test_layout.cpp`: the 1.18 layouts; the table
+shape), `integration.game_backend_audio_streams` (a real player: play, crossfade, seek, volume, state,
+stop). samples/14-third-person streams its wind from Swift;
+[the guide](../../docs/guides/audio-streaming.md).
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved

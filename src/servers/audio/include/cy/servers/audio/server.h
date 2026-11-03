@@ -72,6 +72,7 @@
 #include <cy/servers/audio/commands.h>
 #include <cy/servers/audio/handles.h>
 #include <cy/servers/audio/spatial.h>
+#include <cy/servers/audio/stream.h>
 #include <cy/servers/audio/voice.h>
 
 #include <atomic>
@@ -100,6 +101,9 @@ struct AudioServerConfig {
     u32 voice_capacity = 256;
     u32 clip_capacity = 256;
     u32 listener_capacity = 4;
+    /// Streamed tracks playing at once: music, its crossfade partner, and ambience beds. Each is a
+    /// slot of a few dozen bytes; the rings are the caller's.
+    u32 stream_capacity = 8;
     /// The mixer's block size, in frames. The device's buffer is mixed as a whole number of these;
     /// a smaller block costs a little more per-block overhead and buys finer gain ramps.
     u32 block_frames = 120;
@@ -144,6 +148,55 @@ struct AudioStatistics {
     /// lost, which is why it is counted rather than dropped silently.
     u32 dropped_commands = 0;
     u32 blocks_mixed = 0;
+    /// Issue #87. Blocks in which a playing stream's ring held fewer frames than the block needed
+    /// and its source had not ended, summed over streams; and the frames of silence played for
+    /// them. "Underrun producing silence and a diagnostic rather than a stall": these are the
+    /// count, `update()` logs the diagnostic, and `stream_status` has the per-stream figures.
+    u32 stream_underruns = 0;
+    u64 stream_underrun_frames = 0;
+};
+
+/// What a caller asks for when it creates a stream. Issue #87; see stream.h.
+struct StreamDescription {
+    /// The ring the stream's source fills. Borrowed, like a clip's samples: it must outlive the
+    /// stream until `stream_finished` answers true. Its layout must be the device's.
+    StreamRing* ring = nullptr;
+    /// Null routes to `Master`.
+    BusHandle bus;
+    /// The gain before any fade. A start with a fade-in ramps from zero to this.
+    f32 volume = 1.0F;
+    /// Frames the ring must hold before the stream first sounds, and again after a seek. Zero is
+    /// "anything at all". Priming is silence and is NOT an underrun: a stream that has not started
+    /// yet has not run dry.
+    u32 prime_frames = 0;
+};
+
+/// Where a stream is, as the audio thread last left it.
+enum class StreamState : u8 {
+    Idle = 0,
+    /// Waiting for the ring to hold `prime_frames`.
+    Priming,
+    Playing,
+    /// Fading out across one block before a seek drops the ring.
+    Flushing,
+    Stopped,
+    Count,
+};
+
+[[nodiscard]] const char* stream_state_name(StreamState state) noexcept;
+
+/// One stream's figures. Readable from the game thread at any time; each is one relaxed load.
+struct StreamStatus {
+    StreamState state = StreamState::Idle;
+    /// Frames the mixer has taken from the ring since the stream was created.
+    u64 frames_mixed = 0;
+    /// Blocks that found the ring short, and the frames of silence played for them.
+    u32 underruns = 0;
+    u64 underrun_frames = 0;
+    /// Flushes the audio thread has completed, so a seek knows its ring is empty.
+    u32 flushes = 0;
+    /// The gain at the end of the last block mixed.
+    f32 gain = 0.0F;
 };
 
 /// The audio server.
@@ -230,6 +283,36 @@ public:
     /// of virtualising rather than stopping.
     [[nodiscard]] f64 position_of(VoiceHandle handle) const noexcept;
 
+    // --- Streams (issue #87) -----------------------------------------------------------------
+    //
+    // A stream is a ring someone else fills and this server drains, with a gain envelope the audio
+    // thread evaluates per frame — so a crossfade is two `fade_stream` calls whose curves are
+    // sample-accurate, not a gain the game thread nudges once a frame. stream.h has the threading.
+
+    [[nodiscard]] Expected<StreamHandle, Error> create_stream(
+        const StreamDescription& description) noexcept;
+    /// Start sounding once primed, ramping from silence to the stream's volume over
+    /// `fade_in_seconds` (zero: at once) along `curve`.
+    [[nodiscard]] Status start_stream(StreamHandle handle, f32 fade_in_seconds,
+                                      FadeCurve curve = FadeCurve::EqualPower) noexcept;
+    /// Ramp to `gain` over `seconds` along `curve`, from wherever the gain is when the command
+    /// arrives. `stop_when_done` stops the stream at the end of the ramp — a fading stop.
+    [[nodiscard]] Status fade_stream(StreamHandle handle, f32 gain, f32 seconds, FadeCurve curve,
+                                     bool stop_when_done) noexcept;
+    /// Fade out over `fade_seconds` and stop; zero stops within the block.
+    [[nodiscard]] Status stop_stream(StreamHandle handle, f32 fade_seconds) noexcept;
+    /// A seek's first half. The audio thread fades the stream out over one block, drops what its
+    /// ring holds and primes again; `stream_status().flushes` counts it done. Whoever fills the
+    /// ring must not write to it between this call and that count moving.
+    [[nodiscard]] Status flush_stream(StreamHandle handle) noexcept;
+    /// Whether the audio thread is done with the stream's ring: stopped, or drained to the end of
+    /// a track that does not loop. Once true, `destroy_stream` releases it at once.
+    [[nodiscard]] bool stream_finished(StreamHandle handle) const noexcept;
+    [[nodiscard]] StreamStatus stream_status(StreamHandle handle) const noexcept;
+    /// Release the slot. A stream still sounding is stopped hard first and its slot reused only
+    /// once `update()` has seen the audio thread let go — the ring may be in the middle of a read.
+    void destroy_stream(StreamHandle handle) noexcept;
+
     // --- The frame
     // ---------------------------------------------------------------------------------
 
@@ -310,6 +393,60 @@ private:
         bool live = false;
     };
 
+    /// A gain ramp, evaluated per frame on the audio thread.
+    struct StreamEnvelope {
+        f32 from = 0.0F;
+        f32 to = 0.0F;
+        u32 total = 0;
+        u32 done = 0;
+        FadeCurve curve = FadeCurve::Linear;
+        bool stop_when_done = false;
+    };
+
+    /// One stream. Written by the game thread only while `live` is false (creation), then through
+    /// commands; the atomics are what the game thread reads back.
+    struct StreamSlot {
+        // --- Game thread.
+        u32 generation = 0;
+        bool live = false;
+        bool pending_release = false;
+        f32 volume = 1.0F;
+        u32 reported_underruns = 0;
+        // --- Immutable after creation; published by the Start command's release/acquire.
+        StreamRing* ring = nullptr;
+        u32 bus_index = 0;
+        u32 prime_frames = 0;
+        // --- Audio thread.
+        /// The ring as the audio thread knows it: copied from `ring` when the Start command is
+        /// drained — the queue's release/acquire is what publishes it — and never touched by the
+        /// game thread, which may reset `ring` for a later stream while this one is still live
+        /// here.
+        StreamRing* active_ring = nullptr;
+        StreamState state = StreamState::Idle;
+        f32 gain = 0.0F;
+        StreamEnvelope envelope;
+        /// Set when a flush completes: the first block after priming again ramps in, because the
+        /// new position starts mid-waveform as surely as the old one stopped there.
+        bool declick = false;
+        // --- Audio thread writes, game thread reads.
+        std::atomic<u32> published_state{0};
+        std::atomic<u64> frames_mixed{0};
+        std::atomic<u32> underruns{0};
+        std::atomic<u64> underrun_frames{0};
+        std::atomic<u32> flushes{0};
+        std::atomic<u32> published_gain{0};
+        std::atomic<u32> finished{0};
+
+        StreamSlot() = default;
+        ~StreamSlot() = default;
+        StreamSlot(const StreamSlot&) = delete;
+        StreamSlot& operator=(const StreamSlot&) = delete;
+        /// Relocation during `allocate_buffers()`, before the audio thread exists; the same
+        /// argument `VoiceSlot`'s move makes.
+        StreamSlot(StreamSlot&& other) noexcept;
+        StreamSlot& operator=(StreamSlot&& other) noexcept;
+    };
+
     [[nodiscard]] Status allocate_buffers() noexcept;
     /// The deterministic stream the pitch and volume variation are rolled from. Seeded at
     /// construction and advanced once per `play()`, so a fixed sequence of calls produces a fixed
@@ -324,6 +461,15 @@ private:
     void score_voices(const Listener& listener) noexcept;
     void assign_tiers() noexcept;
     void publish_mix_state(const Listener& listener) noexcept;
+
+    /// The stream half, in server_streams.cpp.
+    [[nodiscard]] StreamSlot* stream_slot(StreamHandle handle) noexcept;
+    [[nodiscard]] const StreamSlot* stream_slot(StreamHandle handle) const noexcept;
+    void apply_stream_command(const AudioCommand& command) noexcept;
+    void mix_streams(u32 block_frames, u32 channels) noexcept;
+    void mix_stream(StreamSlot& slot, u32 block_frames, u32 channels) noexcept;
+    /// Game thread: reap released streams and turn new underruns into a diagnostic.
+    void update_streams() noexcept;
 
     /// `render()`'s phases.
     void drain_commands() noexcept;
@@ -347,6 +493,9 @@ private:
     Array<VoiceSlot> voices_;
     Array<ClipSlot> clips_;
     Array<ListenerSlot> listeners_;
+    Array<StreamSlot> streams_;
+    /// One block of one stream's frames, read from its ring before they are scaled and summed.
+    Array<f32> stream_scratch_;
 
     /// bus_capacity * channels * block_frames floats, allocated once at `initialize()`.
     Array<f32> bus_buffers_;

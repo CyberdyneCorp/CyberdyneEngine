@@ -169,4 +169,175 @@ CyResult audio_set_bus_volume(CyEngine engine, CyAudioBus bus, float volume, flo
     return finish(backend->set_bus_volume(bus, volume, fade_seconds));
 }
 
+// --- 1.18: streamed tracks ----------------------------------------------------------------------
+
+namespace {
+
+[[nodiscard]] CyResult no_streams() noexcept {
+    return report(CY_RESULT_UNAVAILABLE, "this engine's audio backend has no stream player");
+}
+
+/// The numbers in a stream request: a gain, a fade and a start that are finite and not negative.
+[[nodiscard]] bool valid_stream_play(const CyAudioStreamPlay& play) noexcept {
+    return non_negative(play.volume) && non_negative(play.fade_seconds) &&
+           std::isfinite(play.start_seconds) && play.start_seconds >= 0.0;
+}
+
+}  // namespace
+
+CyResult AudioBackend::find_track(const char* name, CyAudioTrack& out_track) noexcept {
+    (void)name;
+    (void)out_track;
+    return no_streams();
+}
+
+CyResult AudioBackend::stream_play(const CyAudioStreamPlay& play,
+                                   CyAudioStream& out_stream) noexcept {
+    (void)play;
+    (void)out_stream;
+    return no_streams();
+}
+
+CyResult AudioBackend::stream_stop(CyAudioStream stream, f32 fade_out_seconds) noexcept {
+    (void)stream;
+    (void)fade_out_seconds;
+    return no_streams();
+}
+
+CyResult AudioBackend::stream_seek(CyAudioStream stream, f64 seconds) noexcept {
+    (void)stream;
+    (void)seconds;
+    return no_streams();
+}
+
+CyResult AudioBackend::stream_set_volume(CyAudioStream stream, f32 volume,
+                                         f32 fade_seconds) noexcept {
+    (void)stream;
+    (void)volume;
+    (void)fade_seconds;
+    return no_streams();
+}
+
+CyResult AudioBackend::stream_state(CyAudioStream stream, CyAudioStreamState& out_state) noexcept {
+    (void)stream;
+    (void)out_state;
+    return no_streams();
+}
+
+CyResult audio_find_track(CyEngine engine, const char* name, CyAudioTrack* out_track) {
+    AudioBackend* backend = enter(engine, "audio_find_track");
+    if (backend == nullptr) {
+        return last_error_code();
+    }
+    if (name == nullptr || out_track == nullptr) {
+        return report(CY_RESULT_INVALID_ARGUMENT, "audio_find_track needs a name and an output");
+    }
+    CyAudioTrack track = 0;
+    if (const CyResult result = backend->find_track(name, track); result != CY_RESULT_OK) {
+        return result;
+    }
+    *out_track = track;
+    return finish(CY_RESULT_OK);
+}
+
+CyResult audio_stream_play(CyEngine engine, const CyAudioStreamPlay* play,
+                           CyAudioStream* out_stream) {
+    AudioBackend* backend = enter(engine, "audio_stream_play");
+    if (backend == nullptr) {
+        return last_error_code();
+    }
+    if (play == nullptr) {
+        return report(CY_RESULT_INVALID_ARGUMENT, "audio_stream_play needs a CyAudioStreamPlay");
+    }
+    CyAudioStreamPlay whole{};
+    if (!read_sized(*play, whole)) {
+        return report(CY_RESULT_INVALID_ARGUMENT,
+                      "audio_stream_play: the CyAudioStreamPlay struct_size is malformed");
+    }
+    if (!valid_stream_play(whole)) {
+        return report(CY_RESULT_INVALID_ARGUMENT,
+                      "audio_stream_play: volume, fade and start must be finite and not negative");
+    }
+    if (engine->game.clock.resimulating()) {
+        if (out_stream != nullptr) {
+            *out_stream = 0;
+        }
+        return finish(CY_RESULT_OK);
+    }
+    CyAudioStream stream = 0;
+    if (const CyResult result = backend->stream_play(whole, stream); result != CY_RESULT_OK) {
+        return result;
+    }
+    if (out_stream != nullptr) {
+        *out_stream = stream;
+    }
+    return finish(CY_RESULT_OK);
+}
+
+CyResult audio_stream_stop(CyEngine engine, CyAudioStream stream, float fade_out_seconds) {
+    AudioBackend* backend = enter(engine, "audio_stream_stop");
+    if (backend == nullptr) {
+        return last_error_code();
+    }
+    if (!non_negative(fade_out_seconds)) {
+        return report(CY_RESULT_INVALID_ARGUMENT,
+                      "audio_stream_stop: the fade must be finite and not negative");
+    }
+    if (engine->game.clock.resimulating() || stream == 0) {
+        return finish(CY_RESULT_OK);
+    }
+    return finish(backend->stream_stop(stream, fade_out_seconds));
+}
+
+CyResult audio_stream_seek(CyEngine engine, CyAudioStream stream, double seconds) {
+    AudioBackend* backend = enter(engine, "audio_stream_seek");
+    if (backend == nullptr) {
+        return last_error_code();
+    }
+    if (!std::isfinite(seconds) || seconds < 0.0) {
+        return report(CY_RESULT_INVALID_ARGUMENT,
+                      "audio_stream_seek: the position must be finite and not negative");
+    }
+    if (engine->game.clock.resimulating()) {
+        return finish(CY_RESULT_OK);
+    }
+    return finish(backend->stream_seek(stream, seconds));
+}
+
+CyResult audio_stream_set_volume(CyEngine engine, CyAudioStream stream, float volume,
+                                 float fade_seconds) {
+    AudioBackend* backend = enter(engine, "audio_stream_set_volume");
+    if (backend == nullptr) {
+        return last_error_code();
+    }
+    if (!non_negative(volume) || !non_negative(fade_seconds)) {
+        return report(CY_RESULT_INVALID_ARGUMENT,
+                      "audio_stream_set_volume: the volume and fade must be finite and not "
+                      "negative");
+    }
+    if (engine->game.clock.resimulating()) {
+        return finish(CY_RESULT_OK);
+    }
+    return finish(backend->stream_set_volume(stream, volume, fade_seconds));
+}
+
+CyResult audio_stream_state(CyEngine engine, CyAudioStream stream, CyAudioStreamState* out_state) {
+    AudioBackend* backend = enter(engine, "audio_stream_state");
+    if (backend == nullptr) {
+        return last_error_code();
+    }
+    if (out_state == nullptr || agreed_size<CyAudioStreamState>(out_state->struct_size) == 0U) {
+        return report(CY_RESULT_INVALID_ARGUMENT,
+                      "audio_stream_state needs an output with a valid struct_size");
+    }
+    CyAudioStreamState state{};
+    state.struct_size = static_cast<u32>(sizeof(CyAudioStreamState));
+    if (const CyResult result = backend->stream_state(stream, state); result != CY_RESULT_OK) {
+        return result;
+    }
+    state.struct_size = static_cast<u32>(sizeof(CyAudioStreamState));
+    (void)write_sized(*out_state, state);
+    return finish(CY_RESULT_OK);
+}
+
 }  // namespace cy::abi::game

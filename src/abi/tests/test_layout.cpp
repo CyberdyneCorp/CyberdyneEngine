@@ -617,3 +617,18 @@ CY_TEST_CASE("the 1.17 structs have the offsets the description generator comput
     CY_CHECK_EQ(sizeof(CyVideoMode), 8U);
     CY_CHECK_EQ(offsetof(CyVideoMode, height), 4U);
 }
+
+CY_TEST_CASE("the 1.18 structs have the offsets the description generator computes") {
+    CY_CHECK_EQ(sizeof(CyAudioStreamPlay), 48U);
+    CY_CHECK_EQ(offsetof(CyAudioStreamPlay, track), 8U);
+    CY_CHECK_EQ(offsetof(CyAudioStreamPlay, bus), 16U);
+    CY_CHECK_EQ(offsetof(CyAudioStreamPlay, crossfade_from), 24U);
+    CY_CHECK_EQ(offsetof(CyAudioStreamPlay, volume), 32U);
+    CY_CHECK_EQ(offsetof(CyAudioStreamPlay, fade_seconds), 36U);
+    CY_CHECK_EQ(offsetof(CyAudioStreamPlay, start_seconds), 40U);
+    CY_CHECK_EQ(sizeof(CyAudioStreamState), 32U);
+    CY_CHECK_EQ(offsetof(CyAudioStreamState, position_seconds), 8U);
+    CY_CHECK_EQ(offsetof(CyAudioStreamState, duration_seconds), 16U);
+    CY_CHECK_EQ(offsetof(CyAudioStreamState, gain), 24U);
+    CY_CHECK_EQ(offsetof(CyAudioStreamState, underruns), 28U);
+}

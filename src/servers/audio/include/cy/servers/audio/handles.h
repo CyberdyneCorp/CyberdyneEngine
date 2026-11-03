@@ -6,12 +6,13 @@
 // finishes on the audio thread, its slot is reused by the next one-shot, and a gameplay handle held
 // across that must answer "no" rather than turn the volume down on somebody else's sound.
 //
-// FOUR FAMILIES:
+// FIVE FAMILIES:
 //
 //   AudioBus       a node of the mixing graph
 //   AudioClip      decoded or memory-resident sample data, registered once and played many times
 //   AudioVoice     one playing instance of a clip
 //   AudioListener  where the ears are — several, for split screen
+//   AudioStream    a streamed track: a ring buffer a decode job fills and the mixer drains
 
 #include <cy/core/values/handle.h>
 
@@ -21,10 +22,12 @@ CY_HANDLE_TAG(AudioBus);
 CY_HANDLE_TAG(AudioClip);
 CY_HANDLE_TAG(AudioVoice);
 CY_HANDLE_TAG(AudioListener);
+CY_HANDLE_TAG(AudioStream);
 
 using BusHandle = Handle<AudioBusTag>;
 using ClipHandle = Handle<AudioClipTag>;
 using VoiceHandle = Handle<AudioVoiceTag>;
 using ListenerHandle = Handle<AudioListenerTag>;
+using StreamHandle = Handle<AudioStreamTag>;
 
 }  // namespace cy::audio

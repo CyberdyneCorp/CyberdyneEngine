@@ -52,6 +52,16 @@ if(CY_TEXT)
     set(cy_import_text_dependencies cy::text-complete)
 endif()
 
+# The audio importer (issue #87) decodes through the miniaudio backend's codecs, which CY_AUDIO
+# builds. Without it the importer is still registered and refuses every source naming the option.
+# The definition is PUBLIC because a test needs the same answer the importer has.
+set(cy_import_audio_dependencies "")
+set(cy_import_audio_definitions "")
+if(CY_AUDIO)
+    set(cy_import_audio_dependencies cy::backends-audio-miniaudio)
+    set(cy_import_audio_definitions CY_IMPORT_AUDIO=1)
+endif()
+
 cy_add_module(
     NAME cy_import
     LAYER tools
@@ -59,6 +69,7 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/animation_cook.cpp
+        src/audio.cpp
         src/block_encode.cpp
         src/clip_record.cpp
         src/fbx.cpp
@@ -86,7 +97,7 @@ cy_add_module(
     PRIVATE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src"
     ${cy_import_animation_definitions}
     PUBLIC_DEPENDENCIES cy::core-assets cy::core-base cy::core-memory cy::core-values cy::core-math
-                        cy::core-jobs cy::servers-text
+                        cy::core-jobs cy::servers-text cy::servers-audio
     # PRIVATE, and that is the isolation `thirdparty-dependencies` requires rather than a
     # convention: a consumer of cy::import inherits neither ufbx.h nor xatlas.h, so a translation
     # unit outside src/fbx.cpp, src/fbx_skeleton.cpp and src/unwrap.cpp cannot name one of their
@@ -94,7 +105,10 @@ cy_add_module(
     # deps/manifest.toml records those two files as the interface, and this line is what makes the
     # record true.
     PRIVATE_DEPENDENCIES cy::dep::ufbx cy::dep::xatlas ${cy_import_animation_dependencies}
-                         ${cy_import_text_dependencies})
+                         ${cy_import_text_dependencies} ${cy_import_audio_dependencies})
+if(cy_import_audio_definitions)
+    target_compile_definitions(cy_import PUBLIC ${cy_import_audio_definitions})
+endif()
 
 cy_add_module(
     NAME cy_import_cli
@@ -103,6 +117,15 @@ cy_add_module(
     SOURCES
         src/main.cpp
     PRIVATE_DEPENDENCIES cy::import cy::core-jobs)
+
+# Issue #87: one source in, one bare cooked track out — what a sample's build streams from disk.
+cy_add_module(
+    NAME cy_audio_cook
+    LAYER tools
+    TYPE EXECUTABLE
+    SOURCES
+        src/audio_cook_main.cpp
+    PRIVATE_DEPENDENCIES cy::import cy::core-assets)
 
 # tests/ is read now and declares its suites later; see the comment at the top of it for why.
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
