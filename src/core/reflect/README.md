@@ -110,10 +110,17 @@ variable than the index's, because it is cache-bound and the index is not:
 | `find(TypeId)`, 32 types | 14.2 ns | 3.1 ns | 4.6x |
 | `find(TypeId)`, 320 types | 80 ns | 3.1–3.6 ns | 22–26x |
 | `find(TypeId)`, 3200 types | 510–1250 ns | 1.6–3.9 ns | 250–760x |
-| decode one 256-field record | 9.6–10.8 µs | 0.81–0.93 µs | 11–12x |
-| **scene load — 512 types, 20 000 records** | **256–282 ns/record (5.1–5.6 ms)** | **116–125 ns/record (2.3–2.5 ms)** | **2.2x** |
+| decode one 1024-field record | 120–144 µs | 3.1–3.8 µs | 37–40x |
+| **scene load — 512 types, 20 000 records** | **238–260 ns/record (4.8–5.2 ms)** | **100–109 ns/record (2.0–2.2 ms)** | **2.4x** |
 
-Read the last row honestly: **2.2x, not 300x**, because a 26-field record's decode is real work — a
+The two timed rows below the lookups are each the sum, over short chunks of the work, of every
+chunk's fastest of five runs, with both paths timed back to back per chunk. Measured as whole passes
+one after the other, a hosted runner's noise reached the bounds: the scene load at 1.4x on macOS, a
+single 256-field decode at 3.4x on Windows, whose build has no thread CPU clock. The decode is 1024
+fields wide for the same reason: the gap it measures grows with the width, so it is four times
+wider there than at 256 while a revert to scanning still takes it to one.
+
+Read the last row honestly: **2.4x, not 300x**, because a 26-field record's decode is real work — a
 probe and a `memcpy` per field — and the quadratic term is only the part around it. The dramatic
 factors are in the components, and they are what the numbers would look like at a wider type or a
 larger registry. The lookup cost is flat across a hundredfold growth in the registry — 0.5x to
@@ -125,7 +132,9 @@ chain either table holds; it is 2, 4 and 13 at 32, 320 and 3200 types — the O(
 linear probing at a load factor of one half, against a scan's O(n) — and that assertion is
 deterministic on any machine in any profile. The timed assertions compare ratios within one run, with
 bounds far below the measured margins, so the suite fails when the complexity comes back rather than
-when the build machine is busy.
+when the build machine is busy. `TypeRegistry::fields()`, the lookup a scene load takes, is held to
+the same growth bound as `find()`: a `fields()` that scanned moved the scene-load ratio by too little
+for that case's 1.5x floor to catch it reliably.
 
 ## Reflection is control plane, not hot path
 
