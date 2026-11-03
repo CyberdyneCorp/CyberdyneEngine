@@ -352,8 +352,11 @@ void print_report(RtsHost& host, const Findings& seen) noexcept {
 constexpr cy::ship::Setting kShipSettings[] = {
     {"vsync", "on", cy::ship::SettingKind::Switch, nullptr, "--no-vsync",
      "Wait for the display between frames: on or off."},
+#if defined(CY_RTS_API_MAP)
+    // `--width` is the map renderer's flag, and a build without it refuses the flag by name.
     {"width", "1920", cy::ship::SettingKind::Count, "--width", nullptr,
      "The frame's width in pixels; its height follows at 16:9 and the window letterboxes it."},
+#endif
     {"validation", "off", cy::ship::SettingKind::Switch, "--validation", nullptr,
      "The Vulkan validation layer, for reporting a rendering problem: on or off."},
 };

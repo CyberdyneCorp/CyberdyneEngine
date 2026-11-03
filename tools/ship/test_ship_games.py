@@ -17,6 +17,7 @@
                  battle's, the fog's, the map's, the session's — must agree, in order.
      The first-person game reads its textures only when it draws, so on a machine with a device
                  it also draws twenty frames, traced the same way.
+     Played headless, each game writes its settings file and accepts every flag it becomes.
   4. EVERY FILE LISTED. Every file the archive holds is in the signed manifest, or is the manifest.
   5. TAMPERED    one byte of a content chunk flipped: the game does not start, exits 3, and names
                  the chunk. A deleted file is named the same way, and so is a file added beside the
@@ -228,6 +229,24 @@ class GameRun:
         self.report.did("fps: a drawn run reads its textures from the artefact's content",
                         f"{len(opened)} textures, none under the checkout")
 
+    def act_played(self, root: Path, scratch: Path) -> None:
+        """Played headless (SDL's events, no window): the settings file is written on the first
+        launch and its every flag is one the game itself accepts — a setting the game refused would
+        stop a double-clicked game from starting."""
+        if self.game.name == "ship":
+            return
+        user = scratch / "played-user"
+        command = [executable_of(root, self.game), "--play", "--headless", "--frames", "30"]
+        result = run(command, clean_environment(user), root.parent, self.scripted.seconds)
+        expect(result.returncode == 0, f"{self.game.name}: played with its settings, it failed "
+               f"({result.returncode}):\n{result.stderr[-1500:]}")
+        settings = next(user.rglob("settings.cfg"), None)
+        expect(settings is not None, f"{self.game.name}: the first launch wrote no settings file")
+        keys = [line.split("=")[0].strip() for line in settings.read_text().splitlines()
+                if "=" in line and not line.startswith("#")]
+        self.report.did(f"{self.game.name}: the settings file is written, and the game takes "
+                        "every flag it becomes", ", ".join(keys))
+
     def act_listing(self, root: Path) -> None:
         installation, manifest = installation_root(root)
         text = (installation / manifest).read_text()
@@ -254,7 +273,7 @@ class GameRun:
     def act_tampering(self, root: Path, scratch: Path) -> None:
         user = scratch / "tampered-user"
         installation, _ = installation_root(root)
-        chunks = sorted((installation / "content").glob("chunk-*.cychunk"))
+        chunks = sorted(installation.rglob("chunk-*.cychunk"))
         expect(chunks, f"{self.game.name}: the artefact has no content chunks")
         chunk = chunks[0]
         original = chunk.read_bytes()
@@ -285,6 +304,19 @@ class GameRun:
                         f"{reports[0].relative_to(user)}")
 
 
+def act_shipping_check(build_dir: Path, report: Report) -> None:
+    """`--require-shipping`'s symbol check, against a binary that does link the Slang compiler."""
+    shaderc = build_dir / "tools" / "shaders" / package.exe("cy_shaderc", package.host_target())
+    if os.name != "posix" or not shaderc.is_file() or shutil.which("nm") is None:
+        report.not_evaluated("the shipping check refuses a binary that links the shader compiler",
+                             "no cy_shaderc in this tree, or no nm")
+        return
+    found = package.development_code(shaderc)
+    expect(found is not None, "the shipping check passed cy_shaderc, which links Slang")
+    report.did("the shipping check refuses a binary that links the shader compiler",
+               f"cy_shaderc: {found!r}")
+
+
 def package_games(build_dir: Path, out: Path, report: Report) -> list[tuple[package.Game, Path]]:
     build = package.Build.of(build_dir)
     made = []
@@ -305,6 +337,7 @@ def act_game(game: package.Game, artefact_path: Path, build_dir: Path, report: R
         acts.act_listing(root)
         startup = acts.act_digests(root, scratch / "user", scratch)
         acts.act_drawn(root, scratch / "user", scratch)
+        acts.act_played(root, scratch)
         acts.act_tampering(root, scratch)
         acts.act_crash(root, scratch)
         return startup
@@ -321,6 +354,7 @@ def main(argv: list[str] | None = None) -> int:
     shutil.rmtree(work, ignore_errors=True)
     report = Report()
     try:
+        act_shipping_check(build_dir, report)
         made = package_games(build_dir, work / "dist", report)
         if not made:
             print("smoke.ship_games: this tree built none of the games")

@@ -44,7 +44,8 @@ namespace {
 /// Writes the content stream as chunk files of at most `limit` bytes each.
 class ChunkWriter {
 public:
-    ChunkWriter(fs::path root, u64 limit) : root_(std::move(root)), limit_(limit) {}
+    ChunkWriter(fs::path root, std::string directory, u64 limit)
+        : root_(std::move(root)), directory_(std::move(directory)), limit_(limit) {}
 
     [[nodiscard]] bool write(const char* data, u64 size, std::string& error) {
         while (size > 0) {
@@ -87,22 +88,24 @@ public:
 
 private:
     [[nodiscard]] bool open(std::string& error) {
-        char name[48];
-        std::snprintf(name, sizeof(name), "content/chunk-%04zu.cychunk", chunks_.size());
+        char leaf[32];
+        std::snprintf(leaf, sizeof(leaf), "chunk-%04zu.cychunk", chunks_.size());
+        const std::string name = directory_ + "/" + leaf;
         std::error_code code;
-        fs::create_directories(root_ / "content", code);
+        fs::create_directories(root_ / fs::path(directory_), code);
         file_.open(root_ / fs::path(name), std::ios::binary | std::ios::trunc);
         if (!file_) {
-            error = std::string("cannot create ") + name;
+            error = "cannot create " + name;
             return false;
         }
-        paths_.emplace_back(name);
+        paths_.push_back(name);
         hasher_.reset();
         current_ = 0;
         return true;
     }
 
     fs::path root_;
+    std::string directory_;
     u64 limit_;
     u64 current_ = 0;
     std::ofstream file_;
@@ -117,7 +120,11 @@ private:
     if (!list_files(options.content, names, error)) {
         return false;
     }
-    ChunkWriter writer(options.root, options.chunk_bytes);
+    if (!valid_relative_path(options.chunk_directory)) {
+        error = options.chunk_directory + " is not a directory inside the artefact";
+        return false;
+    }
+    ChunkWriter writer(options.root, options.chunk_directory, options.chunk_bytes);
     for (const std::string& name : names) {
         std::string bytes;
         if (!valid_relative_path(name)) {

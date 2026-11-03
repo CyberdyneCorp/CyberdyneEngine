@@ -43,7 +43,7 @@ What each target's artefact holds:
 |---|---|---|
 | Linux | `CyberdyneRTS-0.5.0-linux-x86_64.tar.gz` and `...-symbols.tar.gz` | `bin/` (stripped), `lib/` (the Swift module, `RUNPATH $ORIGIN`), `content/`, the manifest |
 | Windows | `CyberdyneRTS-0.5.0-windows-x86_64.zip` | `bin/` with the executable and its DLLs, `content/`, the manifest |
-| macOS | `CyberdyneRTS-0.5.0-macos-arm64.zip` | `CyberdyneRTS.app`, ad-hoc signed; the manifest in `Contents/Resources/` |
+| macOS | `CyberdyneRTS-0.5.0-macos-arm64.zip` | `CyberdyneRTS.app`, ad-hoc signed; the manifest and the chunks in `Contents/Resources/` |
 
 Every artefact carries `README.txt` (how to run it, what it needs from the machine), `LICENSE`,
 `THIRD_PARTY.md`, and a `CHANGELOG.md` written by `tools/release/release.py changelog` — the same
@@ -213,8 +213,10 @@ verified installation.
 The release profile is the default for `just package` because it is what ships: the Shipping
 configuration, link-time optimisation, assertions off, no `CY_DEVELOPMENT`, no Slang compiler
 (`CY_SHADER_SLANG` is off in Shipping, which `shader-system` requires), and the editor is a separate
-Rust application no game links. `just release-games` refuses any other profile, and every manifest's
-`profile` line says which one an artefact came from. Continuous integration packages the dev
+Rust application no game links. `just release-games` refuses any other profile, and refuses an executable whose symbols show
+the editor's backend (`cy::editor…`) or the Slang compiler (`slang::`) linked into it — the release
+RTS and first-person game carry neither; every manifest's `profile` line says which profile an
+artefact came from. Continuous integration packages the dev
 profile, because it reuses the tree each leg already built rather than building a second one.
 
 ## Continuous integration
@@ -226,31 +228,36 @@ the `test` job runs, unpacks each artefact into a clean temporary directory and 
 
 ## Measured
 
-Linux x86_64, development profile, RTX 5060, GCC 13 (`smoke.ship_games` and repeated launches from
-an unpacked artefact; `startup_ms` is from the executable's first line to the game's first):
+Linux x86_64, GCC 13, RTX 5060. Sizes are the compressed artefact and, in brackets, unpacked.
+`startup_ms` runs from the start of `cy::ship::start` to the moment it hands the game its arguments —
+the signature, every file hashed, the content materialised, the settings read; the first launch
+writes the content cache, later launches re-verify it. Medians of five later launches.
 
-| Game | Artefact | Content | Startup, first launch | Startup, later launches (median of 5) |
+| Game | Release artefact | Release startup, first / later | Development artefact | Development startup, first / later |
 |---|---|---|---|---|
-| RTS | 17.2 MB | 7.2 MB in 2 chunks | 24.7 ms | 16.8 ms |
-| third person | 18.8 MB | 7.0 MB in 2 chunks | 22.5 ms | 17.0 ms |
-| first person | 11.4 MB | 0.2 MB in 1 chunk | 13.4 ms | 13.5 ms |
-| samples/11-ship | 1.6 MB | 6 KB in 1 chunk | 3.0 ms | 2.6 ms |
+| RTS | 14.1 MB (26 MB) | 20.3 / 10.7 ms | 17.2 MB | 24.7 / 16.8 ms |
+| third person | 15.5 MB (28 MB) | 18.1 / 11.7 ms | 18.8 MB | 22.5 / 17.0 ms |
+| first person | 8.4 MB (21 MB) | 12.3 / 7.9 ms | 11.4 MB | 13.4 / 13.5 ms |
+| samples/11-ship | 1.7 MB (3.9 MB) | 2.5 / 2.2 ms | 1.6 MB | 3.0 / 2.7 ms |
 
-Most of the startup is hashing every file of the artefact (about 30 MB for the RTS, the Swift
-runtime libraries included). The release-profile figures are in the pull request that added this.
+Content: the RTS 7.2 MB in 2 chunks, the third-person game 7.0 MB in 2, the first-person game
+0.2 MB in 1, the card 6 KB in 1. The release artefacts hold six files and the content chunks — the
+Swift runtime is inside the module — where a development artefact also carries ten Swift runtime
+libraries. Most of the startup is hashing every file: 26 MB for the release RTS.
 
 ## Testing
 
 | Suite | What it proves |
 |---|---|
 | `integration.ship_manifest` | RFC 8032 vectors; a signature holds only for its bytes and its key; the manifest round-trips and refuses a path outside the artefact, a repeated path and chunks that do not tile the stream; every file listed; entries read back across chunk boundaries; a tampered or short chunk, a missing file, an unlisted file, an edited manifest and an untrusted key each refused by name; a cached file re-verified by digest; a launch from a build tree unchanged; a packaged launch verifying, materialising and applying its settings; a tampered or planted installation not starting; a bad setting a warning |
-| `smoke.ship_games` | each game this tree built, packaged and unpacked into a clean temporary directory: its scripted run ends in the build tree's digests; under `strace` it opens nothing in the checkout (the first-person game also draws twenty frames, the only time it reads its textures); the archive holds exactly what the manifest lists; a flipped chunk byte, a deleted chunk and a planted library each refuse the launch by name; `--ship-crash` leaves a report naming SIGSEGV |
+| `smoke.ship_games` | `--require-shipping`'s symbol check refuses `cy_shaderc`, which links Slang; each game this tree built, packaged and unpacked into a clean temporary directory: its scripted run ends in the build tree's digests; played headless it writes its settings file and takes every flag the settings become; under `strace` it opens nothing in the checkout (the first-person game also draws twenty frames, the only time it reads its textures); the archive holds exactly what the manifest lists; a flipped chunk byte, a deleted chunk and a planted library each refuse the launch by name; `--ship-crash` leaves a report naming SIGSEGV |
 
-Both were watched going red under fifteen mutations — the signature not checked, any key accepted,
+Both were watched going red under sixteen mutations — the signature not checked, any key accepted,
 a digest or a size not compared, unlisted files not looked for, a missing file skipped, an entry
 losing a byte at a chunk boundary, a path allowed to climb, a cached file trusted by its size, a
-launch ignoring its verification, the settings after the player's arguments, the RTS loading its
-module and the first-person game its textures from the build tree:
+launch ignoring its verification, the settings after the player's arguments, a setting becoming a
+flag the game does not take, the RTS loading its module and the first-person game its textures from
+the build tree:
 [`evidence/falsification.txt`](../../openspec/changes/add-shipping-packages/evidence/falsification.txt).
 
 ## Pitfalls

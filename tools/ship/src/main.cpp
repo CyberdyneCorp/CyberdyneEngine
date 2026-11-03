@@ -3,7 +3,7 @@
 //
 //   cy_ship pack --root <dir> --content <dir> --game <id> --title <text> --version <semver>
 //                --revision <sha> --target <os-arch> --profile <p> [--manifest <path>]
-//                [--chunk-bytes <n>] [--sealed <path>]... [--key <secret file>]
+//                [--chunk-dir <path>] [--chunk-bytes <n>] [--sealed <path>]... [--key <file>]
 //   cy_ship verify --root <dir> [--manifest <path>]       the startup check, by itself
 //   cy_ship read --root <dir> --entry <name> --out <file> one content entry out of the chunks
 //   cy_ship keygen --out <secret file>                    a new key; prints its public half
@@ -122,6 +122,9 @@ int command_pack(const Arguments& arguments) {
     options.content = arguments.get("content");
     if (const char* manifest = arguments.get("manifest"); manifest != nullptr) {
         options.manifest = manifest;
+    }
+    if (const char* chunks = arguments.get("chunk-dir"); chunks != nullptr) {
+        options.chunk_directory = chunks;
     }
     if (const char* bytes = arguments.get("chunk-bytes"); bytes != nullptr) {
         options.chunk_bytes = std::strtoull(bytes, nullptr, 10);

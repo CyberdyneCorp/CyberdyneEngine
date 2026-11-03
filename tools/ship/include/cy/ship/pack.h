@@ -19,12 +19,15 @@
 namespace cy::ship {
 
 struct PackOptions {
-    /// The staged installation root. Chunks are written to `<root>/content/`.
+    /// The staged installation root.
     std::filesystem::path root;
     /// The cooked content, every file of it, by its path relative to this directory.
     std::filesystem::path content;
     /// Where the manifest goes, relative to `root`.
     std::string manifest = kManifestName;
+    /// Where the chunks go, relative to `root`: `content`, or a macOS bundle's `Resources/content`,
+    /// because codesign seals what is under `Resources/` and refuses loose files elsewhere.
+    std::string chunk_directory = "content";
     /// game, title, version, revision, target and profile; the rest is computed.
     Manifest header;
     u64 chunk_bytes = kDefaultChunkBytes;

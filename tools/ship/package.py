@@ -24,7 +24,8 @@ own runner from the build it already made (.github/workflows/ci.yml, `package`).
 
 WHAT IT REFUSES. A game this tree did not build (no Swift toolchain, no renderer) is refused naming
 the missing file rather than packaged without it. `--require-shipping` refuses a build tree that is
-not the release profile, which is how `just release-games` keeps a development build out of a
+not the release profile, and an executable whose symbols show the editor or the Slang compiler
+linked into it, which is how `just release-games` keeps a development build out of a
 release: a development profile links assertions and the shader compiler, and says so in the
 manifest's `profile` line either way.
 """
@@ -173,6 +174,7 @@ class Staged:
     manifest: str
     sealed: list[str]
     bundle: Path | None = None
+    chunks: str = "content"
 
 
 def stage_documents(game: Game, build: Build, target: str, documents: Path) -> None:
@@ -195,7 +197,8 @@ def readme(game: Game, build: Build, target: str) -> str:
                  "package `libvulkan1`) and your GPU driver's ICD, neither of which it carries. "
                  "`vulkaninfo --summary` says whether the machine has both.",
         "windows": "It draws with Vulkan 1.3 through the loader your GPU driver installs "
-                   "(vulkan-1.dll).",
+                   "(vulkan-1.dll). The Microsoft C++ runtime travels in bin/ when the packager "
+                   "found it; otherwise install the Visual C++ Redistributable.",
         "macos": "This build has no Metal picture yet: it plays headless or reports the window "
                  "it could not draw.",
     }[target]
@@ -293,6 +296,20 @@ def stage_linux(game: Game, build: Build, root: Path, symbol_store: Path) -> Non
         run(["patchelf", "--set-rpath", "$ORIGIN", library])
 
 
+def copy_msvc_runtime(bin_dir: Path) -> None:
+    """The engine links the dynamic MSVC runtime (cmake/profiles.cmake), and Microsoft permits it to
+    travel beside the executable. Its DLLs are found where the developer command prompt says the
+    redistributable is; without one the artefact needs the Visual C++ Redistributable installed."""
+    redist = os.environ.get("VCToolsRedistDir")
+    crt = sorted(Path(redist).glob(f"{architecture().replace('x86_64', 'x64')}/Microsoft.VC*.CRT")) \
+        if redist else []
+    if not crt:
+        print("package: no VCToolsRedistDir; the artefact needs the Visual C++ Redistributable")
+        return
+    for library in crt[-1].glob("*.dll"):
+        shutil.copy2(library, bin_dir / library.name)
+
+
 def stage_windows(game: Game, build: Build, root: Path) -> None:
     sample = build.directory / "samples" / game.directory
     built = sample / exe(game.binary, "windows")
@@ -303,6 +320,7 @@ def stage_windows(game: Game, build: Build, root: Path) -> None:
     shutil.copy2(built, bin_dir / exe(game.executable, "windows"))
     for library in sample.glob("*.dll"):
         shutil.copy2(library, bin_dir / library.name)
+    copy_msvc_runtime(bin_dir)
     if game.swift:
         module = sample / "module" / MODULE
         if not module.is_file():
@@ -364,8 +382,10 @@ def stage(game: Game, build: Build, target: str, work: Path, name: str,
         stage_macos(game, build, bundle)
         root = bundle / "Contents"
         stage_documents(game, build, target, root / "Resources")
+        # Everything that is not code under Resources/: codesign seals it there and refuses loose
+        # files anywhere else in the bundle.
         return Staged(root, content, "Resources/ship.manifest",
-                      [f"MacOS/{game.executable}"], bundle)
+                      [f"MacOS/{game.executable}"], bundle, "Resources/content")
     root = work / name
     if target == "windows":
         stage_windows(game, build, root)
@@ -378,6 +398,7 @@ def stage(game: Game, build: Build, target: str, work: Path, name: str,
 def pack(staged: Staged, game: Game, build: Build, target: str, key: str | None) -> str:
     command = [build.tool(host_target()), "pack", "--root", staged.root,
                "--content", staged.content, "--manifest", staged.manifest,
+               "--chunk-dir", staged.chunks,
                "--game", game.name, "--title", game.title, "--version", build.version,
                "--revision", build.revision, "--target", f"{target}-{architecture()}",
                "--profile", build.profile]
@@ -443,6 +464,32 @@ def package(game: Game, target: str, build: Build, out: Path, key: str | None) -
     return artefact
 
 
+#: What a shipping binary must not link, by the namespace its symbols carry: the editor's backend
+#: and the Slang shader compiler (`shader-system` requires a shipping build to contain none).
+DEVELOPMENT_ONLY = (re.compile(r"\bcy::editor"), re.compile(r"\bslang::|\bspCreateSession\b"))
+
+
+def development_code(binary: Path) -> str | None:
+    """The first editor or development-only symbol `binary` links, or None."""
+    if shutil.which("nm") is None:
+        raise PackageError("nm is required to check a shipping binary links no development code")
+    symbols_text = run(["nm", "-C", binary]).stdout
+    for pattern in DEVELOPMENT_ONLY:
+        found = pattern.search(symbols_text)
+        if found:
+            return found.group(0)
+    return None
+
+
+def check_shipping_binary(game: Game, build: Build) -> None:
+    """Refuse a release whose executable links editor or development-only code, by symbol."""
+    binary = build.directory / "samples" / game.directory / exe(game.binary, host_target())
+    found = development_code(binary)
+    if found is not None:
+        raise PackageError(f"{binary.name} links development-only code: a symbol in {found!r}; "
+                           "a shipping build must not")
+
+
 def games_for(name: str, build: Build) -> list[Game]:
     """`all` is every game this tree built; a named one must have been."""
     if name != "all":
@@ -481,6 +528,8 @@ def main(argv: list[str] | None = None) -> int:
             raise PackageError(f"{build.directory} is the {build.profile} profile, and a release "
                                "ships the release profile")
         for game in games_for(arguments.game, build):
+            if arguments.require_shipping and target != "windows":
+                check_shipping_binary(game, build)
             package(game, target, build, (ROOT / arguments.out).resolve(), arguments.key)
     except (PackageError, release.ReleaseError) as refusal:
         print(f"package: {refusal}", file=sys.stderr)

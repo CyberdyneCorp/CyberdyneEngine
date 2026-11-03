@@ -259,6 +259,29 @@ CY_TEST_CASE("the manifest lists every file of the installation") {
     CY_CHECK_EQ(verification.chunks, 4U);
 }
 
+CY_TEST_CASE("a bundle's chunks go where its code signature seals them, and nowhere outside it") {
+    Fixture game("bundle");
+    PackOptions options;
+    options.root = game.root;
+    options.content = game.content;
+    options.manifest = "Resources/ship.manifest";
+    options.chunk_directory = "Resources/content";
+    options.header.game = "test";
+    options.chunk_bytes = 1000;
+    options.key = development_secret_key();
+    options.sealed = {"bin/game"};
+    Manifest manifest;
+    std::string error;
+    CY_REQUIRE_MESSAGE(pack(options, manifest, error), error);
+    CY_CHECK(fs::exists(game.root / "Resources" / "content" / "chunk-0003.cychunk"));
+    CY_CHECK_FALSE(fs::exists(game.root / "content"));
+    CY_CHECK(verify_installation(Location{game.root, "Resources/ship.manifest"},
+                                 public_key(development_secret_key()))
+                 .ok());
+    options.chunk_directory = "../outside";
+    CY_CHECK_FALSE(pack(options, manifest, error));
+}
+
 CY_TEST_CASE("every content entry reads back out of the chunks, across their boundaries") {
     Fixture game("reads");
     game.pack_with(development_secret_key());

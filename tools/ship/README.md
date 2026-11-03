@@ -36,7 +36,8 @@ CyberdyneRTS-0.5.0-linux-x86_64/
 ```
 
 Windows is the same tree with `bin/` holding the executable and its DLLs, zipped. macOS is
-`CyberdyneRTS.app/Contents/{MacOS,Frameworks,Resources}` with the manifest in `Resources/`, the main
+`CyberdyneRTS.app/Contents/{MacOS,Frameworks,Resources}` with the manifest and the chunks in
+`Resources/` (codesign seals what is there and refuses loose files elsewhere), the main
 executable listed as `sealed` (codesign rewrites it after the manifest is signed), and the bundle
 ad-hoc signed and zipped with `ditto`.
 

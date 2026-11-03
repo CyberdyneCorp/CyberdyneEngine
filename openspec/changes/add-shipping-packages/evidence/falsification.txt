@@ -91,3 +91,8 @@
    FAILED  fps: the drawn run read textures from the checkout: ['/home/leonardo/work/cy-ship-games/content/beauty/textures/stone_albedo.png', '/home/leonardo/work/cy-ship-games/content/beauty/textures/gravel_albedo.png', '/home/leonardo/work/cy-ship-games/content/beauty/textures/copper_albedo.png']
    
    --- the session ---
+== M16 a setting becomes a flag the game does not take
+   smoke.ship_games: RED
+   FAILED  fps: played with its settings, it failed (2):
+   first-person: --play does not take '--wndow'
+   
