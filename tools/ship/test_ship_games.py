@@ -80,6 +80,11 @@ def scripted(game: package.Game, build_dir: Path) -> Scripted:
     return Scripted(("--platform", "headless", "--frames", "1"), ())
 
 
+def strace() -> str | None:
+    """Linux's strace. Git for Windows ships an `strace` of its own that traces nothing here."""
+    return shutil.which("strace") if platform.system() == "Linux" else None
+
+
 def clean_environment(user: Path) -> dict[str, str]:
     environment = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "CY_SHIP_USER_DIR": str(user),
                    "SDL_VIDEO_DRIVER": "dummy", "HOME": str(user)}
@@ -163,7 +168,7 @@ class GameRun:
         return run(command, clean_environment(user), root.parent, self.scripted.seconds)
 
     def act_digests(self, root: Path, user: Path, scratch: Path) -> float:
-        trace = scratch / "trace.txt" if shutil.which("strace") else None
+        trace = scratch / "trace.txt" if strace() else None
         packaged = self.packaged_run(root, user, trace=trace)
         expect(packaged.returncode == 0,
                f"{self.game.name}: the packaged run failed ({packaged.returncode}):\n"
@@ -190,7 +195,7 @@ class GameRun:
     def check_trace(self, trace: Path | None) -> None:
         if trace is None:
             self.report.not_evaluated(f"{self.game.name}: no file under the checkout is opened",
-                                      "strace is not on this machine")
+                                      "Linux's strace is not on this machine")
             return
         opened = re.findall(r'(?:open|openat|execve)\([^"]*"([^"]+)"', trace.read_text())
         reached = sorted({path for path in opened if path.startswith(str(ROOT) + os.sep)})
@@ -204,9 +209,9 @@ class GameRun:
         traced, so the textures it opens are the artefact's and none of them the checkout's."""
         if self.game.name != "fps":
             return
-        if shutil.which("strace") is None:
+        if strace() is None:
             self.report.not_evaluated("fps: a drawn run reads its textures from the artefact",
-                                      "strace is not on this machine")
+                                      "Linux's strace is not on this machine")
             return
         trace = scratch / "drawn-trace.txt"
         frames = scratch / "drawn"
