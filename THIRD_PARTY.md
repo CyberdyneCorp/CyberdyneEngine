@@ -27,6 +27,7 @@ whole table.
 | [tracy](https://github.com/wolfpld/tracy) | 0.12.2 | BSD-3-Clause | `CY_PROFILING` is on | development builds only |
 | [zstd](https://github.com/facebook/zstd) | 1.5.7 | BSD-3-Clause | always | a shipped game |
 | [blake3](https://github.com/BLAKE3-team/BLAKE3) | 1.8.7 | CC0-1.0 | always | a shipped game |
+| [monocypher](https://github.com/LoupVaillant/Monocypher) | 4.0.2 | BSD-2-Clause | always | a shipped game |
 | [vulkan_headers](https://github.com/KhronosGroup/Vulkan-Headers) | 1.4.304 | Apache-2.0 | `CY_RENDERER_VULKAN` is on | a shipped game |
 | [volk](https://github.com/zeux/volk) | 1.4.304 | MIT | `CY_RENDERER_VULKAN` is on | a shipped game |
 | [vma](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) | 3.3.0 | MIT | `CY_RENDERER_VULKAN` is on | a shipped game |
@@ -124,6 +125,18 @@ regeneration needs them, and `just generate-check` is what notices.
 - **Included when**: always
 - **Linked into**: a shipped game
 - **Why integrated rather than built**: Cryptographic code is never hand-rolled, and the build graph's derivation keys need a fast tree hash. Offered under CC0-1.0, Apache-2.0 or Apache-2.0 WITH LLVM-exception and taken under CC0-1.0.
+
+### monocypher 4.0.2
+
+- **Upstream**: https://github.com/LoupVaillant/Monocypher
+- **Pinned at**: `0d85f98c9d9b0227e42cf795cb527dff372b40a4` (`4.0.2`)
+- **Licence**: BSD-2-Clause
+- **Licence text**: [`LICENCE.md`](https://github.com/LoupVaillant/Monocypher/blob/0d85f98c9d9b0227e42cf795cb527dff372b40a4/LICENCE.md), and
+  `LICENCE.md` at the root of the fetched source in any configured build tree
+- **Behind**: cy::ship's signature interface in tools/ship/include/cy/ship/signature.h, whose src/signature.cpp is the only translation unit that names a crypto_ symbol
+- **Included when**: always
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: Cryptographic code is never hand-rolled, and a signed shipping manifest needs a signature scheme: Ed25519 (RFC 8032) in one audited, dependency-free C file, small enough to link into every shipped game for the startup check. Offered under BSD-2-Clause or CC0-1.0 and taken under BSD-2-Clause.
 
 ### vulkan_headers 1.4.304
 

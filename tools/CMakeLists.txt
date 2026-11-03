@@ -45,3 +45,11 @@ add_subdirectory(save)
 # criterion running a timing-sensitive suite goes through. Its own CMakeLists.txt says why a
 # premise checked from outside the process replaced the harness's allowances.
 add_subdirectory(quiet-host)
+
+# ship/ is issue #87: distributable game builds. `cy::ship` is THE EXCEPTION to "never linked into a
+# shipped runtime" above, and on purpose: it is the startup check a packaged game runs against its
+# signed manifest, so the games link it — and the games it packages (samples/13-rts-api,
+# samples/14-third-person, samples/15-first-person, samples/11-ship) are tools-layer programs
+# themselves. It is after save/ and quiet-host/ and needs only core and the SDL3 platform; its own
+# CMakeLists.txt and README.md say when it should move to src/runtime/.
+add_subdirectory(ship)

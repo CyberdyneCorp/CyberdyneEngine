@@ -189,6 +189,32 @@ interface = "the engine's hashing interface in src/core/, beneath derivation key
 scope = "runtime"
 justification = "Cryptographic code is never hand-rolled, and the build graph's derivation keys need a fast tree hash. Offered under CC0-1.0, Apache-2.0 or Apache-2.0 WITH LLVM-exception and taken under CC0-1.0."
 
+# --- Issue #87: the signed shipping manifest -------------------------------------------------------
+#
+# `build-and-packaging` — "Manifest integrity and content protection": a shipping content manifest
+# SHALL be signed, and "established implementations SHALL be used". Monocypher is an audited
+# (Cure53, 2020) single-file library with no dependencies; the engine uses only its RFC 8032 Ed25519
+# signatures (`src/optional/monocypher-ed25519.c`, SHA-512 inside), so a signature it writes can be
+# checked by any Ed25519 implementation. One C file and its optional companion, provided by
+# `cy__provide_monocypher` like stb_vorbis: upstream ships a Makefile, not a CMake project.
+
+[[dependency]]
+name = "monocypher"
+version = "4.0.2"
+tag = "4.0.2"
+commit = "0d85f98c9d9b0227e42cf795cb527dff372b40a4"
+repository = "https://github.com/LoupVaillant/Monocypher"
+licence = "BSD-2-Clause"
+licence_file = "LICENCE.md"
+optional = false
+feature = ""
+system_package = false
+cmake_target = "monocypher"
+source_subdir = ""
+interface = "cy::ship's signature interface in tools/ship/include/cy/ship/signature.h, whose src/signature.cpp is the only translation unit that names a crypto_ symbol"
+scope = "runtime"
+justification = "Cryptographic code is never hand-rolled, and a signed shipping manifest needs a signature scheme: Ed25519 (RFC 8032) in one audited, dependency-free C file, small enough to link into every shipped game for the startup check. Offered under BSD-2-Clause or CC0-1.0 and taken under BSD-2-Clause."
+
 [[dependency]]
 name = "vulkan_headers"
 version = "1.4.304"
