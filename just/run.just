@@ -2116,3 +2116,86 @@ capture-rts-battle *args:
         -vf "scale=512:512:flags=neighbor" "${images}/rts-topographic-minimap.png"
     echo "    ${images}/rts-battle{,-minimap}.png ${images}/rts-topographic-minimap.png"
     echo "    docs/design/videos/rts-battle.mp4"
+
+# The RTS battle as a game you play (samples/13-rts-api `--play`): a window on The Frontier, your
+# mouse and keyboard on blue's army, an opponent on red's, until one side wins. The sample's README
+# has the controls. Arguments go to the sample: `--width <n>` (the frame and the window, 16:9),
+# `--no-vsync`, `--record <file>` to keep the command log, `--replay <file>` to watch one,
+# `--validation`. Needs a display, a Vulkan device and Swift.
+# Play the RTS in a window. Usage: just play-rts [--profile <p>] [--record <file>] [--replay <file>]
+play-rts *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/13-rts-api/cy_sample_rts-api"
+    package="${build_dir}/samples/13-rts-api/frontier.cypak"
+    for needed in "${sample}" "${package}"; do
+        if [ ! -e "${needed}" ]; then
+            echo "play-rts: ${needed} was not built (the sample needs Swift and the Vulkan renderer)." >&2
+            exit 1
+        fi
+    done
+    exec "${sample}" --play --map "${package}" ${rest}
+
+# A skirmish played by a written hand (samples/13-rts-api/play/skirmish.input) pushed through SDL's
+# queue as a person's input would be, in a window: four moments of it composed into
+# docs/design/images/rts-play.png, the box selection and its outlines at 1920x1080
+# (rts-play-select.png), the result screen (rts-play-victory.png), and the session filmed at
+# 1280x720, docs/design/videos/rts-play.mp4. Needs a display, a graphics device, Swift and ffmpeg.
+# Photograph and film a played skirmish. Usage: just capture-rts-play [--profile <p>]
+capture-rts-play *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/13-rts-api/cy_sample_rts-api"
+    package="${build_dir}/samples/13-rts-api/frontier.cypak"
+    hand="samples/13-rts-api/play/skirmish.input"
+    for needed in "${sample}" "${package}"; do
+        if [ ! -e "${needed}" ]; then
+            echo "capture-rts-play: ${needed} was not built." >&2
+            exit 1
+        fi
+    done
+    if ! command -v ffmpeg > /dev/null; then
+        echo "capture-rts-play: ffmpeg is not installed." >&2
+        exit 1
+    fi
+    work="${build_dir}/rts-play-capture"
+    rm -rf "${work}"
+    mkdir -p "${work}"/{stills,frames} docs/design/images docs/design/videos
+
+    echo "==> stills      the player's view at 1920x1080, every fifth frame"
+    "${sample}" --play --map "${package}" --input "${hand}" --frames 1750 \
+        --video "${work}/stills" --video-every 5 ${rest} > "${work}/stills.log"
+    tail -n 3 "${work}/stills.log"
+    if [ ! -e "${work}/stills/frame-1700.png" ]; then
+        echo "capture-rts-play: no frame was written (no display or no graphics device?)"
+        exit 0
+    fi
+    echo "==> film        the player's view at 1280x720, every second frame"
+    "${sample}" --play --map "${package}" --input "${hand}" --frames 1750 --width 1280 \
+        --video "${work}/frames" --video-every 2 ${rest} > "${work}/film.log"
+    ffmpeg -y -loglevel error -framerate 30 -pattern_type glob -i "${work}/frames/frame-*.png" \
+        -c:v libx264 -pix_fmt yuv420p -crf 26 -preset slow docs/design/videos/rts-play.mp4
+    rm -rf "${work}/frames"
+
+    images=docs/design/images
+    stills="${work}/stills"
+    ffmpeg -y -loglevel error -i "${stills}/frame-0130.png" -i "${stills}/frame-0300.png" \
+        -i "${stills}/frame-1000.png" -i "${stills}/frame-1200.png" \
+        -filter_complex "[0][1]hstack[top];[2][3]hstack[bottom];[top][bottom]vstack,scale=1920:1080" \
+        "${images}/rts-play.png"
+    # Through ffmpeg rather than copied: the frames are written uncompressed.
+    ffmpeg -y -loglevel error -i "${stills}/frame-0130.png" "${images}/rts-play-select.png"
+    ffmpeg -y -loglevel error -i "${stills}/frame-1700.png" "${images}/rts-play-victory.png"
+    echo "    ${images}/rts-play{,-select,-victory}.png docs/design/videos/rts-play.mp4"

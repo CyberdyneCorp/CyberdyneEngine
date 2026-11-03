@@ -59,6 +59,7 @@ maintenance-deps-check:
     set -euo pipefail
     cd "{{root}}"
     python3 tools/deps/selftest.py
+    cmake -P tools/deps/test_fetch_depth.cmake
     python3 tools/deps/attribution.py --check
 
 # Prove a disabled feature fetches, builds and links nothing. Configures twice; minutes on a cold cache.

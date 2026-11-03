@@ -14,6 +14,7 @@
 //   "unit.arrived"      a short generated click, registered as a cue with the audio adapter
 //   "camera.pan"        a two-axis action on WASD and the arrow keys, in the "rts" context
 //   "unit.spawn"        a digital action on B, in the same context
+//   "skirmish.*"        with `--play`: the menu, pause, attack-move, stop, army and nine group keys
 //
 // None of these says how many units there are, where they go, how fast they move or what a click
 // means. Those are Swift's (game/Commander.swift).
@@ -55,10 +56,21 @@ inline constexpr const char* kSpawnAction = "unit.spawn";
 /// A short decaying click, generated rather than loaded. The same samples on every machine.
 [[nodiscard]] cy::Status make_click(cy::Array<cy::f32>& out, cy::u32 sample_rate) noexcept;
 
-/// Declare the two actions and register and push the "rts" mapping context for user 0. Call
-/// before `finalize_declarations` is due; this function calls it.
-[[nodiscard]] cy::Status declare_input(cy::input::InputServer& input,
-                                       cy::Allocator& allocator) noexcept;
+/// `--play`'s keys (game/Skirmish.swift's `SkirmishKeys`): the menu on Escape, pause on P,
+/// attack-move on F, stop on H, the whole army on E, and the nine control groups on 1 to 9 — Ctrl
+/// with a number is the game's reading of the modifier, not another action.
+inline constexpr const char* kSkirmishMenuAction = "skirmish.menu";
+inline constexpr const char* kSkirmishPauseAction = "skirmish.pause";
+inline constexpr const char* kSkirmishAttackAction = "skirmish.attack";
+inline constexpr const char* kSkirmishStopAction = "skirmish.stop";
+inline constexpr const char* kSkirmishArmyAction = "skirmish.army";
+inline constexpr cy::u32 kSkirmishGroups = 9;
+
+/// Declare the two actions — and with `skirmish` the skirmish's keys besides — and register and
+/// push the "rts" mapping context for user 0. Call before `finalize_declarations` is due; this
+/// function calls it.
+[[nodiscard]] cy::Status declare_input(cy::input::InputServer& input, cy::Allocator& allocator,
+                                       bool skirmish = false) noexcept;
 
 }  // namespace sample::rts
 

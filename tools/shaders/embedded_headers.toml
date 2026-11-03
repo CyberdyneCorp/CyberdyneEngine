@@ -51,6 +51,12 @@ run = [["{python}", "src/rendering/lights_gpu/shaders/regenerate.py", "--slangc"
         "--clang-format", "{clang_format}"]]
 
 [[group]]
+name = "rts_present"
+headers = ["samples/13-rts-api/host/present_spirv.h", "samples/13-rts-api/host/present_msl.h"]
+run = [["{python}", "samples/13-rts-api/shaders/regenerate.py", "--slangc", "{slangc}",
+        "--clang-format", "{clang_format}"]]
+
+[[group]]
 name = "selection"
 headers = ["src/rendering/selection/src/selection_spirv.h", "src/rendering/selection/src/selection_msl.h"]
 run = [["{python}", "src/rendering/selection/shaders/regenerate.py", "--slangc", "{slangc}",

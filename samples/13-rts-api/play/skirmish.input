@@ -1,0 +1,96 @@
+# A whole skirmish, as a person might play it: the capture's hand (`just capture-rts-play`) and
+# smoke.rts_api_play's. Coordinates are the view's; `aim` looks where the game's camera shows a
+# unit or a point of the field now.
+0    move 640 360
+# A look round: the wheel out a notch, and a turn with the middle button.
+20   wheel -1
+40   move 700 400
+42   press middle
+44   move 760 400
+50   move 820 400
+56   release middle
+60   move 640 360
+# Swordsmen, but for the column beside the archers: a box, and Ctrl+1 keeps them.
+80   aim unit 1 -18 18
+81   press left
+86   aim unit 9 18 -18
+90   release left
+96   key ctrl down
+97   key 1 down
+98   key 1 up
+99   key ctrl up
+# The archers: a box round their block, Ctrl+2.
+120  aim unit 10 -18 18
+121  press left
+126  aim unit 17 70 -18
+130  release left
+136  key ctrl down
+137  key 2 down
+138  key 2 up
+139  key ctrl up
+# The catapults: a box, Ctrl+3, and a right click on the watchtower.
+160  aim unit 20 -18 18
+161  press left
+166  aim unit 23 18 -18
+170  release left
+176  key ctrl down
+177  key 3 down
+178  key 3 up
+179  key ctrl up
+190  aim field 44 4
+192  press right
+194  release right
+# The swordsmen called back, and sent with F to attack-move on red's line.
+220  key 1 down
+221  key 1 up
+230  key f down
+231  key f up
+240  aim field 30 7
+242  press left
+244  release left
+# The archers behind them, attack-moving with Ctrl and a right click.
+270  key 2 down
+271  key 2 up
+280  aim field 25 8
+282  key ctrl down
+283  press right
+285  release right
+286  key ctrl up
+# The camera follows: W pans toward the fight.
+300  move 640 360
+310  key w down
+370  key w up
+# The window dragged smaller, and back: the frame letterboxed into it, the pointer mapped back.
+400  resize 1600 1000
+# A pause to look, and the menu opened and resumed.
+460  key p down
+461  key p up
+520  key p down
+521  key p up
+600  key escape down
+601  key escape up
+640  aim ui resume
+642  press left
+644  release left
+# A click on the minimap brings the camera over the middle of the field.
+700  move 1186 587
+702  press left
+704  release left
+860  resize 1920 1080
+# The whole army on the barracks.
+900  key e down
+901  key e up
+910  aim field 42 16
+912  press right
+914  release right
+# A jump on the minimap, and the army again later on whatever stands.
+1200 key e down
+1201 key e up
+1210 aim field 42 16
+1212 press right
+1214 release right
+1500 key e down
+1501 key e up
+1510 aim field 44 4
+1512 press right
+1514 release right

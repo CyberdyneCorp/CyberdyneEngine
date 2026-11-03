@@ -11,6 +11,7 @@ what make such an edit take effect everywhere else.
 | `rust_crates.py` | Loads `rust-crates.toml`, checks it against `editor/Cargo.lock` and the licence policy; `--sync` regenerates it. | `just maintenance-deps-rust` |
 | `attribution.py` | Generates `THIRD_PARTY.md` from all three records; `--check` fails when it is stale. | `just maintenance-deps`, `just maintenance-deps-check` |
 | `selftest.py` | Proves those gates can still fail, against fixtures — including the undeclared crate that got past them through M5.5. | `just maintenance-deps-check` |
+| `test_fetch_depth.cmake` | Checks which pins `cmake/dependency_fetch.cmake` clones shallow: a commit no tag names (`<branch>@<abbrev>`, `unreleased-<abbrev>`) clones in full, because a `--depth 1` clone holds it only while it is still a branch tip. Run with `cmake -P`. | `just maintenance-deps-check` |
 | `test_gating.py` | Proves a disabled feature fetches, builds and links nothing (task 1.6.5). | `just maintenance-deps-test` |
 
 Python rather than compiled targets, so nothing here appears in the C++ build graph and `tools/`

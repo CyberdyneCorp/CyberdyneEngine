@@ -12,7 +12,7 @@ import CyberdyneKit
 @GameModule
 enum RtsGame: GameModule {
     static let components: [any Component.Type] = [
-        RtsReport.self, ScoutReport.self, Veterancy.self,
+        RtsReport.self, ScoutReport.self, Veterancy.self, SkirmishControl.self,
     ]
     static let behaviours: [any BehaviourClass.Type] = [
         Commander.self, Scout.self, HudShowcase.self, HudShowcaseWithButton.self,

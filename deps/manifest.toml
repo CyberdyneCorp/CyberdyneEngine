@@ -33,6 +33,9 @@
 #                  engine-facing target cy::dep::<name>.
 #   version        upstream release, without the tag's decoration.
 #   tag            the upstream tag `commit` is the tip of, so the pin can be read by a human.
+#                  A commit no tag names is spelled `<branch>@<abbrev>` or `unreleased-<abbrev>`,
+#                  and it is cloned in full: a shallow clone reaches it only while it is a branch
+#                  tip (cmake/dependency_fetch.cmake).
 #   commit         the exact commit fetched. Never a branch, never a tag: a tag can be moved.
 #   repository     upstream URL.
 #   licence        SPDX identifier.

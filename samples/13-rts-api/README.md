@@ -227,6 +227,91 @@ battle case): **a frame 11.95 ms on average** against 16.7 ms, the worst 18.1 ms
 the minimap's bake 2.6 ms once and a composition 0.4 to 1 ms every sixth frame.
 [The guide](../../docs/guides/rts-combat.md) has the rest.
 
+## Playing the RTS
+
+`--play` makes the battle a game a person plays, in a window, in real time: blue's army under your
+mouse and keyboard, red's under an opponent, until one side has won.
+
+```
+just play-rts                                              a window on The Frontier, your hand on blue
+just play-rts --record game.log                            the same, and the session's command log kept
+just play-rts --replay game.log                            watch it again: its orders, nobody else's
+cy_sample_rts-api --play --headless --input <script>       no window: a written hand through SDL's queue
+just capture-rts-play                                      the images and the video below
+ctest -R rts_api_play                                      the tests: integration and, on a device, smoke
+```
+
+| Do | With |
+|---|---|
+| Pan the camera | WASD or the arrows, or the pointer against a screen edge |
+| Zoom | the mouse wheel |
+| Turn the camera | hold the middle button and drag sideways |
+| Jump the camera | a left click on the minimap |
+| Select | a left click on a unit, or drag a box round several; Shift adds (a click on a selected unit takes it out); E selects the whole army |
+| Control groups | Ctrl+1 to Ctrl+9 keeps the selection; 1 to 9 calls it back, twice brings the camera to it |
+| Attack | a right click on an enemy unit or building |
+| Move | a right click on the ground |
+| Attack-move | Ctrl and a right click, or F (or the Attack button) then a left click on the ground |
+| Stop | H, or the Stop button |
+| Pause | P |
+| Menu | Esc, or the Menu button: Resume, Quit |
+
+**You win** when both of red's buildings have fallen and **lose** when no blue unit is left; a result
+screen says which, with what each side lost, and either keeps watching or quits.
+
+![A played skirmish: the box round the swordsmen, the army sent on red's line, the melee before the barracks, the watchtower falling](../../docs/design/images/rts-play.png)
+
+| | |
+|:---:|:---:|
+| ![Swordsmen outlined after their box, the archers' box being dragged](../../docs/design/images/rts-play-select.png) | ![The result screen: Victory, what each side lost, Keep watching and Quit](../../docs/design/images/rts-play-victory.png) |
+| The swordsmen outlined, the archers' box being dragged | The result screen, the toolkit's dialog over the held session |
+
+[The video](../../docs/design/videos/rts-play.mp4) is a whole skirmish, played by the written hand
+`play/skirmish.input`: a look round, three boxes and three control groups, an attack-move, an
+attack on the watchtower, a pause, the Esc menu, two window resizes, the whole army on the barracks,
+and the result screen.
+
+**Every decision is the Swift game's** (`game/Skirmish.swift` and its neighbours): what a click
+picks, which units a box catches, what a right click means, the formation a group moves into, the
+opponent's every order, the pause and the end. The host's part is a desktop game's loop
+(`host/play.*`): the platform's window and events (`Sdl3DisplayServer`), the platform's keyboard and
+mouse feeding the engine's input server (`Sdl3InputSource`), frames at sixty a second whatever the
+display's rate, the frame drawn by `host/map_render.*` and presented to the window's swapchain
+(`host/present_pass.*`), and the command log written when the session ends (`host/replay.*`).
+
+**Orders are lockstep commands.** A right click on five units is five `Lockstep.order` commands —
+the session addresses a group, so a skirmish enlists every unit in a group of its own — each to the
+unit's slot in a square formation round the point, given from the fixed step after the click; the
+opponent (`game/RedOpponent.swift`) thinks every half second from the session's state alone and
+gives the same commands. So a played session is fully described by its command log, and
+`--replay <file>` records the logged orders into a fresh session on their ticks — the game gives
+none — and ends in the digest the played session did (`rts replay ... match=1`).
+
+**The pause is asked for.** The game writes `SkirmishControl` — `paused` and `quit` — every frame,
+the one component the host reads to act on. While `paused` is set the host runs frames without a
+fixed step: the session, the bodies, the animation clock, the effects and the sound stand, and the
+camera, the selection and the menus still answer.
+
+**A window of any size.** The frame is drawn at a fixed 16:9 extent (`--width`, 1920 by default) and
+drawn onto the window's swapchain image letterboxed; the game lays out, picks and hit-tests in a
+1280 by 720 view, and the platform's pointer mapping (`cy::PointerMapping`) inverts the letterbox
+where the pointer is first read, so the game never sees a window coordinate.
+
+**A written hand.** `--input <file>` (`host/input_script.h`) replays keys, pointer moves, clicks, the
+wheel and window resizes by pushing real SDL events into SDL's queue (`cy::Sdl3EventInjector`), so a
+test or a capture drives the game through the door a person's input comes through; `aim unit` and
+`aim field` look where the game's camera shows a unit or a point now, as a person's eyes would.
+
+Measured on the RTX 5060 at 1920x1080, Development, no validation layer (`smoke.rts_api_play`, the
+whole skirmish): **the frame 10.7 ms on average** — recorded, submitted and waited for — against
+16.7 ms, the worst 24 ms; presenting it, waiting for the window's image included, 3.6 ms more. The
+skirmish ends in victory at tick 1538.
+
+**Two resizes and a present after each** (`smoke.rts_api_play`): the Vulkan swapchain's resize
+keeps the caller's handle (`samples/play`'s change, #149, which found the same defect from the
+first- and third-person games); the skirmish's run is a second regression test of it, and it is red
+on the code before that fix (`openspec/changes/add-playable-rts/evidence/`).
+
 ## What is here
 
 | | |
@@ -256,6 +341,12 @@ the minimap's bake 2.6 ms once and a composition 0.4 to 1 ms every sixth frame.
 | `tests/test_rts_api_fog.cpp` | `smoke.rts_api_fog`: the session drawn with blue's fog and without, the camp by blue's sight, and what the stage costs. |
 | `tests/test_rts_api_gi.cpp` | `smoke.rts_api_gi`: the session drawn with the GI and without, the game's calls seen in the frame, and what a frame costs. |
 | `tests/test_rts_api_sample.cpp` | `integration.rts_api_sample`, declared from this directory's `CMakeLists.txt`; with the battle's digest, damage and events against its C++ twin. |
+| `game/Skirmish.swift` | `--play`: the battle a person plays — the hand read, the camera, selection, groups, orders, the opponent, the end, `SkirmishControl`. `SkirmishCamera.swift`, `SkirmishArmy.swift` (the frame's units, the field, the formation, the outcome), `SkirmishOrders.swift` (selection, groups, orders as commands), `RedOpponent.swift`, `SkirmishUI.swift` (the command bar and the toolkit's menu and result dialogs). |
+| `host/play.*` | `--play`'s loop: the window, the platform's input, frames at sixty a second, the frame drawn and presented, the written hand, the command log. |
+| `host/present_pass.*`, `shaders/present.slang` | The frame drawn onto the window's swapchain image, letterboxed (`letterbox.h`). |
+| `host/replay.*`, `host/input_script.*` | A session's command log written and replayed; the written hand's script. `play/*.input` are the tests' and the capture's hands. |
+| `tests/test_rts_api_play.cpp` | `integration.rts_api_play`: `--play --headless` — a select-and-attack and a camera scroll through SDL's queue, the log replayed to the same digest and a moved order not, two sessions writing one log, pause and the menu. |
+| `tests/test_rts_api_play_device.cpp` | `smoke.rts_api_play`: the skirmish in a window to victory at 1080p within 16.7 ms, two resizes, the outlines, no validation error. |
 | `tests/test_rts_api_hud_device.cpp` | `render.rts_api_hud`: the Swift HUD against `samples/13-rts-selection`'s C++ HUD, as a primitive stream and on a device, and with its button against `tests/references/rts_api_hud.png`. |
 
 ## What the game calls, and in which phase
@@ -341,4 +432,9 @@ a game that always plays idle (`walked` and `footsteps` fail) and one that ignor
 * A prefab here is a `SceneDescription`. Spawning a cooked `EntityTemplate` through the ABI is a
   follow-up recorded in the change's tasks.
 * Single-player. The click-to-order hand-off is in-process; `gameplay_submit_command` is the append
-  a lockstep RTS needs.
+  a lockstep RTS needs. `--play`'s session is one peer and its follower in one process.
+* `--play` draws only with the Vulkan renderer (as `--map` does), so a window opens on Linux and
+  Windows with a Vulkan device; `--play --headless` runs everywhere. The frame's extent is fixed when
+  the window opens; a larger window shows it scaled.
+* No units are trained during a skirmish: a lockstep session enlists its units before its first
+  tick, so the armies are the battle's forty.

@@ -96,6 +96,8 @@ final class Commander: Behaviour {
     /// ABI 1.16: the battle, when the level has a battlefield (Battle.swift). The company's field
     /// is the battle's then, and the company is not enlisted.
     private var battle: Battle?
+    /// `--play`: the battle as a person plays it (Skirmish.swift), when the level has a skirmish.
+    private var skirmish: Skirmish?
     /// What the minimap's square is: the level, or the whole map with a battle.
     private var minimap = MinimapFrame(minX: 0, minZ: 0, size: 32)
     /// ABI 1.9: the base's light (Lighting.swift).
@@ -135,15 +137,22 @@ final class Commander: Behaviour {
         for (unit, hp) in zip(starting, [UInt32(100), 64]) {
             try enlist(unit, health: hp)
         }
-        hud = try mountHud()
+        // A player's skirmish builds no workers: its HUD has no Build button.
+        hud = try mountHud(build: SceneTree.find(Content.skirmish) == nil)
         minimap = MinimapFrame(minX: 0, minZ: 0, size: mapSize)
         if SceneTree.find(Content.battlefield) != nil {
+            let playing = SceneTree.find(Content.skirmish) != nil
             var fight = Battle()
-            try fight.create(soldier: Spawn.prefab(Content.soldier))
+            try fight.create(
+                soldier: Spawn.prefab(Content.soldier), mode: playing ? .skirmish : .scripted)
             battle = fight
             minimap = .frontier
             try hud?.showWholeMap()
-            if let front = try fight.front() {
+            if playing {
+                skirmish = try Skirmish(
+                    owner: self, battle: fight,
+                    commanding: SceneTree.find(Content.skirmishReplay) == nil)
+            } else if let front = try fight.front() {
                 camera = RtsCamera(focus: front, speed: panSpeed, edgeBand: edgeBand)
             }
         } else {
@@ -155,8 +164,9 @@ final class Commander: Behaviour {
 
     /// The HUD, with the Build button wired to the next fixed step. Nil, and said once, when the
     /// engine has no interface to build it in.
-    private func mountHud() throws -> RtsHud? {
+    private func mountHud(build: Bool) throws -> RtsHud? {
         do {
+            guard build else { return try RtsHud(for: self) }
             return try RtsHud(for: self) { [unowned self] in self.buildRequested = true }
         } catch CyberdyneError.status(.unavailable, _) {
             Log.info("Commander: the engine has no interface; playing without a HUD")
@@ -178,6 +188,17 @@ final class Commander: Behaviour {
     }
 
     override func onUpdate(_ delta: Double) throws {
+        if let skirmish, var fight = battle {
+            try skirmish.frame(delta, battle: fight, hud: hud, owner: self)
+            try fight.frame()
+            battle = fight
+            if let world {
+                try publishBattle(fight.tally, in: world)
+                try publishSkirmish(skirmish.tally, in: world)
+            }
+            try lighting.frame()
+            return
+        }
         guard let active = try Camera.active() else { return }
         let pointer = try Input.pointer()
         let keys = try Input.action(Content.pan).axis2
@@ -236,8 +257,10 @@ final class Commander: Behaviour {
         }
         pendingOrder = nil
         lighting.askFromFixedStep()
-        if battle != nil {
-            try battle?.step()
+        if var fight = battle {
+            try fight.step()
+            try skirmish?.step(battle: &fight)
+            battle = fight
         } else {
             try company.step()
         }
@@ -403,6 +426,26 @@ final class Commander: Behaviour {
         }
     }
 
+    private func publishSkirmish(_ tally: SkirmishTally, in world: World) throws {
+        let camera = tally.camera
+        let values: [(Float, String)] = [
+            (tally.moves, "skirmishMoves"), (tally.attackMoves, "skirmishAttackMoves"),
+            (tally.attacks, "skirmishAttacks"), (tally.stops, "skirmishStops"),
+            (tally.opponentOrders, "skirmishOpponentOrders"), (tally.posture, "skirmishPosture"),
+            (tally.selected, "skirmishSelected"), (tally.selections, "skirmishSelections"),
+            (tally.assigned, "skirmishAssigned"), (tally.recalled, "skirmishRecalled"),
+            (tally.minimapJumps, "skirmishMinimapJumps"), (tally.menus, "skirmishMenus"),
+            (tally.pauses, "skirmishPauses"), (tally.pausedFrames, "skirmishPausedFrames"),
+            (camera.focus.x, "skirmishFocusX"), (camera.focus.z, "skirmishFocusZ"),
+            (camera.distance, "skirmishDistance"),
+            (Float(camera.heading.raw) / 4_294_967_296, "skirmishHeading"),
+            (tally.outcome, "skirmishOutcome"), (tally.outcomeTick, "skirmishOutcomeTick"),
+        ]
+        for (value, name) in values {
+            try world.setFloat(value, entity, report, field: reportFields.skirmish(name))
+        }
+    }
+
     private func publishBattle(_ tally: BattleTally, in world: World) throws {
         let values: [(Float, UInt32)] = [
             (tally.soldiers, reportFields.battleSoldiers),
@@ -477,4 +520,11 @@ private struct ReportFields {
     let battleLights = RtsReport.field("battleLights")
     let battleSounds = RtsReport.field("battleSounds")
     let battleTrails = RtsReport.field("battleTrails")
+    /// The `skirmish*` fields, resolved by name once.
+    private let skirmishFields: [String: UInt32] = Dictionary(
+        uniqueKeysWithValues: RtsReport.componentFields.enumerated()
+            .filter { $0.element.name.hasPrefix("skirmish") }
+            .map { ($0.element.name, UInt32($0.offset)) })
+
+    func skirmish(_ name: String) -> UInt32 { skirmishFields[name] ?? 0 }
 }
