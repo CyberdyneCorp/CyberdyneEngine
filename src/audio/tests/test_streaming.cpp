@@ -163,6 +163,22 @@ struct Rig {
         output.resize(static_cast<usize>(kBuffer) * 2);
     }
 
+    // The player's contract: the executor's refills have finished before it goes. Its destructor
+    // leaks an instance a refill still holds, because that refill owns the decoder; a case that
+    // leaves one held — a HeldExecutor never run again — fails here, in every build, rather than
+    // only as a leak under LeakSanitizer.
+    ~Rig() {
+        if (player != nullptr) {
+            CY_CHECK_MESSAGE(player->refills_in_flight() == 0U,
+                             "a refill is still in flight as the player is destroyed");
+        }
+    }
+
+    Rig(const Rig&) = delete;
+    Rig& operator=(const Rig&) = delete;
+    Rig(Rig&&) = delete;
+    Rig& operator=(Rig&&) = delete;
+
     void add(const char* name, ProceduralTrack& track) const {
         const Expected<TrackSource, Error> source = track_from_cooked(track);
         CY_REQUIRE(source.has_value());
@@ -228,6 +244,7 @@ CY_TEST_CASE("streaming: refills starved for just under the ring's length never 
     CY_CHECK_EQ(report.underruns, 0U);
     CY_CHECK_GT(expected, static_cast<u64>(kRate) * 9U);
     CY_CHECK(rig.player->diagnostics().empty());
+    executor.run_all();  // the refill the last ten buffers submitted, before the player goes
 }
 
 CY_TEST_CASE("streaming: starved past the ring, a stream plays silence, says so, and recovers") {

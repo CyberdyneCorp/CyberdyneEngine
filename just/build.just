@@ -8,7 +8,7 @@
 # effect, because a build that used a different tree or a different profile from the one the
 # developer assumed is the first thing to rule out when a result makes no sense.
 
-# Configure and build the engine. Usage: just build-engine [--profile <p>] [--platform <p>] [cmake args...]
+# Configure and build the engine. Usage: just build-engine [--profile <p>] [--platform <p>] [--target <t>]... [cmake args...]
 build-engine *args:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -20,19 +20,32 @@ build-engine *args:
 
     # The target platform is selected here and nowhere else, so `just test-unit` and
     # `just run-sample` inherit it through this recipe rather than each growing their own flag.
+    #
+    # `--target <t>`, once or more, builds only those targets and what they need. Configuring is
+    # the same either way; a recipe that runs one binary asks for that binary rather than paying
+    # for the whole tree — `test-bench-jobs` compiled every engine target in a cold profile tree to
+    # run one benchmark, which grew past m1:job-throughput's hour as the tree grew.
     target=""
+    only_targets=()
     cmake_args=()
-    expecting=0
+    expecting=""
     for argument in ${rest}; do
-        if [ "${expecting}" -eq 1 ]; then
-            target="${argument}"; expecting=0; continue
-        fi
+        case "${expecting}" in
+            platform) target="${argument}"; expecting=""; continue ;;
+            target)   only_targets+=("${argument}"); expecting=""; continue ;;
+        esac
         case "${argument}" in
-            --platform)   expecting=1 ;;
+            --platform)   expecting=platform ;;
             --platform=*) target="${argument#*=}" ;;
+            --target)     expecting=target ;;
+            --target=*)   only_targets+=("${argument#*=}") ;;
             *)            cmake_args+=("${argument}") ;;
         esac
     done
+    if [ -n "${expecting}" ]; then
+        echo "build-engine: --${expecting} needs a value" >&2
+        exit 2
+    fi
     # A PORT IS NOT AN OPERATING SYSTEM, and `--platform` now carries both. M11.d added two
     # implementations of the porting surface that are not cross-compilation targets — `stub`, which
     # shares no desktop assumption, and `native`, the Linux backend that is not SDL3 — and the
@@ -149,8 +162,12 @@ build-engine *args:
 
     echo "==> configure   profile=${profile}  configuration=${config}  platform=${target}"
     cmake "${configure[@]}" ${cmake_args[@]+"${cmake_args[@]}"}
+    build_targets+=(${only_targets[@]+"${only_targets[@]}"})
     if [ -n "${port}" ]; then
         echo "==> build       profile=${profile}  port=${port}  targets=${build_targets[*]}"
+        build+=(--target "${build_targets[@]}")
+    elif [ "${#build_targets[@]}" -gt 0 ]; then
+        echo "==> build       profile=${profile}  targets=${build_targets[*]}"
         build+=(--target "${build_targets[@]}")
     else
         echo "==> build       profile=${profile}"

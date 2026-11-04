@@ -501,7 +501,9 @@ test-bench-jobs *args:
         echo "      numbers — use --profile profile for a figure worth recording." >&2
     fi
 
-    just build-engine --profile "${profile}"
+    # The runner and what it links, not the engine: in a cold tree — m1:job-throughput's, on every
+    # nightly — the whole engine is over an hour of compiling for a benchmark of src/core/jobs.
+    just build-engine --profile "${profile}" --target cy_bench_jobs_throughput
     build_dir="${CY_BUILD_DIR:-build/${profile}}"
     runner="${build_dir}/benchmarks/cy_bench_jobs_throughput"
     if [ ! -x "${runner}" ]; then

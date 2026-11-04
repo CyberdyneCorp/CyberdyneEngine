@@ -1798,6 +1798,96 @@ def run_ship_leaves_the_committed_stills_alone(root: pathlib.Path) -> list[str]:
     return failures
 
 
+def the_jobs_benchmark_builds_only_its_runner(root: pathlib.Path) -> list[str]:
+    """`just test-bench-jobs` builds its runner and what it links, not the engine.
+
+    m1:job-throughput runs it in a tree of its own, cold on every nightly, and the recipe built the
+    whole engine there: the criterion reached its hour on CI as the engine grew, and failed with
+    "no result within 3600 s" before the benchmark ran. A fake `cmake` records what is asked of it.
+    """
+    failures = []
+    with tempfile.TemporaryDirectory(prefix="cy-bench-target-") as scratch:
+        directory = pathlib.Path(scratch)
+        log = directory / "cmake.log"
+        shim = directory / "bin"
+        shim.mkdir()
+        fake = shim / "cmake"
+        fake.write_text(f'#!/bin/sh\necho "$*" >> "{log}"\n', encoding="utf-8")
+        fake.chmod(0o755)
+        environment = {key: value for key, value in os.environ.items()
+                       if key not in ("CY_BUILD_DIR", "CY_JOBS")}
+        environment["PATH"] = f"{shim}{os.pathsep}{environment.get('PATH', '')}"
+        environment["CY_BUILD_DIR"] = str(directory / "tree")
+        subprocess.run(["just", "test-bench-jobs", "--profile", "profile"], cwd=root,
+                       env=environment, capture_output=True, text=True, check=False)
+        calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        builds = [call for call in calls if call.startswith("--build")]
+        if not builds:
+            return [f"test-bench-jobs asked cmake for no build; it ran: {calls}"]
+        for call in builds:
+            if "--target cy_bench_jobs_throughput" not in call:
+                failures.append(f"test-bench-jobs built more than its runner: cmake {call}")
+    return failures
+
+
+def a_traced_packaged_run_checks_no_leaks(root: pathlib.Path) -> list[str]:
+    """smoke.ship_games runs a packaged game under strace with LeakSanitizer off, and only then.
+
+    The nightly's AddressSanitizer pass failed smoke.ship_games on its first act: the packaged RTS
+    ran its whole script and exited 1 with "LeakSanitizer has encountered a fatal error ... does
+    not work under ptrace (strace, gdb, etc)". LeakSanitizer attaches to the process's threads with
+    ptrace at exit, and strace already holds them. Where strace and an AddressSanitizer compiler
+    exist, the probe below reproduces that exit and shows the traced environment avoiding it.
+    """
+    import importlib.util
+
+    path = root / "tools" / "ship" / "test_ship_games.py"
+    spec = importlib.util.spec_from_file_location("cy_ship_games_under_test", path)
+    ship_games = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = ship_games  # its dataclasses look their module up by name
+    spec.loader.exec_module(ship_games)
+
+    failures = []
+    user = pathlib.Path("/nonexistent-user")
+    try:
+        traced = ship_games.clean_environment(user, traced=True)
+    except TypeError:
+        return ["tools/ship/test_ship_games.py has one environment for a traced run and an "
+                "untraced one, so LeakSanitizer fails every traced run of a sanitized tree"]
+    untraced = ship_games.clean_environment(user)
+    if "detect_leaks=0" not in traced.get("ASAN_OPTIONS", ""):
+        failures.append("a traced packaged run's environment leaves LeakSanitizer on, and it cannot "
+                        "attach to a process strace holds")
+    if "detect_leaks=0" in untraced.get("ASAN_OPTIONS", ""):
+        failures.append("an untraced packaged run's environment turns LeakSanitizer off, so a "
+                        "sanitized tree's packaged games are never leak-checked")
+
+    strace = shutil.which("strace") if sys.platform.startswith("linux") else None
+    compiler = shutil.which("gcc") or shutil.which("clang")
+    if strace is None or compiler is None:
+        return failures
+    with tempfile.TemporaryDirectory(prefix="cy-traced-lsan-") as scratch:
+        probe = pathlib.Path(scratch) / "probe"
+        source = pathlib.Path(scratch) / "probe.c"
+        source.write_text("int main(void) { return 0; }\n", encoding="utf-8")
+        built = subprocess.run([compiler, "-fsanitize=address", str(source), "-o", str(probe)],
+                               capture_output=True, text=True, check=False)
+        if built.returncode != 0:
+            return failures  # no AddressSanitizer runtime on this machine
+        command = [strace, "-f", "-qq", "-e", "trace=openat", "-o", os.devnull, str(probe)]
+        bare = subprocess.run(command, env={"PATH": untraced["PATH"]}, capture_output=True,
+                              text=True, check=False)
+        if bare.returncode == 0:
+            return failures  # this machine's LeakSanitizer is off by default; nothing to show
+        if "LeakSanitizer has encountered a fatal error" not in bare.stderr:
+            failures.append(f"the probe under strace failed for another reason: {bare.stderr[-300:]}")
+        fixed = subprocess.run(command, env=traced, capture_output=True, text=True, check=False)
+        if fixed.returncode != 0:
+            failures.append("a sanitized probe under strace still fails in the traced environment: "
+                            f"{fixed.stderr[-300:]}")
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1881,6 +1971,8 @@ def main() -> int:
         "a build tree with a link before its target unpacks on Windows": (
             a_build_tree_with_a_link_before_its_target_unpacks_on_windows
         ),
+        "the jobs benchmark builds only its runner": the_jobs_benchmark_builds_only_its_runner,
+        "a traced packaged run checks no leaks": a_traced_packaged_run_checks_no_leaks,
     }
 
     failed = 0

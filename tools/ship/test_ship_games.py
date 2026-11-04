@@ -85,12 +85,22 @@ def strace() -> str | None:
     return shutil.which("strace") if platform.system() == "Linux" else None
 
 
-def clean_environment(user: Path) -> dict[str, str]:
+def clean_environment(user: Path, traced: bool = False) -> dict[str, str]:
+    """The environment a player's machine gives the game; `traced` for a run under strace.
+
+    LeakSanitizer stops the process's threads with ptrace at exit, and a process strace already
+    traces cannot be attached to again: a sanitized tree's traced run ended in "LeakSanitizer has
+    encountered a fatal error" and a non-zero exit, whatever the game did. So a traced run checks
+    no leaks — the same binary's untraced runs still do. The variable is inert in a tree with no
+    sanitizer.
+    """
     environment = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "CY_SHIP_USER_DIR": str(user),
                    "SDL_VIDEO_DRIVER": "dummy", "HOME": str(user)}
     for name in ("SYSTEMROOT", "TEMP", "TMP", "TMPDIR"):
         if name in os.environ:
             environment[name] = os.environ[name]
+    if traced:
+        environment["ASAN_OPTIONS"] = "detect_leaks=0"
     return environment
 
 
@@ -165,7 +175,8 @@ class GameRun:
         if trace is not None:
             command = ["strace", "-f", "-qq", "-e", "trace=open,openat,execve", "-o", trace,
                        *command]
-        return run(command, clean_environment(user), root.parent, self.scripted.seconds)
+        return run(command, clean_environment(user, traced=trace is not None), root.parent,
+                   self.scripted.seconds)
 
     def act_digests(self, root: Path, user: Path, scratch: Path) -> float:
         trace = scratch / "trace.txt" if strace() else None
@@ -219,7 +230,7 @@ class GameRun:
         command = ["strace", "-f", "-qq", "-e", "trace=open,openat", "-o", trace,
                    executable_of(root, self.game), "--render", frames, "--frames", "20",
                    "--width", "320", "--height", "180", "--no-validation"]
-        environment = clean_environment(user)
+        environment = clean_environment(user, traced=True)
         environment.pop("SDL_VIDEO_DRIVER")
         result = run(command, environment, root.parent, self.scripted.seconds)
         if "fps render" not in result.stdout:
