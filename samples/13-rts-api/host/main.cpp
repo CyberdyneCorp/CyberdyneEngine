@@ -22,7 +22,9 @@
 //   just run-sample rts-api --battle           ABI 1.16: the game fights a battle on the company's
 //                                              field instead of patrolling it, for
 //                                              `battle::kTicks` frames; with `--render <dir> --map`
-//                                              it is drawn, with the topographic minimap
+//                                              it is drawn, with the topographic minimap;
+//                                              `--minimap-upload` re-makes the minimap's page
+//                                              with `upload_atlas` each time instead of staging it
 //   just play-rts                              `--play`: the battle as a game a person plays, in a
 //                                              window, in real time (play.h): `--record <file>`,
 //                                              `--replay <file>`, `--input <file>`, `--frames <n>`,
@@ -117,6 +119,8 @@ struct MapFlags {
             options.shadows = false;
         } else if (std::strcmp(flag, "--no-validation") == 0) {
             options.validation = false;
+        } else if (std::strcmp(flag, "--minimap-upload") == 0) {
+            options.minimap_upload = true;
         } else {
             return false;
         }
