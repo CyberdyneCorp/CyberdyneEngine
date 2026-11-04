@@ -63,6 +63,14 @@ through the platform (`play/capture.input`).
 |---|---|---|
 | ![](../../docs/design/images/first-person-crate.png) | ![](../../docs/design/images/first-person-floor-sparks.png) | ![](../../docs/design/images/first-person-sights.png) |
 
+## Shipping it
+
+`just package fps <linux|windows|macos|host>` packages the arena as a self-contained artefact — the
+executable, its Swift module, its cooked content cut into chunks under a signed manifest, the
+licences and the changelog. Unpacked anywhere, `./bin/cyberdyne-fps` verifies every file before it
+starts and plays with no arguments; its settings file, crash reports and unpacked content live in the
+user's directories. Its settings are `window`, `fullscreen` and `vsync`. [`docs/guides/shipping.md`](../../docs/guides/shipping.md) is the guide.
+
 ## What the game does, and through what
 
 Every decision below is Swift calling the engine (`game/Player.swift`):

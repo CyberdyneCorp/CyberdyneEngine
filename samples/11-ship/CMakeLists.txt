@@ -77,6 +77,8 @@ cy_add_module(
         "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
     PRIVATE_DEPENDENCIES
         cy::build-graph
+        # `just package ship`: the packaged card verifies its installation first (tools/ship/).
+        cy::ship
         cy::platform-desktop-sdl3
         cy::platform-headless
         cy::rendering-graph

@@ -101,6 +101,7 @@ add_custom_command(
     COMMAND "${Python3_EXECUTABLE}" "${CY_THIRD_PERSON_DRIVER}"
             --work "${CY_THIRD_PERSON_MODULE_WORK}" --out "${CY_THIRD_PERSON_MODULE_DIR}"
             --configuration "${CY_THIRD_PERSON_SWIFT_CONFIGURATION}"
+            ${CY_SWIFT_MODULE_SHIPPING_ARGUMENTS}
             --generation "0=${CMAKE_CURRENT_SOURCE_DIR}/game"
     DEPENDS "${CY_THIRD_PERSON_DRIVER}" "${CMAKE_SOURCE_DIR}/bindings/swift/Package.swift"
             ${CY_THIRD_PERSON_GAME_SOURCES} ${CY_THIRD_PERSON_KIT_SOURCES}
@@ -146,6 +147,8 @@ cy_add_module(
         cy::servers-physics
         cy::audio-streaming
         cy_sample_rts_map
+        # The launch: a packaged game's installation verified before it starts (tools/ship/).
+        cy::ship
         ${cy_third_person_ambience_dependencies})
 add_dependencies(cy_sample_third-person cy_sample_third-person_game cy_third_person_package)
 # The played game's pad bindings (samples/play/play_bindings.h), header-only.

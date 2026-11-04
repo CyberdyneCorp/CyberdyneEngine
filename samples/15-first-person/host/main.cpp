@@ -29,6 +29,7 @@
 
 #include "fps_host.h"
 #include "script.h"
+#include "ship_settings.h"
 #if defined(CY_FIRST_PERSON_RENDER)
 #    include "golden.h"
 #    include "render.h"
@@ -51,12 +52,44 @@ using sample::fps::Observation;
     return static_cast<unsigned long long>(entity);
 }
 
+/// Where the game's module, its manifest and the arena's textures are: the build tree's paths, or
+/// a packaged installation's, which main() sets from the launch before anything reads them.
+struct ContentPaths {
+    const char* module_library = CY_FIRST_PERSON_MODULE_LIBRARY;
+    const char* module_manifest = CY_FIRST_PERSON_MODULE_MANIFEST;
+    /// Null: the renderer's own default, the source tree.
+    const char* content_root = nullptr;
+};
+
+[[nodiscard]] ContentPaths& paths() noexcept {
+    static ContentPaths instance;
+    return instance;
+}
+
+/// The packaged installation's paths in place of the build tree's (tools/ship/).
+void use_installation(cy::ship::Launch& launch) noexcept {
+    ContentPaths& out = paths();
+    out.module_library = launch.library(out.module_library, "libCyGame_g0.so");
+    out.module_manifest = launch.content(out.module_manifest, "module.toml");
+    if (launch.packaged()) {
+        out.content_root = launch.content("", ".");
+    }
+}
+
 /// The flags of a drawn run. Parsed whatever the build, so a build without the Vulkan renderer
 /// refuses `--render` by name rather than calling its flags unknown.
 struct RenderFlags {
     const char* directory = nullptr;
 #if defined(CY_FIRST_PERSON_RENDER)
-    sample::fps::RenderOptions options;
+    sample::fps::RenderOptions options = installed_render_options();
+
+    [[nodiscard]] static sample::fps::RenderOptions installed_render_options() {
+        sample::fps::RenderOptions options;
+        if (paths().content_root != nullptr) {
+            options.content_root = paths().content_root;
+        }
+        return options;
+    }
 #endif
 
     bool parse(int argc, char** argv, int& index) noexcept {
@@ -288,7 +321,7 @@ using PlayedRenderer = cy::play::NoRenderer;
 struct PlayFlags {
     cy::play::PlayArguments play;
 #    if defined(CY_FIRST_PERSON_RENDER)
-    sample::fps::RenderOptions render;
+    sample::fps::RenderOptions render = RenderFlags::installed_render_options();
 #    endif
 };
 
@@ -384,8 +417,8 @@ void print_played(FpsHost& host) noexcept {
         return absent ? 0 : 1;
     }
     sample::fps::HostOptions options;
-    options.module_library = CY_FIRST_PERSON_MODULE_LIBRARY;
-    options.module_manifest = CY_FIRST_PERSON_MODULE_MANIFEST;
+    options.module_library = paths().module_library;
+    options.module_manifest = paths().module_manifest;
     options.scripted_devices = false;
 #    if defined(CY_FIRST_PERSON_RENDER)
     options.illumination = play.device() != nullptr && flags.render.gi;
@@ -431,15 +464,25 @@ void print_played(FpsHost& host) noexcept {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int main(int process_argc, char** process_argv) {
+    // A packaged game verifies its installation before anything else, and refuses to start when
+    // it does not hold (tools/ship/include/cy/ship/launch.h). Out of a build tree this is a no-op.
+    cy::ship::Launch launch;
+    if (!cy::ship::start(process_argc, process_argv, cy::play::ship_spec("fps", "CyberdyneFPS"),
+                         launch)) {
+        return cy::ship::kRefusedExit;
+    }
+    use_installation(launch);
+    const int argc = launch.argc();
+    char** argv = launch.argv();
 #if defined(CY_FIRST_PERSON_PLAY)
     if (cy::play::wants_play(argc, argv)) {
         return run_play(argc, argv);
     }
 #endif
     sample::fps::HostOptions options;
-    options.module_library = CY_FIRST_PERSON_MODULE_LIBRARY;
-    options.module_manifest = CY_FIRST_PERSON_MODULE_MANIFEST;
+    options.module_library = paths().module_library;
+    options.module_manifest = paths().module_manifest;
     RenderFlags render;
     cy::u64 frames = sample::fps::ScriptedPlayer::kFrames;
     if (!parse_arguments(argc, argv, options, render, frames)) {

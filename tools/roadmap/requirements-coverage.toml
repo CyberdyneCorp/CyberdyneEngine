@@ -4338,8 +4338,9 @@ note = "This is the M6 exit criterion. The patch is interrupted at each of Begin
 [[coverage]]
 row = "build-and-packaging"
 requirement = "Manifest integrity and content protection"
-evidence = "exempt:m11e"
-note = "NOT BUILT. tools/build/README.md defers manifest signing and encryption: the requirement asks for established implementations and platform facilities, core/crypto has none yet, and inventing one would break that requirement. Packages carry content hashes and every chunk is verified against them, but there is no signature and no verification of one. integration.assets_io's 'An encrypted package is refused rather than read as plaintext' is a refusal, not decryption. REPLACING CASE: a package manifest signed with an established implementation, a mount that verifies the signature before exposing any asset, and a tampered manifest refused with a diagnostic."
+evidence = "test:integration.ship_manifest"
+case = "a manifest changed after signing is refused before any file is read"
+note = "Issue #87. A packaged game's manifest (tools/ship/include/cy/ship/manifest.h) pins every file of the artefact by size and BLAKE3, and is signed with RFC 8032 Ed25519 from Monocypher, an audited established implementation ('Ed25519 signatures match RFC 8032's test vectors'). The signature is checked before any listed file is read, and a manifest edited after signing, one signed by a key the build does not trust ('an installation signed by a key this build does not trust is refused'), a tampered chunk, a missing file and an unlisted one are each refused naming the file; `cy::ship::start` refuses to launch on any of them ('a packaged launch from a tampered installation does not start'). smoke.ship_games does the same to the real games' artefacts unpacked in a clean directory. NOT BUILT: encryption, and signature verification of downloadable content mounted at run time — the check covers an installation as shipped."
 
 [[coverage]]
 row = "build-and-packaging"
@@ -4442,7 +4443,7 @@ note = "cmake/toolchains/ holds only iOS device and simulator toolchain files; t
 row = "build-system-and-platforms"
 requirement = "Distribution artefacts"
 evidence = "exempt:m11e"
-note = "`m11e:release-recipes-produce-artefacts` produces the editor, runtime, sdk, tools and templates archives with platform, architecture, configuration and version in the name and a provenance record each. Missing: no case packages a game by combining a runtime template with cooked content and a Swift module, and no case shows the editor and command line driving one build service, graph and cache to identical artefacts. Re-enter with a package-a-game test and an editor-versus-CLI equivalence test."
+note = "HALF BUILT. `m11e:release-recipes-produce-artefacts` produces the editor, runtime, sdk, tools and templates archives with platform, architecture, configuration and version in the name and a provenance record each. Issue #87 added 'Packaging a game': `just package <game> <target>` (tools/ship/package.py) combines a game's executable with its cooked content, cut into signed chunks, and its Swift module, named by platform, architecture and version, and smoke.ship_games launches each artefact from a clean directory to the build tree's digests; CI uploads the three desktop targets' artefacts (`package` job). Missing: no case shows the editor and command line driving one build service, graph and cache to identical artefacts ('One execution path'). Re-enter with an editor-versus-CLI equivalence test."
 
 [[coverage]]
 row = "build-system-and-platforms"

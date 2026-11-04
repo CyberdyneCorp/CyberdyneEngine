@@ -570,7 +570,9 @@ the full Linux prerequisites, Vulkan, Swift and Rust setup, and:
 - **CI** — Linux x86_64 and ARM64, macOS ARM64, Windows x86_64 ([details](docs/guides/building.md#ci-targets))
 
 Samples are listed in [`samples/README.md`](samples/README.md); `just capture-beauty-shot` renders
-the hero image above and `just run-ship` packages and launches `samples/11-ship`.
+the hero image above and `just run-ship` packages and launches `samples/11-ship`. `just package
+<rts|fps|tps|ship> <target>` turns a game into a signed, self-contained artefact a person can
+download and play ([shipping guide](docs/guides/shipping.md)).
 
 ---
 

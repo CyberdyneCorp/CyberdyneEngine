@@ -64,6 +64,14 @@ pushed through the platform (`play/capture.input`).
 carried across components by its host. This one is what the ABI has grown into: the game calls the
 engine itself, and the engine draws it.
 
+## Shipping it
+
+`just package tps <linux|windows|macos|host>` packages the hillside as a self-contained artefact — the
+executable, its Swift module, its cooked content cut into chunks under a signed manifest, the
+licences and the changelog. Unpacked anywhere, `./bin/cyberdyne-tps` verifies every file before it
+starts and plays with no arguments; its settings file, crash reports and unpacked content live in the
+user's directories. Its settings are `window`, `fullscreen` and `vsync`. [`docs/guides/shipping.md`](../../docs/guides/shipping.md) is the guide.
+
 ## What the game does, and through what
 
 | The game does | Through | Phase |

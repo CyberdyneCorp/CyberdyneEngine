@@ -573,6 +573,18 @@ function(cy__provide_stb_vorbis source_dir)
     set_target_properties(stb_vorbis PROPERTIES C_STANDARD 11 POSITION_INDEPENDENT_CODE ON)
 endfunction()
 
+# Monocypher (issue #87): the library and its optional RFC 8032 Ed25519 companion, which is what
+# tools/ship/src/signature.cpp calls. The companion includes `monocypher.h` by a path relative to
+# `src/`, so both directories are on the include path.
+function(cy__provide_monocypher source_dir)
+    add_library(monocypher STATIC
+                "${source_dir}/src/monocypher.c"
+                "${source_dir}/src/optional/monocypher-ed25519.c")
+    target_include_directories(monocypher SYSTEM PUBLIC
+                               "${source_dir}/src" "${source_dir}/src/optional")
+    set_target_properties(monocypher PROPERTIES C_STANDARD 99 POSITION_INDEPENDENT_CODE ON)
+endfunction()
+
 function(cy__provide_xatlas source_dir)
     add_library(xatlas STATIC "${source_dir}/source/xatlas/xatlas.cpp")
     target_include_directories(xatlas SYSTEM PUBLIC "${source_dir}/source/xatlas")

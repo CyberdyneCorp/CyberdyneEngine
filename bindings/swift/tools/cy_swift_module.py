@@ -213,8 +213,20 @@ def probe() -> int:
     return 0
 
 
+def static_stdlib_flags(static: bool) -> list[str]:
+    """`--static-stdlib`: the Swift runtime linked INTO the module, for a shipped game (issue #87).
+
+    Linux only. A module carrying its own runtime needs no libswiftCore.so beside it, which is what
+    makes a packaged game self-contained without copying the toolchain's libraries; Darwin's Swift
+    runtime is the operating system's and cannot be linked statically. It is for SHIPPING: two
+    modules each carrying a runtime cannot share one process, and a hot-reload session loads a
+    generation per edit — so a development build never asks for it.
+    """
+    return ["-Xswiftc", "-static-stdlib"] if static and sys.platform.startswith("linux") else []
+
+
 def build_generation(work: pathlib.Path, index: int, sources: pathlib.Path,
-                     out: pathlib.Path, configuration: str) -> pathlib.Path:
+                     out: pathlib.Path, configuration: str, static: bool = False) -> pathlib.Path:
     target = f"CyGame_g{index}"
     manifest = work / "Package.swift"
     manifest.write_text(MANIFEST.format(target=target, package=PACKAGE,
@@ -230,7 +242,8 @@ def build_generation(work: pathlib.Path, index: int, sources: pathlib.Path,
     for item in sorted(sources.glob("*.swift")):
         shutil.copy2(item, target_sources / item.name)
 
-    result = swift(["swift", "build", "-c", configuration, "--product", target], cwd=work)
+    result = swift(["swift", "build", "-c", configuration, "--product", target,
+                    *static_stdlib_flags(static)], cwd=work)
     if result.returncode != 0:
         sys.stderr.write(f"generation {index} did not build:\n{result.stdout}{result.stderr}")
         raise SystemExit(2)
@@ -260,6 +273,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--out", type=pathlib.Path)
     parser.add_argument("--configuration", default="debug", choices=["debug", "release"])
     parser.add_argument("--generation", action="append", default=[], metavar="N=DIR")
+    parser.add_argument("--static-stdlib", action="store_true",
+                        help="link the Swift runtime into the module (Linux; shipping builds)")
     arguments = parser.parse_args(argv)
 
     if arguments.probe:
@@ -281,7 +296,7 @@ def main(argv: list[str]) -> int:
     for entry in arguments.generation:
         index, _, directory = entry.partition("=")
         built = build_generation(arguments.work, int(index), pathlib.Path(directory),
-                                 arguments.out, arguments.configuration)
+                                 arguments.out, arguments.configuration, arguments.static_stdlib)
         print(f"    generation {index}  {built}")
     return 0
 

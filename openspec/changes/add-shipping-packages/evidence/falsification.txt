@@ -1,0 +1,98 @@
+# Mutations applied to tools/ship's sources, each rebuilt, integration.ship_manifest run whole,
+# and the source restored. Driver: apply -> ninja -j4 cy_test_integration_ship_manifest -> run -> restore.
+# Host: Linux x86_64, Development build, GCC 13. Every mutation below turned the suite RED;
+# the suite is green (16 cases, 215 assertions) on the restored tree.
+
+== M1 the manifest's signature is never checked
+   integration.ship_manifest: RED
+   TEST CASE:  a manifest changed after signing is refused before any file is read
+   tools/ship/tests/test_ship.cpp:332: ERROR: CHECK( names(verification, ProblemKind::BadSignature, kManifestName) ) is NOT correct!
+== M2 a signature by any key is accepted
+   integration.ship_manifest: RED
+   TEST CASE:  an installation signed by a key this build does not trust is refused
+   tools/ship/tests/test_ship.cpp:344: ERROR: CHECK( names(refused, ProblemKind::UntrustedKey, std::string(kManifestName) + ".sig") ) is NOT correct!
+== M3 a file's digest is not compared
+   integration.ship_manifest: RED
+   TEST CASE:  a tampered chunk is refused, and the refusal names the chunk
+   tools/ship/tests/test_ship.cpp:277: ERROR: CHECK_FALSE( verification.ok() ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:278: FATAL ERROR: REQUIRE_EQ( verification.problems.size(), 1U ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:279: ERROR: CHECK( names(verification, ProblemKind::Modified, "content/chunk-0002.cychunk") ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:281: ERROR: CHECK( (!verification.problems.empty() && verification.problems[0].describe().find( "content/chunk-0002.cychunk was modified") != std::string::npos) ) is NOT correct!
+   TEST CASE:  a packaged launch from a tampered installation does not start
+== M4 a file's size is not compared
+   integration.ship_manifest: RED
+   TEST CASE:  a chunk cut short is refused by its size
+   tools/ship/tests/test_ship.cpp:293: ERROR: CHECK( (!verification.problems.empty() && verification.problems[0].detail.find("999 bytes") != std::string::npos) ) is NOT correct!
+== M5 files the manifest does not list are not looked for
+   integration.ship_manifest: RED
+   TEST CASE:  a file the manifest does not list is refused by name
+   tools/ship/tests/test_ship.cpp:313: ERROR: CHECK_EQ( verification.problems.size(), 1U ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:314: ERROR: CHECK( names(verification, ProblemKind::Unlisted, "lib/libinjected.so") ) is NOT correct!
+   TEST CASE:  a packaged launch from a tampered installation does not start
+   tools/ship/tests/test_ship.cpp:459: ERROR: CHECK_FALSE( start_at(planted.root / "bin" / "game", 1, argv, spec(), &directories, again) ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:461: ERROR: CHECK( names(again.verification(), ProblemKind::Unlisted, "bin/libplanted.so") ) is NOT correct!
+== M6 a missing file is skipped silently
+   integration.ship_manifest: RED
+   TEST CASE:  a missing file is reported by name, and so is every other one
+   tools/ship/tests/test_ship.cpp:303: ERROR: CHECK_EQ( verification.problems.size(), 2U ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:304: ERROR: CHECK( names(verification, ProblemKind::Missing, "lib/libCyGame_g0.so") ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:305: ERROR: CHECK( names(verification, ProblemKind::Missing, "content/chunk-0003.cychunk") ) is NOT correct!
+== M7 an entry spanning chunks loses the last byte of each chunk
+   integration.ship_manifest: RED
+   TEST CASE:  every content entry reads back out of the chunks, across their boundaries
+   tools/ship/tests/test_ship.cpp:263: FATAL ERROR: REQUIRE( read_content(game.location(), game.manifest, name, bytes, error) ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:265: ERROR: CHECK_EQ( bytes, read_file(game.content / name) ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:263: FATAL ERROR: REQUIRE( read_content(game.location(), game.manifest, name, bytes, error) ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:265: ERROR: CHECK_EQ( bytes, read_file(game.content / name) ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:263: FATAL ERROR: REQUIRE( read_content(game.location(), game.manifest, name, bytes, error) ) is NOT correct!
+== M8 a path may climb out of the artefact
+   integration.ship_manifest: RED
+   TEST CASE:  a manifest round-trips through its text, and a path outside the artefact is refused
+   tools/ship/tests/test_ship.cpp:219: ERROR: CHECK_FALSE( valid_relative_path(climbing) ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:223: ERROR: CHECK_FALSE( parse_manifest(bad, refused, error) ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:219: ERROR: CHECK_FALSE( valid_relative_path(climbing) ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:223: ERROR: CHECK_FALSE( parse_manifest(bad, refused, error) ) is NOT correct!
+== M9 the chunks need not tile the content stream
+   integration.ship_manifest: RED
+   TEST CASE:  a manifest round-trips through its text, and a path outside the artefact is refused
+   tools/ship/tests/test_ship.cpp:228: ERROR: CHECK_FALSE( parse_manifest(short_stream, refused, error) ) is NOT correct!
+== M10 a cached content file is trusted by its size
+   integration.ship_manifest: RED
+   TEST CASE:  materialised content is verified, and a modified cached file is rewritten
+   tools/ship/tests/test_ship.cpp:363: ERROR: CHECK_EQ( read_file(out / "map.cypak"), read_file(game.content / "map.cypak") ) is NOT correct!
+== M11 a launch starts the game whether or not the installation verifies
+   integration.ship_manifest: RED
+   TEST CASE:  a packaged launch from a tampered installation does not start
+   tools/ship/tests/test_ship.cpp:459: ERROR: CHECK_FALSE( start_at(planted.root / "bin" / "game", 1, argv, spec(), &directories, again) ) is NOT correct!
+== M12 the settings come after the player's arguments
+   integration.ship_manifest: RED
+   TEST CASE:  a packaged launch verifies, materialises, and writes and applies the settings
+   tools/ship/tests/test_ship.cpp:418: ERROR: CHECK_EQ( arguments_of(launch), (std::vector<std::string>{"game", "--window", "1280x720", "--play"}) ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:436: ERROR: CHECK_EQ( arguments_of(again), (std::vector<std::string>{"game", "--no-vsync", "--fullscreen", "--play", "--window", "640x360"}) ) is NOT correct!
+== M13 a value setting is passed unchecked
+   integration.ship_manifest: RED
+   TEST CASE:  a packaged launch verifies, materialises, and writes and applies the settings
+   tools/ship/tests/test_ship.cpp:436: ERROR: CHECK_EQ( arguments_of(again), (std::vector<std::string>{"game", "--no-vsync", "--fullscreen", "--play", "--window", "640x360"}) ) is NOT correct!
+   TEST CASE:  settings: a value the game cannot take is a warning, never a refusal
+   tools/ship/tests/test_ship.cpp:474: ERROR: CHECK( flags.empty() ) is NOT correct!
+   tools/ship/tests/test_ship.cpp:475: ERROR: CHECK_EQ( settings.warnings.size(), 3U ) is NOT correct!
+
+# smoke.ship_games against the games themselves: the same driver, the game's target rebuilt,
+# tools/ship/test_ship_games.py run whole (it packages, unpacks and launches every game).
+
+== M14 the packaged RTS loads its Swift module from the build tree
+   smoke.ship_games: RED
+   FAILED  rts: the packaged run opened files in the checkout:
+   the run failed: rts: the packaged run opened files in the checkout:
+   /home/leonardo/work/cy-ship-games/build/dev/samples/13-rts-api/module/libCyGame_g0.so
+   
+== M15 the packaged first-person game reads its textures from the source tree
+   smoke.ship_games: RED
+   FAILED  fps: the drawn run read textures from the checkout: ['/home/leonardo/work/cy-ship-games/content/beauty/textures/stone_albedo.png', '/home/leonardo/work/cy-ship-games/content/beauty/textures/gravel_albedo.png', '/home/leonardo/work/cy-ship-games/content/beauty/textures/copper_albedo.png']
+   
+   --- the session ---
+== M16 a setting becomes a flag the game does not take
+   smoke.ship_games: RED
+   FAILED  fps: played with its settings, it failed (2):
+   first-person: --play does not take '--wndow'
+   

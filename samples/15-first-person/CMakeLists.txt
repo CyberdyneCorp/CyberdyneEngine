@@ -33,6 +33,14 @@ if(NOT Python3_Interpreter_FOUND)
     return()
 endif()
 
+# A packaged game starts by verifying its installation against the signed manifest (issue #87,
+# tools/ship/), so the game is not declared without that check.
+if(NOT TARGET cy::ship)
+    message(STATUS "samples/15-first-person: tools/ship is absent (CY_BUILD_TOOLS=OFF), and the "
+                   "game's launch is its check; the sample is not built")
+    return()
+endif()
+
 set(CY_FIRST_PERSON_DRIVER "${CMAKE_SOURCE_DIR}/bindings/swift/tools/cy_swift_module.py")
 execute_process(COMMAND "${Python3_EXECUTABLE}" "${CY_FIRST_PERSON_DRIVER}" --probe
                 RESULT_VARIABLE first_person_swift_result
@@ -68,6 +76,7 @@ add_custom_command(
     COMMAND "${Python3_EXECUTABLE}" "${CY_FIRST_PERSON_DRIVER}"
             --work "${CY_FIRST_PERSON_MODULE_WORK}" --out "${CY_FIRST_PERSON_MODULE_DIR}"
             --configuration "${CY_FIRST_PERSON_SWIFT_CONFIGURATION}"
+            ${CY_SWIFT_MODULE_SHIPPING_ARGUMENTS}
             --generation "0=${CMAKE_CURRENT_SOURCE_DIR}/game"
     DEPENDS "${CY_FIRST_PERSON_DRIVER}" "${CMAKE_SOURCE_DIR}/bindings/swift/Package.swift"
             ${CY_FIRST_PERSON_GAME_SOURCES} ${CY_FIRST_PERSON_KIT_SOURCES}
@@ -115,7 +124,9 @@ cy_add_module(
         cy::servers-input
         cy::servers-physics
         cy::vfx
-        cy::vfx-compiler)
+        cy::vfx-compiler
+        # The launch: a packaged game's installation verified before it starts (tools/ship/).
+        cy::ship)
 target_include_directories(cy_sample_first-person PRIVATE "${CMAKE_SOURCE_DIR}/src/vfx/tests"
                                                           "${CMAKE_SOURCE_DIR}/samples/play")
 add_dependencies(cy_sample_first-person cy_sample_first-person_game)

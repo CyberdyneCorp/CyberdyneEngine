@@ -30,6 +30,7 @@
 
 #include "map_load.h"
 #include "script.h"
+#include "ship_settings.h"
 #include "tps_host.h"
 #if defined(CY_THIRD_PERSON_RENDER)
 #    include "golden.h"
@@ -49,17 +50,42 @@ using sample::tps::ThirdPersonHost;
     return static_cast<double>(value);
 }
 
-struct Arguments {
-    bool behaviours = true;
-    cy::u64 frames = sample::tps::Player::kFrames;
+/// Where the game's module, its manifest, the level and the ambience are: the build tree's paths,
+/// or a packaged installation's, which main() sets from the launch before anything reads them.
+struct ContentPaths {
+    const char* module_library = CY_THIRD_PERSON_MODULE_LIBRARY;
+    const char* module_manifest = CY_THIRD_PERSON_MODULE_MANIFEST;
     const char* package = CY_THIRD_PERSON_PACKAGE;
-    const char* render = nullptr;
-    const char* audio = nullptr;
 #if defined(CY_THIRD_PERSON_AMBIENCE)
     const char* ambience = CY_THIRD_PERSON_AMBIENCE;
 #else
     const char* ambience = nullptr;
 #endif
+};
+
+[[nodiscard]] ContentPaths& paths() noexcept {
+    static ContentPaths instance;
+    return instance;
+}
+
+/// The packaged installation's paths in place of the build tree's (tools/ship/).
+void use_installation(cy::ship::Launch& launch) noexcept {
+    ContentPaths& out = paths();
+    out.module_library = launch.library(out.module_library, "libCyGame_g0.so");
+    out.module_manifest = launch.content(out.module_manifest, "module.toml");
+    out.package = launch.content(out.package, "hillside.cypak");
+    if (out.ambience != nullptr) {
+        out.ambience = launch.content(out.ambience, "hillside_wind.cyaudio");
+    }
+}
+
+struct Arguments {
+    bool behaviours = true;
+    cy::u64 frames = sample::tps::Player::kFrames;
+    const char* package = paths().package;
+    const char* render = nullptr;
+    const char* audio = nullptr;
+    const char* ambience = paths().ambience;
     cy::u64 trace = 0;
 #if defined(CY_THIRD_PERSON_RENDER)
     sample::tps::RenderOptions options;
@@ -219,7 +245,7 @@ using PlayedRenderer = cy::play::NoRenderer;
 
 struct PlayFlags {
     cy::play::PlayArguments play;
-    const char* package = CY_THIRD_PERSON_PACKAGE;
+    const char* package = paths().package;
 #    if defined(CY_THIRD_PERSON_RENDER)
     sample::tps::RenderOptions render;
 #    endif
@@ -301,8 +327,8 @@ struct PlayFlags {
 [[nodiscard]] int play_game(cy::play::PlayHost& play, const sample::rts::map::MapContent& content,
                             const PlayFlags& flags) noexcept {
     sample::tps::HostOptions options;
-    options.module_library = CY_THIRD_PERSON_MODULE_LIBRARY;
-    options.module_manifest = CY_THIRD_PERSON_MODULE_MANIFEST;
+    options.module_library = paths().module_library;
+    options.module_manifest = paths().module_manifest;
     options.map = &content;
     options.scripted_devices = false;
     options.fenced = true;
@@ -376,7 +402,17 @@ struct PlayFlags {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int main(int process_argc, char** process_argv) {
+    // A packaged game verifies its installation before anything else, and refuses to start when
+    // it does not hold (tools/ship/include/cy/ship/launch.h). Out of a build tree this is a no-op.
+    cy::ship::Launch launch;
+    if (!cy::ship::start(process_argc, process_argv, cy::play::ship_spec("tps", "CyberdyneTPS"),
+                         launch)) {
+        return cy::ship::kRefusedExit;
+    }
+    use_installation(launch);
+    const int argc = launch.argc();
+    char** argv = launch.argv();
 #if defined(CY_THIRD_PERSON_PLAY)
     if (cy::play::wants_play(argc, argv)) {
         return run_play(argc, argv);
@@ -413,8 +449,8 @@ int main(int argc, char** argv) {
 
     std::vector<float> mix;
     sample::tps::HostOptions options;
-    options.module_library = CY_THIRD_PERSON_MODULE_LIBRARY;
-    options.module_manifest = CY_THIRD_PERSON_MODULE_MANIFEST;
+    options.module_library = paths().module_library;
+    options.module_manifest = paths().module_manifest;
     options.behaviours = arguments.behaviours;
     options.map = &content;
     options.illumination = arguments.render != nullptr;
