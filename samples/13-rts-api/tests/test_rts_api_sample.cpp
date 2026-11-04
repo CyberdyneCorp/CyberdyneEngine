@@ -157,6 +157,16 @@ struct Run {
     return run;
 }
 
+/// The scripted session with no flags, run ONCE and read by every case that asserts on it. Each run
+/// is a process that loads the Swift module and plays 420 frames, and the nine cases reading this
+/// one used to start ten of them between them: the suite took 112-178 s of its 300 s on CI's
+/// slower passes. Only the reproducibility case runs it a second time, because a second run is its
+/// subject.
+[[nodiscard]] const Run& default_run() {
+    static const Run run = run_sample("");
+    return run;
+}
+
 /// The hexadecimal word after `key`, or zero.
 [[nodiscard]] unsigned long long hex_after(const std::string& line, const char* key) {
     const std::string::size_type found = line.find(key);
@@ -176,7 +186,7 @@ void report_if_broken(const Run& run) {
 }  // namespace
 
 CY_TEST_CASE("samples/13-rts-api: a Swift RTS selects, orders, hears and builds through ABI 1.3") {
-    const Run run = run_sample("");
+    const Run& run = default_run();
     report_if_broken(run);
     CY_REQUIRE(run.process.ran);
     CY_REQUIRE_EQ(run.process.exit_code, 0);
@@ -218,7 +228,7 @@ CY_TEST_CASE("samples/13-rts-api: a Swift RTS selects, orders, hears and builds 
 }
 
 CY_TEST_CASE("samples/13-rts-api: ABI 1.5 — tree callbacks, a scheduled system, a hero, a push") {
-    const Run run = run_sample("");
+    const Run& run = default_run();
     report_if_broken(run);
     CY_REQUIRE(run.process.ran);
     CY_REQUIRE_EQ(run.process.exit_code, 0);
@@ -255,7 +265,7 @@ CY_TEST_CASE("samples/13-rts-api: ABI 1.5 — tree callbacks, a scheduled system
 }
 
 CY_TEST_CASE("samples/13-rts-api: ABI 1.7 — units walk, cheer on arrival and stand down") {
-    const Run run = run_sample("");
+    const Run& run = default_run();
     report_if_broken(run);
     CY_REQUIRE(run.process.ran);
     CY_REQUIRE_EQ(run.process.exit_code, 0);
@@ -279,7 +289,7 @@ CY_TEST_CASE("samples/13-rts-api: ABI 1.7 — units walk, cheer on arrival and s
 }
 
 CY_TEST_CASE("samples/13-rts-api: ABI 1.8 — the company's orders run through the lockstep path") {
-    const Run run = run_sample("");
+    const Run& run = default_run();
     report_if_broken(run);
     CY_REQUIRE(run.process.ran);
     CY_REQUIRE_EQ(run.process.exit_code, 0);
@@ -312,7 +322,7 @@ CY_TEST_CASE("samples/13-rts-api: ABI 1.8 — the company's orders run through t
 }
 
 CY_TEST_CASE("samples/13-rts-api: ABI 1.9 — a volume over the base, a beacon put out and lit") {
-    const Run run = run_sample("");
+    const Run& run = default_run();
     CY_REQUIRE_EQ(run.process.exit_code, 0);
     CY_REQUIRE(run.parsed());
     // The base's volume, placed from `onCreate`: the one volume the GI holds, seen by the game.
@@ -335,7 +345,7 @@ CY_TEST_CASE("samples/13-rts-api: ABI 1.9 — a volume over the base, a beacon p
 }
 
 CY_TEST_CASE("samples/13-rts-api: ABI 1.10 — blue sees what its units see, and remembers a tower") {
-    const Run run = run_sample("");
+    const Run& run = default_run();
     report_if_broken(run);
     CY_REQUIRE_EQ(run.process.exit_code, 0);
     CY_REQUIRE(run.parsed());
@@ -437,7 +447,7 @@ CY_TEST_CASE("samples/13-rts-api: with no Swift behaviour, the host decides noth
 }
 
 CY_TEST_CASE("samples/13-rts-api: ABI 1.6 — a Swift HUD follows the game and its button builds") {
-    const Run run = run_sample("");
+    const Run& run = default_run();
     report_if_broken(run);
     CY_REQUIRE(run.process.ran);
     CY_REQUIRE_EQ(run.process.exit_code, 0);
@@ -585,12 +595,12 @@ CY_TEST_CASE("samples/13-rts-api: with no Swift behaviour there is no battle, on
     CY_CHECK_EQ(number_after(battle, "events="), 0.0);
     CY_CHECK_EQ(number_after(battle, "commands="), 0.0);
     // And a run without `--battle` has no battle at all.
-    const Run plain = run_sample("");
+    const Run& plain = default_run();
     CY_CHECK(line_with(plain.process.output, "rts battle ").empty());
 }
 
 CY_TEST_CASE("samples/13-rts-api reproduces exactly across two runs") {
-    const Run first = run_sample("");
+    const Run& first = default_run();
     const Run second = run_sample("");
     CY_REQUIRE(first.parsed());
     CY_REQUIRE(second.parsed());
