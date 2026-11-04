@@ -619,6 +619,12 @@ VERIFY = "just ci-build-tree-verify"
 #: And fetches it again by another transport: a second `actions/download-artifact` ended short too.
 FETCH = "just ci-build-tree-fetch"
 TREE_ARTEFACT = "build-tree-"
+#: A hosted runner can start with too little free disk for the archive and the tree it expands to,
+#: held at once while it unpacks: on 2026-11-03 about one hosted ubuntu job in seven died with `No
+#: space left on device` there, and the crash took the job's log with it. So a job that unpacks on a
+#: hosted runner frees the image's unused SDKs first.
+FREE_DISK = "just ci-free-disk"
+RUNS_ON = re.compile(r"^    runs-on:\s*(?P<runner>.+?)\s*$")
 STEP_START = re.compile(r"^      - ")
 NEEDS_KEY = re.compile(r"^    needs:\s*(?P<inline>.*?)\s*$")
 CACHE_ACTION = re.compile(r"uses:\s*actions/cache(?:/restore)?@")
@@ -665,6 +671,16 @@ def _first(steps: list[str], predicate) -> int:
     return next((index for index, step in enumerate(steps) if predicate(step)), -1)
 
 
+def _hosted(body: list[str]) -> bool:
+    """Whether a job runs on a GitHub-hosted runner, where `ci-free-disk` may delete the image's
+    SDKs. A self-hosted machine is somebody's own, and the recipe must never run there."""
+    for line in body:
+        match = RUNS_ON.match(line)
+        if match:
+            return "self-hosted" not in match.group("runner")
+    return True
+
+
 def build_tree_handoff(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str]:
     """The build job hands its tree on as an artefact, and nothing that needs it rebuilds it."""
     problems: list[str] = []
@@ -702,6 +718,12 @@ def build_tree_handoff(root: pathlib.Path, workflows: list[pathlib.Path]) -> lis
             if not 0 <= downloaded < unpacked:
                 problems.append(f"{path.name}:{line} job '{job}' runs `{UNPACK}` without first "
                                 f"downloading a `{TREE_ARTEFACT}` artefact")
+            freed = _first(steps, lambda step: FREE_DISK in step)
+            if _hosted(body) and not 0 <= freed < downloaded:
+                problems.append(f"{path.name}:{line} job '{job}' downloads and unpacks the tree on "
+                                f"a hosted runner without `{FREE_DISK}` before the download, so a "
+                                "runner that starts with less free disk dies part way through the "
+                                "unpack")
             verified = _first(steps, lambda step: VERIFY in step)
             again = [index for index, step in enumerate(steps)
                      if verified < index < unpacked and FETCH in step]
@@ -1318,6 +1340,7 @@ def selftest(root: pathlib.Path) -> int:
                   "        run: just ci-build-tree-fetch build-tree-x\n")
         cache = "      - uses: actions/cache@v5\n        with:\n          path: build/dev\n"
         editor = "      - run: just build-editor\n"
+        free = "      - run: just ci-free-disk\n"
 
         def handoff_of(build_steps: str, test_steps: str) -> list[str]:
             scratch.write_text(
@@ -1346,6 +1369,10 @@ def selftest(root: pathlib.Path) -> int:
             (pack, download + verify + unpack + cache.replace("build/dev", "build/editor"),
              "after `just ci-build-tree-unpack`",
              "a cache restored after the sources were dated back"),
+            (pack, download + verify + unpack, "without `just ci-free-disk`",
+             "an unpack on a hosted runner whose disk nothing freed"),
+            (pack, download + free + verify + unpack, "without `just ci-free-disk`",
+             "a disk freed only after the download it had to make room for"),
         )
         for build_steps, test_steps, expected, description in handoff_cases:
             found = handoff_of(build_steps, test_steps)
@@ -1355,7 +1382,7 @@ def selftest(root: pathlib.Path) -> int:
                 failed += 1
                 print(f"fail {description} was accepted: {found or ['nothing']}",
                       file=sys.stderr)
-        found = handoff_of(pack, editor + download + verify + unpack)
+        found = handoff_of(pack, editor + free + download + verify + unpack)
         if found:
             failed += 1
             print(f"fail the hand-off itself was rejected: {found}", file=sys.stderr)
