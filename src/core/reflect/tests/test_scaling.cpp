@@ -51,6 +51,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -229,6 +230,66 @@ std::string report(const char* what, f64 reference_ns, f64 indexed_ns, u64 opera
     return {line};
 }
 
+/// Two timings to compare: the reference implementation's and the shipping path's.
+struct PairedTiming {
+    f64 reference_ns = 0.0;
+    f64 shipping_ns = 0.0;
+};
+
+/// TIME THE TWO PATHS SIDE BY SIDE, IN SHORT PAIRED CHUNKS, AND KEEP EACH CHUNK'S FASTEST RUN.
+///
+/// A ratio of two long phases measured one after the other compares whatever the host did during
+/// each phase as much as the code: a hosted macOS runner is a virtual machine whose vCPU can be
+/// taken away (invisible to a thread CPU clock) or moved between performance and efficiency cores,
+/// and MSVC has no thread CPU clock at all, so the Windows leg reads the wall clock. Run once, the
+/// decode measured 3.4x against a floor of 4 on Windows (CI job 123795560707); run as five
+/// back-to-back phases, the scene load measured 1.4x against a floor of 1.5 on macOS (CI job
+/// 123794823532), where it is 2.2x on an idle host.
+///
+/// So the work is cut into `chunks`, each chunk is timed on both paths back to back — the two runs
+/// microseconds apart, on the same core in the same state — the order alternates between repeats
+/// so neither path always runs warm, and each chunk keeps the fastest of `repeats` runs per path.
+/// Contention can only make a run slower, so a chunk's minimum is the closest to its cost, and an
+/// interruption has to land on the same chunk of the same path in every repeat to survive.
+template <typename Reference, typename Shipping>
+PairedTiming best_of_paired(u32 chunks, u32 repeats, Reference&& reference, Shipping&& shipping) {
+    PairedTiming total;
+    for (u32 chunk = 0; chunk < chunks; ++chunk) {
+        f64 best_reference = 0.0;
+        f64 best_shipping = 0.0;
+        for (u32 repeat = 0; repeat < repeats; ++repeat) {
+            f64 reference_run = 0.0;
+            f64 shipping_run = 0.0;
+            const auto time_reference = [&] {
+                const f64 started = now_ns();
+                reference(chunk);
+                reference_run = elapsed_ns(started);
+            };
+            const auto time_shipping = [&] {
+                const f64 started = now_ns();
+                shipping(chunk);
+                shipping_run = elapsed_ns(started);
+            };
+            if (repeat % 2u == 0u) {
+                time_reference();
+                time_shipping();
+            } else {
+                time_shipping();
+                time_reference();
+            }
+            if (repeat == 0 || reference_run < best_reference) {
+                best_reference = reference_run;
+            }
+            if (repeat == 0 || shipping_run < best_shipping) {
+                best_shipping = shipping_run;
+            }
+        }
+        total.reference_ns += best_reference;
+        total.shipping_ns += best_shipping;
+    }
+    return total;
+}
+
 /// Encode every type in the corpus once, so the decode measurements read real records.
 std::vector<cy::reflect::ByteBuffer> encode_one_of_each(const TypeCorpus& corpus) {
     std::vector<cy::reflect::ByteBuffer> records(corpus.size());
@@ -252,6 +313,7 @@ CY_TEST_CASE("reflection scaling: type lookup does not degrade as the registry g
     const u32 sizes[] = {32, 320, 3200};
     f64 scan_ns[3] = {};
     f64 index_ns[3] = {};
+    f64 fields_ns[3] = {};
     u32 probes[3] = {};
 
     for (u32 step = 0; step < 3; ++step) {
@@ -282,7 +344,24 @@ CY_TEST_CASE("reflection scaling: type lookup does not degrade as the registry g
             found += (registry.find(id) != nullptr) ? 1u : 0u;
         }
         index_ns[step] = elapsed_ns(started);
-        CY_CHECK_EQ(found, static_cast<usize>(lookups) * 2u);
+
+        // TypeRegistry::fields() is a second lookup by TypeId with its own probe, and it is the
+        // one a scene load takes. Nothing else times it on its own, and a fields() that scanned
+        // measured anywhere from 1.4x to 1.9x end to end in the scene-load case below, on either
+        // side of that case's 1.5x floor; so it is held to the same growth bound as find(). The
+        // fastest of five passes, because a pass is tens of microseconds and one interruption would
+        // otherwise be the measurement.
+        for (u32 repeat = 0; repeat < 5u; ++repeat) {
+            started = now_ns();
+            usize resolved = 0;
+            for (const TypeId id : wanted) {
+                resolved += (registry.fields(id) != nullptr) ? 1u : 0u;
+            }
+            const f64 run = elapsed_ns(started);
+            fields_ns[step] = (repeat == 0 || run < fields_ns[step]) ? run : fields_ns[step];
+            found += (repeat == 0) ? resolved : 0u;
+        }
+        CY_CHECK_EQ(found, static_cast<usize>(lookups) * 3u);
 
         // Built into a local first: CY_TEST_MESSAGE streams its argument, and `<<` binds tighter
         // than `+`, so a concatenation written inline would try to append to the stream builder.
@@ -310,11 +389,15 @@ CY_TEST_CASE("reflection scaling: type lookup does not degrade as the registry g
     // show the degradation this test would otherwise be unable to detect.
     const f64 index_growth = index_ns[2] / index_ns[0];
     const f64 scan_growth = scan_ns[2] / scan_ns[0];
+    const f64 fields_growth = fields_ns[2] / fields_ns[0];
     const std::string growth = "growth over 100x more types - scan " + std::to_string(scan_growth) +
-                               "x, indexed " + std::to_string(index_growth) + "x";
+                               "x, indexed " + std::to_string(index_growth) + "x, fields() " +
+                               std::to_string(fields_growth) + "x";
     CY_TEST_MESSAGE(growth);
     CY_CHECK_LT(index_growth, 8.0);
     CY_CHECK_GT(scan_growth, index_growth * 4.0);
+    CY_CHECK_LT(fields_growth, 8.0);
+    CY_CHECK_GT(scan_growth, fields_growth * 4.0);
 }
 
 // --- Scenario: decode is linear in the record
@@ -348,8 +431,16 @@ CY_TEST_CASE("reflection scaling: field lookup does not degrade as a type widens
 CY_TEST_CASE("reflection scaling: a record decode is linear in the record") {
     // "WHEN a record carrying many fields is decoded THEN the cost SHALL be linear in the record's
     // size rather than quadratic in its field count."
-    constexpr u32 width = 256;
-    constexpr u32 records = 2000;
+    //
+    // 1024 fields, so the asymptotic gap is the thing measured. The scan's cost per field is half
+    // the type's width and the index's is a probe, so the ratio grows with the width: at 256 fields
+    // it was 8x on a hosted macOS runner and 3.4x on a Windows one, too close to the floor of 4 for
+    // a host's noise; at 1024 it is four times that, while a revert to scanning still takes it to
+    // one. Thirty-two records keep the case near what 2000 records of 256 fields cost.
+    constexpr u32 width = 1024;
+    constexpr u32 records = 32;
+    constexpr u32 chunk_records = 4;
+    constexpr u32 kRepeats = 5;
     TypeCorpus corpus(1, width, width);
     const TypeInfo& type = corpus.type(0);
 
@@ -370,32 +461,37 @@ CY_TEST_CASE("reflection scaling: a record decode is linear in the record") {
     // would be checking, so an assertion per iteration would measure doctest on both sides and
     // hide the difference under it — which it did, at a cost of one confusing afternoon.
     bool decoded = true;
-
-    f64 started = now_ns();
-    for (u32 index = 0; index < records; ++index) {
-        decoded = decoded && static_cast<bool>(scanning_read_record(type, record.data(),
-                                                                    record.size(), scanned.data()));
-    }
-    const f64 scan_ns = elapsed_ns(started);
-
-    started = now_ns();
-    for (u32 index = 0; index < records; ++index) {
-        decoded = decoded && static_cast<bool>(cy::reflect::read_record(
-                                 fields, record.data(), record.size(), indexed.data()));
-    }
-    const f64 index_ns = elapsed_ns(started);
+    const PairedTiming timing = best_of_paired(
+        records / chunk_records, kRepeats,
+        [&](u32 /*chunk*/) {
+            bool ok = true;
+            for (u32 index = 0; index < chunk_records; ++index) {
+                ok = ok && static_cast<bool>(scanning_read_record(type, record.data(),
+                                                                  record.size(), scanned.data()));
+            }
+            decoded = decoded && ok;
+        },
+        [&](u32 /*chunk*/) {
+            bool ok = true;
+            for (u32 index = 0; index < chunk_records; ++index) {
+                ok = ok && static_cast<bool>(cy::reflect::read_record(
+                               fields, record.data(), record.size(), indexed.data()));
+            }
+            decoded = decoded && ok;
+        });
     CY_REQUIRE(decoded);
 
     // Same answer first. The measurement is only interesting if both paths decoded the record.
     CY_REQUIRE_EQ(std::memcmp(scanned.data(), indexed.data(), type.size), 0);
     CY_REQUIRE_EQ(std::memcmp(scanned.data(), source.data(), type.size), 0);
 
-    const std::string line = report("decode, 256-field record", scan_ns, index_ns, records);
+    const std::string line =
+        report("decode, 1024-field record", timing.reference_ns, timing.shipping_ns, records);
     CY_TEST_MESSAGE(line);
-    // The quadratic path does 256 x 128 comparisons per record and the linear one does 256 probes.
-    // Four is a floor far below the measured margin: this fails when the complexity comes back, not
-    // when the machine is busy.
-    CY_CHECK_GT(scan_ns, index_ns * 4.0);
+    // The quadratic path does 1024 x 512 comparisons per record and the linear one does 1024
+    // probes. Four is a floor far below the measured margin: this fails when the complexity comes
+    // back, not when the machine is busy.
+    CY_CHECK_GT(timing.reference_ns, timing.shipping_ns * 4.0);
 }
 
 // --- The recorded measurement: what a scene load costs
@@ -429,48 +525,49 @@ CY_TEST_CASE("reflection scaling: the reflected path a scene load takes") {
     // would be checking, and asserting per record measures doctest rather than the decode.
     bool loaded = true;
 
-    // THE BEST OF SEVERAL, NOT ONE RUN OF EACH. A ratio between two timings taken once is a
-    // measurement of whichever run was descheduled, and this assertion failed `just test-all
-    // --profile dev` about one round in five at M3's gate — inside `four-profiles`, which every
-    // milestone ledger runs, so a flake here is a flake in the whole ladder. The minimum of a few
-    // repetitions is the standard answer: contention can only ever make a run slower, so the
-    // smallest is the closest to the cost being compared, and it costs three passes over a corpus
-    // that already fits the integration budget several times over. FIVE since the clock became the
-    // thread's CPU time: that clock cannot see a hypervisor taking the vCPU away (a hosted macOS
-    // runner is a virtual machine), so the minimum is what still filters it, and two more passes
-    // cost tens of milliseconds.
+    // THE BEST OF SEVERAL, PAIRED, NOT ONE RUN OF EACH. A ratio between two timings taken once
+    // is a measurement of whichever run was descheduled, and this assertion failed `just test-all
+    // --profile dev` about one round in five at M3's gate. Five whole passes of each, scan then
+    // index, still measured 1.4x on a hosted macOS runner: each pass is milliseconds long, and a
+    // host that slows for a whole pass slows every pass of one path. best_of_paired() times the
+    // stream in chunks, both paths back to back per chunk, and keeps each chunk's fastest run.
+    constexpr u32 kChunks = 100;
     constexpr u32 kRepeats = 5;
-    f64 scan_ns = 0.0;
-    f64 index_ns = 0.0;
-    for (u32 repeat = 0; repeat < kRepeats; ++repeat) {
-        // The M1 path: a scan for the type, then find_field() per field of every record.
-        f64 started = now_ns();
-        for (const u32 which : stream) {
-            const TypeInfo* type = scanning_find(registry, TypeId{which + 1});
-            loaded = loaded && type != nullptr &&
+    constexpr u32 chunk_records = record_count / kChunks;
+    static_assert(record_count % kChunks == 0, "every record is timed");
+    // A local flag per chunk, folded into `loaded` once: a flag written through a capture on every
+    // record cost the scan a quarter of its time in a -O2 build, which is codegen, not complexity.
+    const auto chunk_of = [&stream](u32 chunk) {
+        return std::span<const u32>(stream.data() + (static_cast<usize>(chunk) * chunk_records),
+                                    chunk_records);
+    };
+    const PairedTiming timing = best_of_paired(
+        kChunks, kRepeats,
+        [&](u32 chunk) {
+            // The M1 path: a scan for the type, then find_field() per field of every record.
+            bool ok = true;
+            for (const u32 which : chunk_of(chunk)) {
+                const TypeInfo* type = scanning_find(registry, TypeId{which + 1});
+                ok = ok && type != nullptr &&
                      static_cast<bool>(scanning_read_record(*type, encoded[which].data(),
                                                             encoded[which].size(), object.data()));
-        }
-        const f64 scan_run = elapsed_ns(started);
-
-        // The M2 path: an indexed lookup that hands back the FieldIndex the registry built at
-        // registration, and a decode that probes it once per field in the record.
-        started = now_ns();
-        for (const u32 which : stream) {
-            const FieldIndex* fields = registry.fields(TypeId{which + 1});
-            loaded = loaded && fields != nullptr &&
+            }
+            loaded = loaded && ok;
+        },
+        [&](u32 chunk) {
+            // The M2 path: an indexed lookup that hands back the FieldIndex the registry built at
+            // registration, and a decode that probes it once per field in the record.
+            bool ok = true;
+            for (const u32 which : chunk_of(chunk)) {
+                const FieldIndex* fields = registry.fields(TypeId{which + 1});
+                ok = ok && fields != nullptr &&
                      static_cast<bool>(cy::reflect::read_record(
                          *fields, encoded[which].data(), encoded[which].size(), object.data()));
-        }
-        const f64 index_run = elapsed_ns(started);
-
-        if (repeat == 0 || scan_run < scan_ns) {
-            scan_ns = scan_run;
-        }
-        if (repeat == 0 || index_run < index_ns) {
-            index_ns = index_run;
-        }
-    }
+            }
+            loaded = loaded && ok;
+        });
+    const f64 scan_ns = timing.reference_ns;
+    const f64 index_ns = timing.shipping_ns;
     CY_REQUIRE(loaded);
 
     const std::string line = report("scene load, 512 types", scan_ns, index_ns, record_count);
@@ -478,10 +575,10 @@ CY_TEST_CASE("reflection scaling: the reflected path a scene load takes") {
     const std::string totals = "total: scan " + std::to_string(scan_ns / 1e6) + " ms, indexed " +
                                std::to_string(index_ns / 1e6) + " ms";
     CY_TEST_MESSAGE(totals);
-    // Measured at 2.2x end to end on this corpus, and the modest factor is worth understanding
+    // Measured at 2.4x end to end on this corpus, and the modest factor is worth understanding
     // rather than inflating: a 26-field record's decode is real work — a probe and a memcpy per
     // field — and the quadratic term is only the part *around* it. The two components have their
-    // own measurements above, where the factor is 250x for the lookup and 12x for a wide record's
+    // own measurements above, where the factor is 250x for the lookup and 38x for a wide record's
     // decode. The bound here is 1.5x: a revert to scanning would take this ratio to 1.0, which is
     // what the assertion has to catch, and anything tighter would make a busy machine fail it.
     CY_CHECK_GT(scan_ns, index_ns * 1.5);
