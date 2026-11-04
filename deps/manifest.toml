@@ -197,6 +197,11 @@ justification = "Cryptographic code is never hand-rolled, and the build graph's 
 # signatures (`src/optional/monocypher-ed25519.c`, SHA-512 inside), so a signature it writes can be
 # checked by any Ed25519 implementation. One C file and its optional companion, provided by
 # `cy__provide_monocypher` like stb_vorbis: upstream ships a Makefile, not a CMake project.
+#
+# Issue #82 takes the same library for the secure transport: X25519 key agreement,
+# XChaCha20-Poly1305 authenticated encryption and BLAKE2b key derivation and cookies, all from the
+# main `monocypher.c`. `src/networking/src/crypto.cpp` is that module's only translation unit naming a
+# `crypto_` symbol, so the dedicated server's link graph gains one C file and no new dependency.
 
 [[dependency]]
 name = "monocypher"
@@ -211,9 +216,9 @@ feature = ""
 system_package = false
 cmake_target = "monocypher"
 source_subdir = ""
-interface = "cy::ship's signature interface in tools/ship/include/cy/ship/signature.h, whose src/signature.cpp is the only translation unit that names a crypto_ symbol"
+interface = "cy::ship's signature interface in tools/ship/include/cy/ship/signature.h, and cy::net's primitives in src/networking/include/cy/networking/crypto.h; tools/ship/src/signature.cpp and src/networking/src/crypto.cpp are the only translation units that name a crypto_ symbol"
 scope = "runtime"
-justification = "Cryptographic code is never hand-rolled, and a signed shipping manifest needs a signature scheme: Ed25519 (RFC 8032) in one audited, dependency-free C file, small enough to link into every shipped game for the startup check. Offered under BSD-2-Clause or CC0-1.0 and taken under BSD-2-Clause."
+justification = "Cryptographic code is never hand-rolled. A signed shipping manifest needs a signature scheme, Ed25519 (RFC 8032), and the secure network transport needs key agreement and authenticated encryption, X25519 and XChaCha20-Poly1305 with BLAKE2b: all in one audited, dependency-free C file and its companion, small enough to link into every shipped game and dedicated server. Offered under BSD-2-Clause or CC0-1.0 and taken under BSD-2-Clause."
 
 [[dependency]]
 name = "vulkan_headers"

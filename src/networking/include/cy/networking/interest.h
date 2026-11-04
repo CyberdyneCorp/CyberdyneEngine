@@ -164,6 +164,9 @@ public:
     /// peer's cells would show here rather than as a frame time six months later.
     [[nodiscard]] u64 examined_last() const noexcept { return examined_last_; }
     [[nodiscard]] u32 size() const noexcept { return static_cast<u32>(subjects_.size()); }
+    /// Subjects placed and not removed. `size()` also counts the slots `remove()` emptied, which
+    /// are kept so the cell buckets' indices stay valid.
+    [[nodiscard]] u32 live_count() const noexcept { return static_cast<u32>(by_id_.size()); }
     [[nodiscard]] u32 cell_count() const noexcept { return static_cast<u32>(cells_.size()); }
 
 private:

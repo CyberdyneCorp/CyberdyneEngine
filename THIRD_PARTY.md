@@ -133,10 +133,10 @@ regeneration needs them, and `just generate-check` is what notices.
 - **Licence**: BSD-2-Clause
 - **Licence text**: [`LICENCE.md`](https://github.com/LoupVaillant/Monocypher/blob/0d85f98c9d9b0227e42cf795cb527dff372b40a4/LICENCE.md), and
   `LICENCE.md` at the root of the fetched source in any configured build tree
-- **Behind**: cy::ship's signature interface in tools/ship/include/cy/ship/signature.h, whose src/signature.cpp is the only translation unit that names a crypto_ symbol
+- **Behind**: cy::ship's signature interface in tools/ship/include/cy/ship/signature.h, and cy::net's primitives in src/networking/include/cy/networking/crypto.h; tools/ship/src/signature.cpp and src/networking/src/crypto.cpp are the only translation units that name a crypto_ symbol
 - **Included when**: always
 - **Linked into**: a shipped game
-- **Why integrated rather than built**: Cryptographic code is never hand-rolled, and a signed shipping manifest needs a signature scheme: Ed25519 (RFC 8032) in one audited, dependency-free C file, small enough to link into every shipped game for the startup check. Offered under BSD-2-Clause or CC0-1.0 and taken under BSD-2-Clause.
+- **Why integrated rather than built**: Cryptographic code is never hand-rolled. A signed shipping manifest needs a signature scheme, Ed25519 (RFC 8032), and the secure network transport needs key agreement and authenticated encryption, X25519 and XChaCha20-Poly1305 with BLAKE2b: all in one audited, dependency-free C file and its companion, small enough to link into every shipped game and dedicated server. Offered under BSD-2-Clause or CC0-1.0 and taken under BSD-2-Clause.
 
 ### vulkan_headers 1.4.304
 
