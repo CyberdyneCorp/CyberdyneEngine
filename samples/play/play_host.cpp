@@ -129,18 +129,13 @@ Status PlayHost::open(const PlayOptions& options) noexcept {
     if (!options_.draw) {
         return ok();
     }
-#if defined(CY_PLAY_PRESENTER)
+    // Without the Vulkan renderer the presenter is presenter_unavailable.cpp's, and refuses.
     platform.presenter = std::make_unique<Presenter>(*allocator_);
     PresenterOptions presenting;
     presenting.vsync = options.vsync;
     presenting.validation = options.validation;
     presenting.application = options.title;
     return platform.presenter->start(platform.display, platform.window, ui_.get(), presenting);
-#else
-    return fail(ErrorCode::Unsupported,
-                "this build has no Vulkan renderer, so a played game cannot be drawn; "
-                "--no-draw runs it without a picture");
-#endif
 }
 
 Status PlayHost::attach(PlayGame& game) noexcept {
@@ -218,13 +213,11 @@ Status PlayHost::window_events() noexcept {
                 break;
             case WindowEventType::Resized:
                 ++report_.resizes;
-#if defined(CY_PLAY_PRESENTER)
                 if (platform.presenter != nullptr) {
                     if (Status resized = platform.presenter->resize(event.size); !resized) {
                         return resized;
                     }
                 }
-#endif
                 break;
             default:
                 break;
@@ -272,7 +265,6 @@ Status PlayHost::simulate(const StepPlan& plan, Nanoseconds now) noexcept {
 
 Status PlayHost::present_frame(f64& waited_ms) noexcept {
     waited_ms = 0.0;
-#if defined(CY_PLAY_PRESENTER)
     Platform& platform = *platform_;
     if (platform.presenter == nullptr) {
         return ok();
@@ -298,7 +290,6 @@ Status PlayHost::present_frame(f64& waited_ms) noexcept {
         }
         ++report_.captured;
     }
-#endif
     return ok();
 }
 
@@ -395,11 +386,9 @@ Expected<PlayReport, Error> PlayHost::run() noexcept {
     const Vec2 size = viewport();
     report_.window_width = static_cast<u32>(size.x);
     report_.window_height = static_cast<u32>(size.y);
-#if defined(CY_PLAY_PRESENTER)
     if (platform_->presenter != nullptr) {
         report_.validation_errors = platform_->presenter->validation_errors();
     }
-#endif
     return report_;
 }
 
@@ -413,9 +402,7 @@ void PlayHost::close() noexcept {
     // would then be closed through freed memory.
     platform.source.detach();
     platform.inject.detach_gamepad();
-#if defined(CY_PLAY_PRESENTER)
     platform.presenter.reset();
-#endif
     ui_.reset();
     if (platform.window != kInvalidWindow) {
         (void)platform.display.set_window_relative_mouse(platform.window, false);

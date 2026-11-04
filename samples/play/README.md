@@ -83,6 +83,7 @@ refuses the whole file and names the line.
 | Suite | What |
 |---|---|
 | `unit.play_host` | the clock (a fast display, a hitch, a pause, a fixed clock), the pause and the focus, the rebinding file, the input script |
+| `integration.play_host_without_vulkan` | the host linked as a `CY_RENDERER_VULKAN=OFF` build links it, against `presenter_unavailable.cpp`, in every build: the presenter refuses to start and names `--no-draw`, and a headless window opens and closes |
 | `integration.sdl3_injector` | a key, the mouse and a virtual pad pushed through SDL's queue arrive as a person's would |
 | `integration.first_person_play`, `integration.third_person_play` | each sample played headless with scripted hands through the platform: the look per mouse count, the walk, the shot that hits, the pause on focus loss, the menu's Resume and Quit, the pad, the rebinding, the magazine, the respawn |
 | `smoke.first_person_play`, `smoke.third_person_play` | drawn on a device: every frame presented without a validation error, the game the headless run's, a resized window still presenting, and a 1080p frame's work under 16.7 ms |
@@ -90,6 +91,8 @@ refuses the whole file and names the line.
 ## What is not here
 
 - **Vulkan only.** Metal and D3D12 compile the present shader (`just build-shaders --strict`); this
-  host makes a Vulkan surface only, and its presentation was run on Linux with an RTX 5060.
+  host makes a Vulkan surface only, and its presentation was run on Linux with an RTX 5060. A build
+  without the Vulkan renderer compiles `presenter_unavailable.cpp` in place of `presenter.cpp`: its
+  presenter refuses to start, and a game is played with `--no-draw`.
 - **No sound device.** The samples mix into the null audio backend, as their scripted runs do.
 - **The menu's settings live as long as the run.** Nothing saves a sensitivity or a rebinding.
