@@ -1,0 +1,93 @@
+# Mutations applied to src/networking's sources, each rebuilt, integration.networking_session run whole,
+# and the source restored. Driver: apply -> ninja -j4 cy_test_integration_networking_session -> run -> restore.
+# Host: Linux x86_64, Development build, GCC 13. Every mutation below turned the suite RED; the suite is
+# green on the restored tree. Mutations 1-5 are M9's, recorded in src/networking/README.md.
+# M10, M19 and M20 are the regressions for three defects found while writing this change: a handshake
+# timed from a clock that had not started, a relevance index that kept entities no peer had seen, and
+# the handshake's own packet missing from the loss count. M8 is the regression for PeerBaseline's
+# cumulative acknowledgement, which takes a lost snapshot's contents for delivered.
+
+== M6 the replay window refuses nothing
+   cy_test_integration_networking_session: RED
+   TEST CASE:  secure transport: a replayed packet is rejected before it is decrypted
+   src/networking/tests/test_secure_transport.cpp:268: ERROR: CHECK_EQ( session.host().counters().packets_rejected_replay, before + 3 ) is NOT correct!
+== M7 a packet whose tag fails is accepted anyway
+   cy_test_integration_networking_session: RED
+   TEST CASE:  secure transport: a tampered packet is rejected and delivers nothing
+   src/networking/tests/test_secure_transport.cpp:228: ERROR: CHECK_GE( session.host().counters().packets_rejected_authentication, before + state.flipped ) is NOT correct!
+   src/networking/tests/test_secure_transport.cpp:228: ERROR: CHECK_GE( session.host().counters().packets_rejected_authentication, before + state.flipped ) is NOT correct!
+== M8 acknowledgement is cumulative, not exact
+   cy_test_integration_networking_session: RED
+   TEST CASE:  replication: a change in a lost snapshot is sent again, because acks are exact
+   src/networking/tests/test_world_replication.cpp:244: ERROR: CHECK_EQ( resent, 1U ) is NOT correct!
+   src/networking/tests/test_world_replication.cpp:247: ERROR: CHECK_EQ( alice.game.read(mirrored)->health, 7U ) is NOT correct!
+   src/networking/tests/test_world_replication.cpp:248: ERROR: CHECK_EQ( cy::net::replicated_digest(alice.game.world, schemas.set), cy::net::replicated_digest(server.world, schemas.set) ) is NOT correct!
+== M9 the world's change versions are never consulted
+   cy_test_integration_networking_session: RED
+   TEST CASE:  replication: an unchanged world sends nothing and compares nothing
+   src/networking/tests/test_world_replication.cpp:195: ERROR: CHECK_EQ( idle.entities_compared, 0U ) is NOT correct!
+   src/networking/tests/test_world_replication.cpp:196: ERROR: CHECK_EQ( idle.skipped_by_version, 1000U ) is NOT correct!
+   src/networking/tests/test_world_replication.cpp:210: ERROR: CHECK_LT( one.entities_compared, 1000U ) is NOT correct!
+== M10 a connect before the first advance is timed from zero
+   cy_test_integration_networking_session: RED
+   TEST CASE:  secure transport: a connect before the first advance is timed from that advance
+   src/networking/tests/test_secure_transport.cpp:553: ERROR: CHECK_EQ( session.client(0).state(*peer), cy::net::ConnectionState::Connected ) is NOT correct!
+   src/networking/tests/test_secure_transport.cpp:556: ERROR: CHECK_EQ( event.kind, cy::net::ConnectionEvent::Kind::Connected ) is NOT correct!
+== M11 the client does not check the challenge's tag
+   cy_test_integration_networking_session: RED
+   TEST CASE:  secure transport: a client given the wrong server key never connects
+   src/networking/tests/test_secure_transport.cpp:167: ERROR: CHECK_GT( client.transport.counters().packets_rejected_authentication, 0U ) is NOT correct!
+== M12 the cookie is not checked
+   cy_test_integration_networking_session: RED
+   TEST CASE:  secure transport: a response replayed from another address admits nothing
+   src/networking/tests/test_secure_transport.cpp:579: ERROR: CHECK_EQ( session.host().counters().cookies_rejected, before + 1 ) is NOT correct!
+== M13 the send rate is not limited
+   cy_test_integration_networking_session: RED
+   TEST CASE:  secure transport: the send rate stays under its limit and excess is discarded
+   src/networking/tests/test_secure_transport.cpp:374: ERROR: CHECK_LE( sent, allowed + 4096 ) is NOT correct!
+   src/networking/tests/test_secure_transport.cpp:376: ERROR: CHECK_GT( stats.datagrams_throttled, 0U ) is NOT correct!
+== M14 a message is handed up before its last fragment
+   cy_test_integration_networking_session: RED
+   TEST CASE:  secure transport: a message larger than a datagram is reassembled under loss
+   src/networking/tests/test_secure_transport.cpp:293: FATAL ERROR: REQUIRE_EQ( received.count, 1U ) is NOT correct!
+   src/networking/tests/test_secure_transport.cpp:294: FATAL ERROR: REQUIRE_EQ( received.bytes.size(), big.size() ) is NOT correct!
+   src/networking/tests/test_secure_transport.cpp:295: ERROR: CHECK( std::memcmp(received.bytes.data(), big.data(), big.size()) == 0 ) is NOT correct!
+   src/networking/tests/test_secure_transport.cpp:296: ERROR: CHECK_GT( session.client(0).stats(peer).retransmissions, 0U ) is NOT correct!
+   TEST CASE:  secure transport: an unreliable fragmented message arrives whole or not at all
+   src/networking/tests/test_secure_transport.cpp:324: FATAL ERROR: REQUIRE_EQ( datagram.bytes.size(), 6000U ) is NOT correct!
+   src/networking/tests/test_secure_transport.cpp:327: ERROR: CHECK( std::memcmp(datagram.bytes.data(), expected.data(), 6000) == 0 ) is NOT correct!
+== M15 commands issued for one tick are not counted
+   cy_test_integration_networking_session: RED
+   TEST CASE:  session: a client sending commands faster than the tick rate is clamped and flagged
+   src/networking/tests/test_session.cpp:217: ERROR: CHECK( stats->flagged ) is NOT correct!
+   src/networking/tests/test_session.cpp:218: ERROR: CHECK_GT( stats->commands_refused, 0U ) is NOT correct!
+   src/networking/tests/test_session.cpp:231: ERROR: CHECK_LE( worst, config.max_commands_per_tick ) is NOT correct!
+== M16 a stale snapshot is applied over a newer one
+   cy_test_integration_networking_session: RED
+   TEST CASE:  session: at 200 ms, 5 per cent loss and reordering, two clients converge
+   src/networking/tests/test_session.cpp:80: ERROR: CHECK_EQ( stats->commands_refused, 0U ) is NOT correct!
+   TEST CASE:  replication: an older snapshot arriving late is not applied over a newer one
+   src/networking/tests/test_world_replication.cpp:302: ERROR: CHECK_EQ( alice.replica.stale_dropped(), 1U ) is NOT correct!
+   src/networking/tests/test_world_replication.cpp:304: ERROR: CHECK_EQ( alice.game.read(mirrored)->health, 60U ) is NOT correct!
+   src/networking/tests/test_world_replication.cpp:306: ERROR: CHECK_EQ( alice.replica.newest(), 2U ) is NOT correct!
+== M17 the replication budget is not enforced
+   cy_test_integration_networking_session: RED
+   TEST CASE:  replication: despawns and updates share one budget
+   src/networking/tests/test_world_replication.cpp:492: ERROR: CHECK_LE( report.bytes, budget.bytes_per_tick ) is NOT correct!
+== M18 a despawn is never confirmed, so it repeats forever
+   cy_test_integration_networking_session: RED
+   TEST CASE:  replication: a spawn and a despawn repeat until a snapshot carrying them is acked
+   src/networking/tests/test_world_replication.cpp:276: ERROR: CHECK_EQ( deliver(replicator, kAlice, alice, 7, unlimited()).despawns, 0U ) is NOT correct!
+   TEST CASE:  replication: despawns and updates share one budget
+   src/networking/tests/test_world_replication.cpp:497: ERROR: CHECK_EQ( despawns, 150U ) is NOT correct!
+== M19 the dead stay in the relevance index
+   cy_test_integration_networking_session: RED
+   TEST CASE:  replication: an entity that dies before any peer saw it leaves the relevance index
+   src/networking/tests/test_world_replication.cpp:524: ERROR: CHECK_EQ( replicator.relevance_subjects(), 5U ) is NOT correct!
+== M20 the handshake's RESPONSE is not counted as received
+   cy_test_integration_networking_session: RED
+   TEST CASE:  secure transport: a clean link reports no loss in either direction
+   src/networking/tests/test_secure_transport.cpp:599: ERROR: CHECK_EQ( client.loss_per_mille, 0U ) is NOT correct!
+   src/networking/tests/test_secure_transport.cpp:600: ERROR: CHECK_EQ( server.inbound_loss_per_mille, 0U ) is NOT correct!
+
+15 of 15 mutations turned their suite red
