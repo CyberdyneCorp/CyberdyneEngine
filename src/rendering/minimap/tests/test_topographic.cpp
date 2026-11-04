@@ -14,6 +14,7 @@
 #include <cy/test/test.h>
 
 #include <cmath>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -344,13 +345,21 @@ CY_TEST_CASE("minimap: redrawing only the changed cells is the whole fog stage, 
     // the same field gives — and draw far fewer texels to get it. (`fog_stage_fades` holds the
     // same over a field that is still fading.) The image is 1.5 texels a cell, so texel centres
     // fall both on and between cells and the bilinear sample reads neighbours.
-    constexpr u32 kCells = 16;
-    constexpr u32 kImage = 24;
+    //
+    // SIZED AGAINST THE UNIT BUDGET. Every step pays for the whole-image reference pass as well as
+    // the incremental one, so the case costs steps x texels twice over. A 16-cell field with a
+    // two-cell sight spent 4.4 ms of Debug CPU on a hosted runner against the 4 ms budget. Twelve
+    // cells with a one-cell sight that moves one cell a step, over four steps, is 324 texels four
+    // times rather than 576 five times, and keeps what the case proves: a dirty strip still has
+    // untouched cells on both sides, so a redraw that skipped the neighbour ring would differ, and
+    // the redrawn share (147 of 972 texels) stays far under the quarter the last check allows.
+    constexpr u32 kCells = 12;
+    constexpr u32 kImage = 18;
     const std::vector<f32> heights = rolling(kCells);
     TopographicMinimap map(allocator());
     TopographicInput input;
     input.heights = grid_of(heights, kCells);
-    input.region = MinimapRegion{0.0F, 16.0F, 0.0F, 16.0F};
+    input.region = MinimapRegion{0.0F, 12.0F, 0.0F, 12.0F};
     input.width = kImage;
     input.height = kImage;
     CY_REQUIRE(map.bake(input, TopographicStyle{}).has_value());
@@ -361,13 +370,12 @@ CY_TEST_CASE("minimap: redrawing only the changed cells is the whole fog stage, 
     // The texels drawn after the first composition, which draws the whole image.
     u64 first_texels = 0;
     u64 later_full_texels = 0;
-    for (u32 step = 0; step < 5; ++step) {
-        // A scout walks east along row 10, seeing two cells round it; what it saw stays explored.
+    for (u32 step = 0; step < 4; ++step) {
+        // A scout walks east along row 6, seeing one cell round it; what it saw stays explored.
         for (u32 z = 0; z < kCells; ++z) {
             for (u32 x = 0; x < kCells; ++x) {
                 u8& cell = states[(static_cast<usize>(z) * kCells) + x];
-                const bool near =
-                    (x + 2U >= step * 2U && x <= (step * 2U) + 2U) && (z + 2U >= 10U && z <= 12U);
+                const bool near = (x + 1U >= step && x <= step + 1U) && (z + 1U >= 6U && z <= 7U);
                 if (near) {
                     cell = fow::kCellVisible;
                 } else if (cell == fow::kCellVisible) {
@@ -395,12 +403,20 @@ CY_TEST_CASE("minimap: redrawing only the changed cells is the whole fog stage, 
         CY_CHECK_EQ(differing, 0U);
     }
     CY_CHECK_EQ(first_texels, whole.size());
-    CY_CHECK_LT((map.refogged() - first_texels) * 4U, later_full_texels);
+    const u64 later_texels = map.refogged() - first_texels;
+    const std::string drawn =
+        "texels redrawn after the first composition: " + std::to_string(later_texels) + " of " +
+        std::to_string(later_full_texels);
+    CY_TEST_MESSAGE(drawn);
+    CY_CHECK_LT(later_texels * 4U, later_full_texels);
 }
 
 CY_TEST_CASE("minimap: fog_stage_fades — a field still fading is redrawn exactly where it moved") {
+    // 1.5 texels a cell, as above, rather than three: 144 texels a pass instead of 576. At three
+    // the case spent 5.0 ms of Debug CPU on a hosted runner against the 4 ms budget, and a texel
+    // between two cells is what a redraw that missed a neighbour gets wrong at any density.
     constexpr u32 kCells = 8;
-    constexpr u32 kImage = 24;
+    constexpr u32 kImage = 12;
     const std::vector<f32> heights = rolling(kCells);
     TopographicMinimap map(allocator());
     TopographicInput input;

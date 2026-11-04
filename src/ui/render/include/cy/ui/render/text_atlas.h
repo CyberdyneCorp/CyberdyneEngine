@@ -5,8 +5,8 @@
 // `TextPainter` draws from up to three pages — coverage, a distance field and colour — numbered
 // from the page it was started on (cy/ui/text/text_painter.h). This uploads each that exists in the
 // format the shader samples it as: coverage one byte a texel (`R8Unorm`, read as red), the other
-// two four
-// (`Rgba8Unorm`). Like `UiRenderer::upload_atlas`, it runs outside a frame.
+// two four (`Rgba8Unorm`). Like `UiRenderer::upload_atlas`, call it between frames: the pages are
+// copied in by the next frame's graph.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>

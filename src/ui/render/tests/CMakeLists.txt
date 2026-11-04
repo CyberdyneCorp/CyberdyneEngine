@@ -5,6 +5,11 @@
 #               draw, and `shade_reference` / `draw_reference` — the shader transcribed — draw whole
 #               pixels byte for byte, in order, blended premultiplied and scissored. No device.
 #
+#   ui_atlas_upload  KIND integration, the null device. `upload_atlas` begins no device frame and submits
+#               nothing; the game's frames take the ring's slots in order however often a page is
+#               re-made between them; and the copy arrives in the next frame's own graph
+#               (`fix-ui-atlas-upload-frame`).
+#
 #   ui          KIND render, Vulkan only. `pipeline_test::FrameScene` with an interface drawn over it
 #               at the frame's `UiAndDebug` stage: nothing to draw is byte-identical to a committed
 #               reference drawn before the interface pass existed; the device matches the host
@@ -21,7 +26,7 @@ set_property(GLOBAL PROPERTY CY_UI_RENDER_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}
 
 function(cy_ui_render_declare_tests)
     get_property(tests_dir GLOBAL PROPERTY CY_UI_RENDER_TESTS_DIR)
-    foreach(kind IN ITEMS unit render)
+    foreach(kind IN ITEMS unit integration render)
         get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
                                DEFINITION CY_TEST_BUDGET_${kind})
         get_directory_property(timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
@@ -40,6 +45,11 @@ function(cy_ui_render_declare_tests)
         KIND unit
         SOURCES "${tests_dir}/test_encode.cpp"
         DEPENDENCIES cy::ui-render)
+    cy_add_test(
+        NAME ui_atlas_upload
+        KIND integration
+        SOURCES "${tests_dir}/test_atlas_upload.cpp"
+        DEPENDENCIES cy::ui-render cy::rhi-null)
 
     if(NOT CY_RENDERER_VULKAN)
         return()

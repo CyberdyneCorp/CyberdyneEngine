@@ -97,6 +97,10 @@ struct MapRenderOptions {
     /// numbers worth a picture.
     bool outlines = false;
     bool stills = true;
+    /// The battle's minimap re-made with `UiRenderer::upload_atlas` every time it is composed — a
+    /// new page each sixth frame — rather than staged into the page it has with `stage_atlas`. The
+    /// control for `fix-ui-atlas-upload-frame`: the path that once lost the device.
+    bool minimap_upload = false;
 };
 
 /// The frame's numbers, over the timed frames.

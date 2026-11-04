@@ -49,5 +49,11 @@ While building the battle, a run that updated its minimap through `upload_atlas`
 lost the device (NVRM Xid 109, a context-switch timeout) at a fixed frame on this host's RTX 5060 —
 with the GI, ambient occlusion and the sun's shadows all on, and only in the battle. No validation,
 synchronisation-validation or AddressSanitizer finding preceded it, and under AddressSanitizer it did
-not occur. It is recorded, with how to reproduce it, as an open finding; the battle's minimap uses
+not occur. It was recorded, with how to reproduce it, as an open finding; the battle's minimap uses
 `stage_atlas`, which adds no device frame and is the cheaper path in any case.
+
+**Resolved by `fix-ui-atlas-upload-frame`.** `upload_atlas` ran its copy in a device frame of its own
+between two of the game's frames, so the game's next frame ran in the slot its previous frame had
+used; that frame is the one the device was lost in, and an upload without its own frame never lost
+it. `upload_atlas` now stages its texels into the next frame's graph as `stage_atlas` does; that
+change's design records the bisection.
