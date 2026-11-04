@@ -75,8 +75,36 @@ recording to readback on an RTX 5060 (Vulkan), within the 16.7 ms budget `smoke.
 |:---:|:---:|
 | ![The same frame with no features, with shadows, with AO and GI, and with fog and HUD](docs/design/images/rts-map-features.png) | ![The overview camera over the level, with the fog of war and the HUD](docs/design/images/rts-map-overview.png) |
 | **Feature by feature** — none, shadows, AO and GI, then fog and HUD | **Overview** — the video's camera; [watch the 7 s orbit](docs/design/videos/rts-map.mp4) with the workers and the company walking |
-| ![The battle at frames 180, 330, 960 and 1150: the armies closing, the melee with arrows and catapult shot, the watchtower's fall, the barracks burning](docs/design/images/rts-battle.png) | ![The topographic minimap at frame 1150: hillshading, contours, the lake, roads, the fog and the battle's icons](docs/design/images/rts-battle-minimap.png) |
-| **Battle** — forty units fought in fixed point in the lockstep path, the same digest on all four CI legs; [watch it](docs/design/videos/rts-battle.mp4) | **Topographic minimap** — hillshading, contours, water and roads under blue's fog, the units it sees as icons |
+
+The map's [battle](#strategy-battle), and playing it in a window, are under Game demos.
+
+---
+
+## Game demos
+
+Three small games written in Swift against the C ABI, each drawn by the engine's own frame with
+shadows, ambient occlusion and the device GI. The game decides everything; the C++ host builds the
+level, binds the engine's adapters and draws.
+
+### Strategy battle
+
+**`samples/13-rts-api --battle`** fights forty units on The Frontier entirely in the lockstep path.
+The Swift game gives attack-move and attack orders, and the simulation resolves melee, arrows and
+catapult shot in fixed point, with the same digest on all four CI legs. The game plays the effects,
+lights, deaths and sounds only where blue can see, and the HUD carries a topographic minimap.
+
+![The battle at frames 180, 330, 960 and 1150: the armies closing, the melee with arrows and catapult shot, the watchtower's fall, the barracks burning](docs/design/images/rts-battle.png)
+
+*The battle at frames 180, 330, 960 and 1150: the armies closing, the melee with arrows and catapult
+shot, the watchtower's fall and the barracks burning. 11.95 ms a frame on average over 1,186 frames
+at 1920x1080 on an RTX 5060 (Vulkan), 8.6 ms of it on the device, within the 16.7 ms
+`smoke.rts_api_map` asserts. [Watch the battle](docs/design/videos/rts-battle.mp4) from the
+player's camera.*
+
+| | |
+|:---:|:---:|
+| ![The minimap at frame 1150: the battlefield explored and seen under blue's fog, blue's soldiers and red's buildings as icons](docs/design/images/rts-battle-minimap.png) | ![The Frontier's minimap as baked: painted layers, hillshading, contour lines, the lakes and the roads](docs/design/images/rts-topographic-minimap.png) |
+| **Minimap in the battle** — blue's fog over the baked map, blue's units, and red's only where blue sees them | **Topographic minimap** — painted layers, hillshading, contours, water by depth and roads, baked once in 2.6 ms |
 
 **Play it.** `just play-rts` opens a window on the battle with your mouse and keyboard on blue's
 army — box and click selection with outlines, control groups, right-click attack, move and
@@ -90,15 +118,7 @@ the same digest.
 [watch it](docs/design/videos/rts-play.mp4). The frame 10.7 ms on average at 1920x1080 on an RTX
 5060 (Vulkan), presenting it 3.6 ms more, within the 16.7 ms `smoke.rts_api_play` asserts.*
 
-→ [**Playing the RTS**](docs/guides/playing-the-rts.md) · [**RTS map guide**](docs/guides/rts-map.md) · [RTS combat guide](docs/guides/rts-combat.md) · [fog of war guide](docs/guides/fog-of-war.md)
-
----
-
-## Game demos
-
-Two small games written in Swift against the C ABI, each drawn by the engine's own frame with
-shadows, ambient occlusion, the device GI and the temporal upscaler. The game decides everything;
-the C++ host builds the level, binds the engine's adapters and draws.
+→ [**Playing the RTS**](docs/guides/playing-the-rts.md) · [**RTS combat guide**](docs/guides/rts-combat.md) · [RTS map guide](docs/guides/rts-map.md) · [fog of war guide](docs/guides/fog-of-war.md)
 
 ### First person
 
@@ -205,7 +225,7 @@ every requirement is. The table groups what is in the tree now.
 | **Environment** | Physical sky and atmosphere, terrain, water, foliage, weather and wind over one field substrate; procedural generation | [`src/environment/`](src/environment/README.md) · [`src/pcg/`](src/pcg/README.md) |
 | **Simulation** | Animation with GPU skinning, drawn in the engine's frame and driven from Swift; deterministic fixed-point math and a fixed-point mover for lockstep units; AI, navigation, physics (Jolt), audio (miniaudio; WAV, Ogg Vorbis, FLAC and MP3 import, streamed music and ambience), abilities, cameras, cinematics | [`src/animation/`](src/animation/README.md) · [`src/core/detmath/`](src/core/detmath/README.md) · [`src/movement/`](src/movement/README.md) · [`src/physics/`](src/physics/README.md) |
 | **Integrity** | Deterministic simulation, replay and rollback, networking and replication, saves; a deterministic fog of war grid with shared vision and ghosts | [`src/replay/`](src/replay/) · [`src/networking/`](src/networking/README.md) · [`src/save/`](src/save/) · [fog of war guide](docs/guides/fog-of-war.md) |
-| **Gameplay** | Swift behaviours and systems over a versioned C ABI, now 1.17 (game services, the interface, animation with blend spaces and foot placement, fixed-point math, GI, fog of war, lights for a moment, the widget toolkit, the first-person camera, effects and decals, combat in the lockstep path, and what a game's menus need), with hot reload; visual scripting compiled by the engine, with a breakpoint debugger and reload during Play; the gameplay framework (Complete) | [`bindings/swift/`](bindings/swift/README.md) · [`src/abi/`](src/abi/README.md) · [visual scripting](docs/guides/visual-scripting.md) |
+| **Gameplay** | Swift behaviours and systems over a versioned C ABI, now 1.18 (game services, the interface, animation with blend spaces and foot placement, fixed-point math, GI, fog of war, lights for a moment, the widget toolkit, the first-person camera, effects and decals, combat in the lockstep path, what a game's menus need, and streamed music), with hot reload; visual scripting compiled by the engine, with a breakpoint debugger and reload during Play; the gameplay framework (Complete) | [`bindings/swift/`](bindings/swift/README.md) · [`src/abi/`](src/abi/README.md) · [visual scripting](docs/guides/visual-scripting.md) |
 | **Editor** | Rust application: documents and transactions, live viewport and gizmos, FBX import; material, VFX and gameplay graphs; terrain, physics, navigation, lighting and lightmap, audio and animation tools; an MCP agent interface | [`editor/`](editor/README.md) · [`editor-agent-interface`](openspec/specs/editor-agent-interface/spec.md) |
 | **Platforms** | SDL3 desktop, a native Linux backend, headless, iOS, and a stub that shares no desktop assumption | [`platform/`](platform/README.md) |
 | **Workflow** | One `justfile`, the same recipes CI runs; diagnostics, traces and crash artefacts (Complete) | [`just/`](just/README.md) · [`diagnostics-profiling-and-crash`](openspec/specs/diagnostics-profiling-and-crash/spec.md) |
@@ -594,6 +614,8 @@ download and play ([shipping guide](docs/guides/shipping.md)).
 | [UI guide](docs/guides/ui.md) | CyberUI: the element store, layout, the interface pass, the developer console, a HUD from game code, the widget toolkit, documents and style sheets, opacity groups and HDR, the toolkit from Swift |
 | [RTS map guide](docs/guides/rts-map.md) | The Frontier: its source, the cook, drawing it under the Swift RTS, what holds it |
 | [Fog of war guide](docs/guides/fog-of-war.md) | The deterministic grid, the frame stage, the minimap, turning it on in a game |
+| [RTS combat guide](docs/guides/rts-combat.md) | The battle in the lockstep path: arms, structures, orders, events, the topographic minimap, what holds it |
+| [Playing the RTS](docs/guides/playing-the-rts.md) | The battle played in a window: the desktop loop, where each decision lives, replaying a session, testing it without a person, what it costs |
 | [Navigation guide](docs/guides/navigation.md) | Baking and checking a navmesh from the editor or over MCP |
 | [Physics guide](docs/guides/physics.md) | Physics and Jolt: components, the bridge, stepping, queries from C++ and Swift, determinism |
 | [Building and running](docs/guides/building.md) | Toolchains, Linux, macOS editor, iOS, CI targets |
