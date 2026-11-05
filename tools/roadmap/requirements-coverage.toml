@@ -6550,7 +6550,7 @@ note = "Network ids carry their minter, so they are session-unique rather than s
 row = "networking-and-replication"
 requirement = "Transport abstraction"
 evidence = "exempt:m11e"
-note = "`Transport` with four delivery modes, the UDP transport with its own reliability layer and the local transport exist. `integration.networking_session` covers channel independence (`a blocked reliable channel does not block another channel` in `unit.networking_core`), local-transport swapping, and `a transport declares what it has, and a shipping build checks`, which refuses unencrypted UDP for shipping. Missing: no WebSocket transport and no DTLS, so no shipped transport can be admitted in a shipping build (`src/networking/README.md` says so). Re-enter with an encrypted, authenticated UDP transport whose `security()` passes `admissible_for(..., Deployment::Shipping)` in a loopback case, plus a WebSocket transport or a recorded decision dropping browser targets."
+note = "`Transport` with four delivery modes, the UDP transport with its own reliability layer and the local transport exist, and since issue #82 `SecureTransport`: a Noise-NK handshake over Monocypher, sealed packets, a replay window, fragmentation, rate limiting and named disconnect reasons over `UdpSocket` or the simulated network. `integration.networking_udp`'s `secure transport over UDP: a shipping-grade session on the loopback converges` passes `admissible_for(..., Deployment::Shipping)` on the loopback, and `integration.networking_session` attacks it (tampered, replayed, wrong server key). Still missing: no WebSocket transport, and no recorded decision dropping browser targets. Re-enter with a WebSocket transport or that decision."
 
 [[coverage]]
 row = "networking-and-replication"
@@ -6569,8 +6569,9 @@ note = "Schemas key on `FieldId`, so a rename is not drift and a removed field i
 [[coverage]]
 row = "networking-and-replication"
 requirement = "Component replication"
-evidence = "exempt:m11e"
-note = "The schema half exists and is tested: `a delta round-trips and carries only what changed`, `quantisation holds its declared precision, and a quaternion survives`, `an owner-only field reaches the owner and nobody else`, and the scheduler's deferral cases. Missing: `src/networking/README.md` states there is no `ecs::World` in any networking signature, so replication does not read ECS change detection and does not iterate packed component arrays; instances are addressed as bytes. Re-enter with a case that replicates a component from an `ecs::World`, proves an unchanged component sends no bytes using the world's change ticks, and serialises a thousand instances in one batch over the chunk column."
+evidence = "test:integration.networking_session"
+case = "replication: a thousand entities reach a client world from the chunk columns"
+note = "Issue #82: `WorldReplicator` gathers every chunk holding `NetworkIdentity` once per tick (its entities, its identity column, each schema's column and that column's change version) and builds a peer's snapshot from it; the case replicates 1000 entities in one snapshot from the server's world into a client world (`ReplicaWorld`, bound by reflected type) whose `replicated_digest` then equals the server's. `replication: an unchanged world sends nothing and compares nothing` proves the change-tick half: with nothing written since the acknowledged baseline the snapshot is its 13-byte header with zero entities compared and 1000 skipped by version, and one written field costs 24 bytes with only that chunk compared. `making an entity replicated changes no existing query` covers the identity component. Mutation M9 in openspec/changes/add-secure-transport-replication/evidence/falsification.txt turns the skip off and the case goes red."
 
 [[coverage]]
 row = "networking-and-replication"
@@ -6663,7 +6664,7 @@ row = "networking-and-replication"
 requirement = "Security posture"
 evidence = "test:integration.networking_session"
 case = "networking: an unauthenticated peer receives nothing"
-note = "With authentication required, a peer stays `Authenticating` and cannot send until admitted. `a peer sending faster than its limit is clamped and flagged` (unit.networking_core) covers the input-rate scenario, and the RPC cases cover sender authority and parameter bounds. NOT CLAIMED: DTLS/TLS. No encrypting transport exists, so shipping admission refuses UDP; see this row's Transport abstraction exemption."
+note = "With authentication required, a peer stays `Authenticating` and cannot send until admitted. `a peer sending faster than its limit is clamped and flagged` (unit.networking_core) covers the input-rate scenario, and the RPC cases cover sender authority and parameter bounds. Issue #82: the secure transport encrypts and authenticates over UDP with a Noise-NK handshake (the requirement now names that beside DTLS), its `CredentialCheck` runs before the peer exists (`secure transport: the application's check and the server's capacity refuse by name`), and `ServerHost` refuses commands past the per-tick limit, out of order or outside the window and flags the peer (`session: a client sending commands faster than the tick rate is clamped and flagged`). NOT CLAIMED: TLS for WebSocket, which does not exist."
 
 [[coverage]]
 row = "networking-and-replication"

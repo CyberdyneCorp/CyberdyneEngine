@@ -1238,6 +1238,72 @@ capture-vfx-collision *args:
     echo "==> time        a 65 536-particle sub-step on the device"
     CY_VFX_COLLISION_TIMING=1 "${timing}" --test-case="a colliding sub-step is timed on the device"
 
+# THE DEDICATED SERVER AND ITS CLIENTS, MEASURED AND FILMED (issue #82). `cy_net_session_bench`
+# runs a server and two clients over the secure transport on the simulated network — 200 ms round
+# trip, 5 % loss, 5 % reordering — at six populations and prints bytes per second per client and CPU
+# per server tick; `session_curve.py` draws docs/design/images/net-session-bandwidth.png from that
+# CSV. `cy_net_session_trace` records every unit's position on the server and on both clients for
+# nine seconds, and `session_video.py` films it into docs/design/videos/net-session.mp4 with the
+# still docs/design/images/net-session.png. No display and no graphics device: the server is
+# headless and the clients are worlds without a renderer.
+# Measure and film a dedicated server with two clients. Usage: just capture-net-session [--profile <p>]
+capture-net-session *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    if [ -n "${rest}" ]; then
+        echo "capture-net-session: unexpected arguments: ${rest}" >&2
+        exit 2
+    fi
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    tools="${build_dir}/src/networking/tools"
+    work="${build_dir}/net-session"
+    mkdir -p "${work}" docs/design/images docs/design/videos
+    echo "==> measure     bytes per second per client and CPU per tick, by population"
+    "${tools}/cy_net_session_bench" | tee "${work}/session-bench.csv"
+    python3 src/networking/tools/session_curve.py "${work}/session-bench.csv" \
+        docs/design/images/net-session-bandwidth.png
+    echo "    docs/design/images/net-session-bandwidth.png"
+    echo "==> trace       a server and two clients, nine seconds"
+    "${tools}/cy_net_session_trace" "${work}/trace.csv" 400
+    if command -v ffmpeg > /dev/null; then
+        python3 src/networking/tools/session_video.py "${work}/trace.csv" \
+            docs/design/videos/net-session.mp4 docs/design/images/net-session.png
+        echo "    docs/design/videos/net-session.mp4, docs/design/images/net-session.png"
+    else
+        echo "    ffmpeg is not installed: the measurement, but no film"
+    fi
+
+# The dedicated server from issue #82, headless, on a UDP port: `cy_net_server` with its options
+# passed through (`--port`, `--units`, `--tick-rate`, `--budget`, `--seconds`, `--rest-after`,
+# `--key`). It prints the public key a client connects with.
+# Run the dedicated server. Usage: just run-net-server [--profile <p>] [--port <n>] [--units <n>] [--key <hex>] [...]
+run-net-server *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    "${build_dir}/src/networking/tools/cy_net_server" ${rest}
+
+# A headless client for `just run-net-server`: `cy_net_client` with `--server`, `--key` and
+# `--seconds` passed through.
+# Run a client against the dedicated server. Usage: just run-net-client [--profile <p>] --server <a.b.c.d:port> --key <hex> [--seconds <s>]
+run-net-client *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    "${build_dir}/src/networking/tools/cy_net_client" ${rest}
+
 # THE BEAUTY SHOT IN AND OUT OF FOCUS: the same scene, the same compiled programs and the same settled
 # embers, photographed without depth of field and at f/1.4 focused on the copper sphere and on a far
 # column — the two focus targets `content/beauty/shot.cyshot` names. Depth of field runs at step 7,

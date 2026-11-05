@@ -89,6 +89,15 @@ public:
     /// "Delta against acknowledged state".
     void acknowledge(SnapshotId snapshot) noexcept;
 
+    /// Promote only what `snapshot` itself carried. **The variant an unreliable snapshot stream
+    /// needs**: a client that acknowledges snapshot 12 may never have received snapshot 11, and
+    /// `acknowledge(12)` would promote what 11 carried as though it had — the next delta would then
+    /// omit a change the client never saw, and nothing would ever send it again. `acknowledge()` is
+    /// right only where acknowledgements are cumulative (a client that acknowledges the newest
+    /// snapshot it holds *every* predecessor of). `WorldReplicator` calls this one, once per
+    /// acknowledged snapshot.
+    void acknowledge_exactly(SnapshotId snapshot) noexcept;
+
     /// Drop everything about an entity the peer no longer knows.
     void forget(NetworkId id) noexcept;
 
@@ -138,6 +147,7 @@ private:
     [[nodiscard]] Entry* locate(NetworkId id, u32 schema) noexcept;
     [[nodiscard]] const Entry* locate(NetworkId id, u32 schema) const noexcept;
     [[nodiscard]] Expected<u32, Error> obtain(NetworkId id, u32 schema, u32 size) noexcept;
+    void promote(Entry& entry) noexcept;
 
     Array<Entry> entries_;
     /// Network id to the head of its entry chain.

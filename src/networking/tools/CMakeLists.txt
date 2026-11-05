@@ -16,3 +16,26 @@ cy_add_module(
     TYPE EXECUTABLE
     SOURCES bandwidth_curve.cpp
     PRIVATE_DEPENDENCIES cy::networking)
+
+# Issue #82: the dedicated server, a client for it, and the session measurement. All three run the
+# demo game in net_demo.cpp, which tests/test_session.cpp also compiles, so what the tools print and
+# what the tests assert are about the same game. The server links nothing but cy::networking — no
+# renderer, audio, interface or GPU — which is the dedicated-server requirement as a link graph.
+foreach(cy_net_tool IN ITEMS server client)
+    cy_add_module(
+        NAME cy_net_${cy_net_tool}
+        LAYER tools
+        TYPE EXECUTABLE
+        SOURCES net_${cy_net_tool}.cpp net_demo.cpp
+        PRIVATE_DEPENDENCIES cy::networking)
+endforeach()
+
+# The measurement and the trace behind the video share one session arrangement, net_sim_session.cpp.
+foreach(cy_net_tool IN ITEMS session_bench session_trace)
+    cy_add_module(
+        NAME cy_net_${cy_net_tool}
+        LAYER tools
+        TYPE EXECUTABLE
+        SOURCES net_${cy_net_tool}.cpp net_sim_session.cpp net_demo.cpp
+        PRIVATE_DEPENDENCIES cy::networking)
+endforeach()

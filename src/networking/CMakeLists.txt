@@ -42,6 +42,10 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/authority.cpp
+        src/congestion.cpp
+        src/crypto.cpp
+        src/datagram_socket.cpp
+        src/fragmentation.cpp
         src/interest.cpp
         src/local_transport.cpp
         src/mode.cpp
@@ -52,12 +56,18 @@ cy_add_module(
         src/rpc.cpp
         src/scheduler.cpp
         src/schema.cpp
+        src/secure_transport.cpp
+        src/secure_wire.cpp
         src/server.cpp
+        src/session.cpp
         src/udp_transport.cpp
+        src/world_replication.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES
         cy::core-base cy::core-determinism cy::core-memory cy::core-reflect cy::ecs cy::gameplay
-        cy::replay)
+        cy::replay
+    PRIVATE_DEPENDENCIES
+        cy::dep::monocypher)
 
 # The determinism profile this module participates in, and the flag that makes the declaration
 # mean something. See src/core/determinism/CMakeLists.txt for the argument: the function does not

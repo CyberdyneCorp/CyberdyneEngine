@@ -121,16 +121,29 @@ Status PeerBaseline::record_sent(NetworkId id, u32 schema, SnapshotId snapshot,
     return ok();
 }
 
+void PeerBaseline::promote(Entry& entry) noexcept {
+    std::memcpy(static_cast<void*>(bytes_.data() + entry.offset),
+                static_cast<const void*>(bytes_.data() + entry.pending_offset), entry.size);
+    entry.has_acknowledged = true;
+    entry.pending_snapshot = 0;
+}
+
 void PeerBaseline::acknowledge(SnapshotId snapshot) noexcept {
     acknowledged_ = std::max(snapshot, acknowledged_);
     for (auto& entry : entries_) {
         if (entry.pending_snapshot == 0 || entry.pending_snapshot > snapshot) {
             continue;
         }
-        std::memcpy(static_cast<void*>(bytes_.data() + entry.offset),
-                    static_cast<const void*>(bytes_.data() + entry.pending_offset), entry.size);
-        entry.has_acknowledged = true;
-        entry.pending_snapshot = 0;
+        promote(entry);
+    }
+}
+
+void PeerBaseline::acknowledge_exactly(SnapshotId snapshot) noexcept {
+    acknowledged_ = std::max(snapshot, acknowledged_);
+    for (auto& entry : entries_) {
+        if (entry.pending_snapshot != 0 && entry.pending_snapshot == snapshot) {
+            promote(entry);
+        }
     }
 }
 

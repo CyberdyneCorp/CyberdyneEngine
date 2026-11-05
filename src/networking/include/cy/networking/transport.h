@@ -141,6 +141,57 @@ struct ConnectionStats {
     /// the peer, a tool retries the handshake, and a transport that chose for them would be a
     /// transport with an opinion about gameplay.
     bool reliable_abandoned = false;
+
+    // --- Reported by `SecureTransport`; zero on a transport that does not measure them. ---------
+
+    /// The congestion controller's current send rate, bytes per second of wire traffic.
+    u32 send_rate_bytes_per_second = 0;
+    /// Loss of the direction this side RECEIVES in, per mille, from the packet counters it
+    /// authenticated. `loss_per_mille` is the other direction, as the peer reported it.
+    u32 inbound_loss_per_mille = 0;
+    /// Unreliable datagrams the send-rate limit discarded before they reached the wire.
+    u64 datagrams_throttled = 0;
+    /// Packets refused because their tag did not authenticate — tampered, forged, or sealed under
+    /// another key.
+    u64 packets_rejected_authentication = 0;
+    /// Packets refused because their counter was already seen or older than the replay window.
+    u64 packets_rejected_replay = 0;
+};
+
+/// Why a connection ended. `None` while it has not.
+enum class DisconnectReason : u8 {
+    None = 0,
+    /// This side called `disconnect()`.
+    LocalRequest,
+    /// The peer said it was leaving.
+    PeerRequest,
+    /// Nothing authentic arrived for the connection timeout.
+    Timeout,
+    /// The handshake did not complete in time: no server, the wrong server key, or a lost path.
+    HandshakeTimeout,
+    /// The server refused: it has no room.
+    ServerFull,
+    /// The server refused: the application's authentication step said no.
+    AuthenticationFailed,
+    /// A reliable datagram exhausted its retransmission attempts.
+    ReliableAbandoned,
+    /// The transport was torn down with the connection open.
+    TransportClosed,
+};
+
+const char* disconnect_reason_name(DisconnectReason reason) noexcept;
+
+/// A change in a connection's state, for the side that did not ask for it: a server learning that a
+/// client finished its handshake, a client learning that the server dropped it.
+struct ConnectionEvent {
+    enum class Kind : u8 {
+        Connected = 0,
+        Disconnected,
+    };
+
+    Kind kind = Kind::Connected;
+    PeerId peer;
+    DisconnectReason reason = DisconnectReason::None;
 };
 
 /// What a transport provides against the four security obligations.
@@ -225,9 +276,22 @@ public:
     /// stop the network, visibly, rather than drifting.
     virtual void advance(u64 now_ms) noexcept = 0;
 
+    /// The same at microsecond resolution, for a transport that measures round trips finer than a
+    /// millisecond. Every other transport rounds down to `advance()`.
+    virtual void advance_us(u64 now_us) noexcept { advance(now_us / 1000); }
+
     [[nodiscard]] virtual ConnectionState state(PeerId peer) const noexcept = 0;
     [[nodiscard]] virtual ConnectionStats stats(PeerId peer) const noexcept = 0;
     [[nodiscard]] virtual TransportSecurity security() const noexcept = 0;
+
+    /// The next connection event, or false. A transport that has no handshake of its own — the
+    /// local and the plain UDP transports, whose links are opened by `connect()` and `accept()` —
+    /// reports none, and that is the default.
+    [[nodiscard]] virtual bool poll_event(ConnectionEvent& out) noexcept {
+        (void)out;
+        return false;
+    }
+
     /// The backend's own name, for a diagnostic. Never null.
     [[nodiscard]] virtual const char* name() const noexcept = 0;
 };

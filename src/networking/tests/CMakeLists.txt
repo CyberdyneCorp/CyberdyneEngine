@@ -47,6 +47,7 @@ function(cy_networking_declare_tests)
             "${cy_networking_tests_dir}/test_reliability.cpp"
             "${cy_networking_tests_dir}/test_rpc.cpp"
             "${cy_networking_tests_dir}/test_schema.cpp"
+            "${cy_networking_tests_dir}/test_secure_parts.cpp"
         DEPENDENCIES cy::networking)
 
     cy_add_test(
@@ -56,15 +57,22 @@ function(cy_networking_declare_tests)
             "${cy_networking_tests_dir}/test_interest.cpp"
             "${cy_networking_tests_dir}/test_replication.cpp"
             "${cy_networking_tests_dir}/test_scheduler.cpp"
+            "${cy_networking_tests_dir}/test_secure_transport.cpp"
             "${cy_networking_tests_dir}/test_server.cpp"
+            "${cy_networking_tests_dir}/test_session.cpp"
             "${cy_networking_tests_dir}/test_teardown.cpp"
             "${cy_networking_tests_dir}/test_transport.cpp"
+            "${cy_networking_tests_dir}/test_world_replication.cpp"
+            "${cy_networking_tests_dir}/../tools/net_demo.cpp"
         DEPENDENCIES cy::networking)
 
     cy_add_test(
         NAME networking_udp
         KIND integration
-        SOURCES "${cy_networking_tests_dir}/test_udp.cpp"
+        SOURCES
+            "${cy_networking_tests_dir}/test_udp.cpp"
+            "${cy_networking_tests_dir}/test_secure_udp.cpp"
+            "${cy_networking_tests_dir}/../tools/net_demo.cpp"
         DEPENDENCIES cy::networking)
 endfunction()
 
